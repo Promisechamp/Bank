@@ -343,7 +343,7 @@ const Layout = ({ children }) => {
 
               <div className="hidden sm:block">
                 <p className="text-[15px] font-bold leading-none tracking-tight text-gray-900">
-                  Banking Demo
+                   Bank
                 </p>
 
                 <p className="mt-1 text-[10px] font-medium uppercase tracking-wider text-gray-400">
@@ -767,9 +767,7 @@ const Layout = ({ children }) => {
                 </button>
               </div>
 
-              <p className="mt-3 px-2 text-[9px] leading-4 text-gray-400">
-                Banking Demo · Personal banking
-              </p>
+              
             </div>
           </div>
         </aside>
@@ -826,7 +824,7 @@ const Layout = ({ children }) => {
               </div>
 
               <p className="text-[15px] font-bold leading-none tracking-tight text-gray-900">
-                Banking Demo
+                Trustycdu Bank
               </p>
             </Link>
 
@@ -935,9 +933,7 @@ const Layout = ({ children }) => {
                 Sign out
               </button>
 
-              <p className="mt-3 px-2 text-[9px] leading-4 text-gray-400">
-                Banking Demo · Personal banking
-              </p>
+              
             </div>
           </div>
         </aside>

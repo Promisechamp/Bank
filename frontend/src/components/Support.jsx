@@ -1,8 +1,8 @@
 // src/pages/SupportPage.jsx
 
-import React, { useState } from 'react';
+import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -16,22 +16,18 @@ import {
   UserRound,
 } from 'lucide-react';
 
-import ChatPage from '../components/chat/Chat';
-
 const SUPPORT_INFO = {
   branch: {
     name: 'Head Office',
     address: '12 Admiralty Way, New Orlens USA',
     hours: 'Monday – Friday · 8:00 AM – 5:00 PM',
   },
-
   accountOfficer: {
     name: 'Your Account Officer',
     role: 'Relationship Manager',
     email: 'officer@yourbank.com',
     phone: '+234 800 000 0000',
   },
-
   business: {
     email: 'business@yourbank.com',
     phone: '+234 800 000 0000',
@@ -43,12 +39,7 @@ const SUPPORT_INFO = {
    CONTACT ITEM
 ================================================================ */
 
-const ContactItem = ({
-  icon: Icon,
-  label,
-  value,
-  href,
-}) => {
+const ContactItem = ({ icon: Icon, label, value, href }) => {
   const content = (
     <>
       <div
@@ -184,17 +175,13 @@ const SupportCard = ({
         </div>
       </div>
 
-      {children && (
-        <div className="mt-4">
-          {children}
-        </div>
-      )}
+      {children && <div className="mt-4">{children}</div>}
     </section>
   );
 };
 
 /* ================================================================
-   CHAT SUPPORT
+   CHAT SUPPORT CARD (now triggers navigation)
 ================================================================ */
 
 const ChatSupportCard = ({ onStart }) => {
@@ -208,7 +195,6 @@ const ChatSupportCard = ({ onStart }) => {
       "
     >
       {/* Accent header */}
-
       <div
         className="
           relative overflow-hidden
@@ -224,7 +210,6 @@ const ChatSupportCard = ({ onStart }) => {
             bg-white/10
           "
         />
-
         <div
           className="
             absolute -bottom-10 -right-2
@@ -242,16 +227,12 @@ const ChatSupportCard = ({ onStart }) => {
               text-white ring-1 ring-white/20
             "
           >
-            <MessageCircle
-              className="h-5 w-5"
-              strokeWidth={1.8}
-            />
+            <MessageCircle className="h-5 w-5" strokeWidth={1.8} />
           </div>
 
           <div className="mt-5">
             <div className="flex items-center gap-2">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-
               <span
                 className="
                   text-[9px] font-bold uppercase
@@ -286,7 +267,6 @@ const ChatSupportCard = ({ onStart }) => {
       </div>
 
       {/* Features */}
-
       <div className="px-5 py-5 sm:px-6">
         <div className="space-y-3">
           <div className="flex items-center gap-2.5">
@@ -294,29 +274,24 @@ const ChatSupportCard = ({ onStart }) => {
               className="h-4 w-4 shrink-0 text-primary-600"
               strokeWidth={2}
             />
-
             <span className="text-[11px] font-medium text-gray-600">
               Secure support conversation
             </span>
           </div>
-
           <div className="flex items-center gap-2.5">
             <CheckCircle2
               className="h-4 w-4 shrink-0 text-primary-600"
               strokeWidth={2}
             />
-
             <span className="text-[11px] font-medium text-gray-600">
               Discuss account and transaction issues
             </span>
           </div>
-
           <div className="flex items-center gap-2.5">
             <CheckCircle2
               className="h-4 w-4 shrink-0 text-primary-600"
               strokeWidth={2}
             />
-
             <span className="text-[11px] font-medium text-gray-600">
               Get assistance with cards and transfers
             </span>
@@ -325,11 +300,9 @@ const ChatSupportCard = ({ onStart }) => {
       </div>
 
       {/* CTA */}
-
       <div className="border-t border-gray-100 px-5 py-5 sm:px-6">
         <div className="mb-3 flex items-center gap-2">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-
           <span className="text-[10px] font-semibold text-gray-500">
             Support is available
           </span>
@@ -349,15 +322,11 @@ const ChatSupportCard = ({ onStart }) => {
           "
         >
           <div>
-            <p className="text-xs font-bold">
-              Start a conversation
-            </p>
-
+            <p className="text-xs font-bold">Start a conversation</p>
             <p className="mt-0.5 text-[10px] text-white/65">
               Connect with support
             </p>
           </div>
-
           <div
             className="
               flex h-8 w-8
@@ -408,7 +377,6 @@ const SecurityNote = () => {
         <p className="text-[11px] font-semibold text-gray-700">
           Keep your banking information secure
         </p>
-
         <p className="mt-0.5 text-[10px] leading-4 text-gray-400">
           Never share your PIN, password, OTP or full card
           details with anyone, including someone claiming
@@ -424,88 +392,7 @@ const SecurityNote = () => {
 ================================================================ */
 
 const SupportPage = () => {
-  const [showChat, setShowChat] = useState(false);
-
-  /* ==============================================================
-     CHAT VIEW
-  ============================================================== */
-
-  if (showChat) {
-    return (
-      <div className="flex min-h-screen flex-col bg-gray-50">
-        <header
-          className="
-            sticky top-0 z-30
-            flex h-14 shrink-0 items-center
-            border-b border-gray-200
-            bg-white px-4 sm:px-6
-          "
-        >
-          <div className=''>
-										 <button
-            type="button"
-            onClick={() => setShowChat(false)}
-            className="
-              group flex items-center gap-2
-              rounded-xl px-2.5 py-2
-              text-xs font-semibold
-              text-gray-500 transition
-              hover:bg-gray-50 hover:text-gray-900
-            "
-          >
-            <ArrowLeft
-              className="
-                h-4 w-4
-                transition-transform
-                group-hover:-translate-x-0.5
-              "
-              strokeWidth={1.8}
-            />
-
-            <span>Back to Support</span>
-          </button>
-										</div>
-
-          <div className="ml-auto flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-
-            <span className="text-[10px] font-semibold text-gray-400">
-              Support
-            </span>
-          </div>
-        </header>
-
-        <main
-          className="
-            flex min-h-[calc(100vh-56px)]
-            items-center justify-center
-            p-0 sm:p-5 lg:p-6
-          "
-        >
-          <div
-            className="
-              flex h-[calc(100vh-56px)]
-              min-h-0 w-full overflow-hidden
-              bg-white
-              sm:h-[84vh]
-              sm:max-h-[850px]
-              sm:rounded-2xl
-              sm:border sm:border-gray-200
-              sm:shadow-[0_20px_60px_-30px_rgba(15,23,42,0.25)]
-            "
-          >
-            <ChatPage
-              onBack={() => setShowChat(false)}
-            />
-          </div>
-        </main>
-      </div>
-    );
-  }
-
-  /* ==============================================================
-     SUPPORT LANDING
-  ============================================================== */
+  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
@@ -539,10 +426,7 @@ const SupportPage = () => {
                   text-primary-600
                 "
               >
-                <Headphones
-                  className="h-5 w-5"
-                  strokeWidth={1.8}
-                />
+                <Headphones className="h-5 w-5" strokeWidth={1.8} />
               </div>
 
               <div className="min-w-0">
@@ -554,7 +438,6 @@ const SupportPage = () => {
                 >
                   Help & Support
                 </p>
-
                 <h1
                   className="
                     mt-0.5 text-xl font-bold
@@ -578,7 +461,6 @@ const SupportPage = () => {
                 className="h-3.5 w-3.5 text-emerald-500"
                 strokeWidth={1.8}
               />
-
               <span className="text-[10px] font-semibold text-gray-500">
                 Secure banking support
               </span>
@@ -607,7 +489,7 @@ const SupportPage = () => {
             className="
               grid items-start gap-6
               lg:grid-cols-[minmax(0,1fr)_330px]
-          "
+            "
           >
             {/* ==================================================
                 LEFT — SUPPORT OPTIONS
@@ -621,7 +503,6 @@ const SupportPage = () => {
                 "
               >
                 {/* BRANCH */}
-
                 <SupportCard
                   icon={Building2}
                   eyebrow="Your branch"
@@ -634,7 +515,6 @@ const SupportPage = () => {
                       label="Address"
                       value={SUPPORT_INFO.branch.address}
                     />
-
                     <ContactItem
                       icon={Clock3}
                       label="Opening hours"
@@ -644,7 +524,6 @@ const SupportPage = () => {
                 </SupportCard>
 
                 {/* ACCOUNT OFFICER */}
-
                 <SupportCard
                   icon={UserRound}
                   eyebrow="Personal support"
@@ -658,7 +537,6 @@ const SupportPage = () => {
                       value={SUPPORT_INFO.accountOfficer.email}
                       href={`mailto:${SUPPORT_INFO.accountOfficer.email}`}
                     />
-
                     <ContactItem
                       icon={Phone}
                       label="Phone"
@@ -669,7 +547,6 @@ const SupportPage = () => {
                 </SupportCard>
 
                 {/* BUSINESS SUPPORT */}
-
                 <SupportCard
                   icon={Phone}
                   eyebrow="General enquiries"
@@ -683,7 +560,6 @@ const SupportPage = () => {
                       value={SUPPORT_INFO.business.email}
                       href={`mailto:${SUPPORT_INFO.business.email}`}
                     />
-
                     <ContactItem
                       icon={Phone}
                       label="Support line"
@@ -694,7 +570,6 @@ const SupportPage = () => {
                 </SupportCard>
 
                 {/* AVAILABILITY */}
-
                 <SupportCard
                   icon={CheckCircle2}
                   eyebrow="Support availability"
@@ -713,12 +588,10 @@ const SupportPage = () => {
                         className="h-4 w-4 text-gray-400"
                         strokeWidth={1.8}
                       />
-
                       <span className="text-[10px] font-semibold text-gray-500">
                         General support
                       </span>
                     </div>
-
                     <span
                       className="
                         flex items-center gap-1.5
@@ -733,21 +606,18 @@ const SupportPage = () => {
                 </SupportCard>
               </div>
 
-              {/* SECURITY */}
-
+              {/* SECURITY NOTE */}
               <div className="mt-4">
                 <SecurityNote />
               </div>
             </div>
 
             {/* ==================================================
-                RIGHT — CHAT
+                RIGHT — CHAT CARD (navigates to /chat)
             ================================================== */}
 
             <div className="w-full lg:sticky lg:top-6">
-              <ChatSupportCard
-                onStart={() => setShowChat(true)}
-              />
+              <ChatSupportCard onStart={() => navigate('/chat')} />
             </div>
           </div>
         </main>

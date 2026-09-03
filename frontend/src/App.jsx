@@ -14,7 +14,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { SocketProvider } from './context/SocketContext';
 
 import { ChatProvider, useChat } from './components/chat/ChatContext';
-import ChatPage from './components/chat/AdminChatPage';
+import AdminChatPage from './components/chat/AdminChatPage';
+import ClientChatPage from './components/chat/Chat';
 import Support from './components/Support';
 
 import Layout from './components/Layout';
@@ -390,6 +391,30 @@ function AppRoutes() {
           </UserRoute>
         }
       />
+						
+								
+						
+						<Route
+								path="/chat"
+								element={
+										<UserRoute>
+												<Layout>
+														<ClientChatPage />
+												</Layout>
+										</UserRoute>
+								}
+						/>
+						
+						<Route
+								path="/support"
+								element={
+										<UserRoute>
+												<Layout>
+														<Support />
+												</Layout>
+										</UserRoute>
+								}
+						/>
 
 
       {/* ======================================================
@@ -412,7 +437,7 @@ function AppRoutes() {
         element={
           <AdminRoute>
             <AdminLayout>
-              <ChatPage />
+              <AdminChatPage />
             </AdminLayout>
           </AdminRoute>
         }
@@ -492,18 +517,7 @@ function AppRoutes() {
         }
       />
 						
-						
-						
-<Route
-  path="/support"
-  element={
-    <UserRoute>
-      <Layout>
-        <Support />
-      </Layout>
-    </UserRoute>
-  }
-/>
+				
 
 <Route
   path="/admin/support"

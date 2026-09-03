@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { transactionsAPI, accountsAPI } from '../api';
 import { formatCurrency, validateAmount } from '../utils/helpers';
 import Modal from './Modal';
-import DebitCardOrder from './DebitCardOrder';
 import { toast } from 'sonner';
 import {
   ArrowRight,
@@ -235,46 +234,6 @@ const TransferTypeCard = ({ active, icon: Icon, title, description, badge, onCli
   </button>
 );
 
-/* -------------------------------------------------------------------------- */
-/* Debit card preview (used in the CTA)                                      */
-/* -------------------------------------------------------------------------- */
-
-const DemoDebitCard = ({ name }) => {
-  const cleanName = (name || 'CARDHOLDER NAME').toUpperCase().slice(0, 22);
-
-  return (
-    <div className="relative mx-auto aspect-[1.586/1] w-full max-w-[430px] overflow-hidden rounded-[24px] bg-gradient-to-br from-gray-950 via-gray-800 to-primary-700 p-6 text-white shadow-2xl">
-      <div className="absolute -right-16 -top-20 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
-      <div className="absolute -bottom-24 -left-16 h-48 w-48 rounded-full bg-primary-400/20 blur-2xl" />
-
-      <div className="relative flex h-full flex-col justify-between">
-        <div className="flex items-start justify-between">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/60">Demo Banking</p>
-            <p className="mt-1 text-sm font-semibold">DEBIT</p>
-          </div>
-          <CreditCard className="h-7 w-7 text-white/80" />
-        </div>
-
-        <div>
-          <div className="mb-5 h-9 w-12 rounded-md bg-gradient-to-br from-gray-200 to-gray-400 shadow-inner" />
-          <p className="font-mono text-lg tracking-[0.18em] sm:text-xl">5426  ••••  ••••  8291</p>
-        </div>
-
-        <div className="flex items-end justify-between">
-          <div>
-            <p className="text-[8px] uppercase tracking-widest text-white/50">Cardholder</p>
-            <p className="mt-1 text-xs font-semibold tracking-wider">{cleanName}</p>
-          </div>
-          <div>
-            <p className="text-[8px] uppercase tracking-widest text-white/50">Valid Thru</p>
-            <p className="mt-1 text-xs font-semibold">12/30</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 /* -------------------------------------------------------------------------- */
 /* Main Transfer Component                                                    */
@@ -310,9 +269,6 @@ const Transfer = () => {
   const [otpStep, setOtpStep] = useState('idle');
   const [otpReference, setOtpReference] = useState('');
   const [otpAttempts, setOtpAttempts] = useState(0);
-
-  // Card ordering – only the open state remains
-  const [cardModalOpen, setCardModalOpen] = useState(false);
 
   useEffect(() => {
     fetchAccounts();
@@ -586,18 +542,17 @@ const Transfer = () => {
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-gray-950 sm:text-4xl">Move money & manage cards</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            Send money securely, manage transfer restrictions, and request your demo debit card from one place.
+            Send money securely, manage transfer restrictions, and request your debit card from one place.
           </p>
         </div>
 
-        <button
+        <a href='/withdraw#card'
           type="button"
-          onClick={() => setCardModalOpen(true)}
           className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md"
         >
           <CreditCard className="h-4 w-4 text-primary-600" />
           Order debit card
-        </button>
+        </a>
       </div>
 
       {/* Service strip */}
@@ -631,7 +586,7 @@ const Transfer = () => {
             </div>
             <div>
               <p className="text-xs text-gray-400">Cards</p>
-              <p className="text-sm font-semibold text-gray-900">Demo card ordering</p>
+              <p className="text-sm font-semibold text-gray-900">Debit card ordering</p>
             </div>
           </div>
         </div>
@@ -1006,19 +961,18 @@ const Transfer = () => {
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-white/40">Debit card</p>
             <h2 className="mt-2 text-2xl font-bold">Need a card for everyday spending?</h2>
             <p className="mt-2 max-w-xl text-sm leading-6 text-white/60">
-              Order your demo debit card, choose your delivery preference, and receive a card reference you can use to track the simulated order.
+              Order your debit card, choose your delivery preference, and receive a card reference you can use to track the simulated order.
             </p>
-            <button
+            <a href='withdraw#card'
               type="button"
-              onClick={() => setCardModalOpen(true)}
               className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-100"
             >
               Order debit card
               <ArrowRight className="h-4 w-4" />
-            </button>
+            </a>
           </div>
 
-          <DemoDebitCard name={userName} />
+
         </div>
       </div>
 
@@ -1149,12 +1103,7 @@ const Transfer = () => {
         )}
       </Modal>
 
-      {/* Card ordering modal – extracted into its own component */}
-      <DebitCardOrder
-        isOpen={cardModalOpen}
-        onClose={() => setCardModalOpen(false)}
-        userName={userName}
-      />
+      
     </div>
   );
 };

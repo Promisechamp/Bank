@@ -48,10 +48,7 @@ const Profile = () => {
   });
 
   /*
-   * Demo account officer.
-   *
-   * Deliberately avoids using a real institution name.
-   * The email addresses are also neutral demo addresses.
+   * account officer.
    */
   const getOfficer = (userId) => {
     const officers = [
@@ -87,7 +84,7 @@ const Profile = () => {
       },
     ];
 
-    const safeId = String(userId || 'demo-user');
+    const safeId = String(userId || 'user');
 
     const hash = safeId
       .split('')
@@ -124,7 +121,7 @@ const Profile = () => {
       setAccounts(loadedAccounts);
 
       /*
-       * Keep the existing demo behavior.
+       * Keep the existing behavior.
        *
        * Replace this with a real count endpoint when your API
        * exposes one.

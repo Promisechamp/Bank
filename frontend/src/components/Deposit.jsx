@@ -65,7 +65,7 @@ const CURRENCIES = [
 ];
 
 // ============================================================
-// DETERMINISTIC DEMO ADDRESS
+// DETERMINISTIC ADDRESS
 // ============================================================
 
 const generateDepositAddress = (userId, currencyId) => {

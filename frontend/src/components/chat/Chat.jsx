@@ -1,6 +1,14 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   ArrowLeft,
+  Check,
+  CheckCheck,
   CheckCircle2,
   Clock3,
   Headphones,
@@ -18,112 +26,61 @@ import {
 
 import { useChat } from './ChatContext';
 
-// ================================================================
-// Chat.jsx — single-file support chat
-// Design goals:
-// - One page/component file only
-// - Calm, professional financial-product feel
-// - Fewer badges / less visual noise
-// - Robust API-shape normalization
-// - Separate loading/sending/creating states
-// - Safer message ownership detection
-// - Optimistic message rendering
-// - Retry failed messages
-// - Unread indicators
-// - Smarter auto-scroll
-// ================================================================
-
-// ================================================================
-// Shared helpers
-// ================================================================
+/* ================================================================
+   HELPERS
+================================================================ */
 
 const getConversationId = (conversation) =>
   conversation?.id ?? conversation?._id ?? null;
 
 const getMessageId = (message) =>
-  message?.id ?? message?._id ?? null;
-
-const normalizeText = (value) =>
-  typeof value === 'string' ? value : value == null ? '' : String(value);
-
-const getUser = (message) =>
-  message?.user || message?.sender || message?.author || {};
-
-const isAdminUser = (user) =>
-  Boolean(
-    user?.is_admin ||
-      user?.role === 'admin' ||
-      user?.role === 'support' ||
-      user?.role === 'staff'
-  );
-
-const isDeletedMessage = (message) =>
-  Boolean(message?.is_deleted || message?.deleted);
-
-const getMessageContent = (message) =>
-  normalizeText(message?.content ?? message?.message ?? '');
-
-const getMessageDate = (message) =>
-  message?.created_at ?? message?.sent_at ?? message?.timestamp ?? null;
-
-const getConversationTitle = (conversation) =>
-  normalizeText(
-    conversation?.subject ?? conversation?.title ?? 'Support conversation'
-  );
-
-const getConversationDate = (conversation) =>
-  conversation?.updated_at ??
-  conversation?.last_message_at ??
-  conversation?.created_at ??
+  message?.id ??
+  message?._id ??
+  message?.message_id ??
   null;
 
-const getStatus = (conversation) => {
-  const status = String(conversation?.status || 'open').toLowerCase();
-  return status === 'closed' || status === 'resolved' ? 'closed' : 'open';
-};
+const text = (value) =>
+  value === null || value === undefined
+    ? ''
+    : String(value);
 
-const getConversationPreview = (conversation) => {
-  const messages = Array.isArray(conversation?.messages)
-    ? conversation.messages
-    : [];
+const getMessageUser = (message) =>
+  message?.user ??
+  message?.sender ??
+  message?.author ??
+  message?.sender_user ??
+  message?.senderUser ??
+  {};
 
-  const lastMessage = [...messages]
-    .reverse()
-    .find(Boolean);
-
-  if (isDeletedMessage(lastMessage)) return 'Message deleted';
-
-  return (
-    normalizeText(
-      lastMessage?.content ??
-        lastMessage?.message ??
-        conversation?.last_message ??
-        conversation?.preview
-    ) || 'No messages yet'
+const getMessageContent = (message) =>
+  text(
+    message?.content ??
+      message?.message ??
+      message?.text ??
+      ''
   );
-};
 
-const getInitials = (user) => {
-  const name = normalizeText(user?.full_name ?? user?.name);
-  if (!name) return 'U';
-
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join('')
-    .toUpperCase();
-};
+const getMessageDate = (message) =>
+  message?.created_at ??
+  message?.createdAt ??
+  message?.sent_at ??
+  message?.sentAt ??
+  message?.timestamp ??
+  null;
 
 const parseDate = (value) => {
   if (!value) return null;
+
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date;
+
+  return Number.isNaN(date.getTime())
+    ? null
+    : date;
 };
 
 const formatTime = (value) => {
   const date = parseDate(value);
+
   if (!date) return '';
 
   return date.toLocaleTimeString([], {
@@ -132,7 +89,7 @@ const formatTime = (value) => {
   });
 };
 
-const isSameDay = (a, b) => {
+const sameDay = (a, b) => {
   const first = parseDate(a);
   const second = parseDate(b);
 
@@ -145,34 +102,41 @@ const isSameDay = (a, b) => {
   );
 };
 
-const formatDateSeparator = (value) => {
+const formatDate = (value) => {
   const date = parseDate(value);
+
   if (!date) return '';
 
   const today = new Date();
 
-  if (isSameDay(date, today)) return 'Today';
+  if (sameDay(date, today)) {
+    return 'Today';
+  }
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
-  if (isSameDay(date, yesterday)) return 'Yesterday';
+  if (sameDay(date, yesterday)) {
+    return 'Yesterday';
+  }
 
   return date.toLocaleDateString([], {
+    weekday: 'short',
     month: 'short',
     day: 'numeric',
     year:
-      date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+      date.getFullYear() === today.getFullYear()
+        ? undefined
+        : 'numeric',
   });
 };
 
 const formatConversationDate = (value) => {
   const date = parseDate(value);
+
   if (!date) return '';
 
-  const now = new Date();
-
-  if (isSameDay(date, now)) {
+  if (sameDay(date, new Date())) {
     return formatTime(date);
   }
 
@@ -182,24 +146,83 @@ const formatConversationDate = (value) => {
   });
 };
 
+const getConversationDate = (conversation) =>
+  conversation?.updated_at ??
+  conversation?.updatedAt ??
+  conversation?.last_message_at ??
+  conversation?.lastMessageAt ??
+  conversation?.created_at ??
+  conversation?.createdAt ??
+  null;
+
+const getConversationTitle = (conversation) =>
+  text(
+    conversation?.subject ??
+      conversation?.title ??
+      conversation?.name ??
+      'Support conversation'
+  );
+
+const getStatus = (conversation) => {
+  const status = text(
+    conversation?.status ?? 'open'
+  ).toLowerCase();
+
+  return status === 'closed' ||
+    status === 'resolved'
+    ? 'closed'
+    : 'open';
+};
+
 const getUnreadCount = (conversation) => {
-  const count =
+  const value =
     conversation?.unread_count ??
     conversation?.unreadCount ??
     conversation?.unread_messages ??
     conversation?.unreadMessages ??
     0;
 
-  const parsed = Number(count);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  const number = Number(value);
+
+  return Number.isFinite(number) && number > 0
+    ? number
+    : 0;
+};
+
+const getConversationPreview = (conversation) => {
+  const messages = Array.isArray(
+    conversation?.messages
+  )
+    ? conversation.messages
+    : [];
+
+  const latest = [...messages]
+    .reverse()
+    .find(Boolean);
+
+  return (
+    getMessageContent(latest) ||
+    text(
+      conversation?.last_message ??
+        conversation?.lastMessage ??
+        conversation?.preview
+    ) ||
+    'No messages yet'
+  );
 };
 
 const getExplicitOwnValue = (message) => {
-  if (message?.is_own !== undefined && message?.is_own !== null) {
+  if (
+    message?.is_own !== undefined &&
+    message?.is_own !== null
+  ) {
     return Boolean(message.is_own);
   }
 
-  if (message?.isOwn !== undefined && message?.isOwn !== null) {
+  if (
+    message?.isOwn !== undefined &&
+    message?.isOwn !== null
+  ) {
     return Boolean(message.isOwn);
   }
 
@@ -210,26 +233,167 @@ const getExplicitOwnValue = (message) => {
     return Boolean(message.from_current_user);
   }
 
+  if (
+    message?.fromCurrentUser !== undefined &&
+    message?.fromCurrentUser !== null
+  ) {
+    return Boolean(message.fromCurrentUser);
+  }
+
   return null;
 };
 
-const getOwnMessage = (message, isAdmin, senderIsAdmin) => {
-  const explicit = getExplicitOwnValue(message);
+const getRole = (user) =>
+  text(
+    user?.role ??
+      user?.user_role ??
+      user?.userRole ??
+      ''
+  ).toLowerCase();
 
-  if (explicit !== null) return explicit;
+const isAdminUser = (user) => {
+  const role = getRole(user);
 
-  return isAdmin ? senderIsAdmin : !senderIsAdmin;
+  return Boolean(
+    user?.is_admin ||
+      user?.isAdmin ||
+      user?.is_staff ||
+      user?.isStaff ||
+      role === 'admin' ||
+      role === 'support' ||
+      role === 'staff' ||
+      role === 'agent'
+  );
 };
 
-const normalizeMessageForRender = (message, isAdmin) => {
-  if (!message) return null;
+const getSenderIsAdmin = (message) => {
+  const user = getMessageUser(message);
 
-  const user = getUser(message);
-  const senderIsAdmin = Boolean(
+  return Boolean(
     message?.is_admin ||
+      message?.isAdmin ||
       message?.sender_is_admin ||
+      message?.senderIsAdmin ||
+      message?.author_is_admin ||
+      message?.authorIsAdmin ||
       isAdminUser(user)
   );
+};
+
+const getOwnMessage = (
+  message,
+  isAdmin,
+  senderIsAdmin
+) => {
+  const explicit = getExplicitOwnValue(message);
+
+  if (explicit !== null) {
+    return explicit;
+  }
+
+  return isAdmin
+    ? senderIsAdmin
+    : !senderIsAdmin;
+};
+
+/*
+ * IMPORTANT:
+ * Resolve the actual sender name from as many common API
+ * shapes as possible.
+ */
+const getSenderName = (
+  message,
+  {
+    ownMessage = false,
+    senderIsAdmin = false,
+  } = {}
+) => {
+  const user = getMessageUser(message);
+
+  const candidates = [
+    message?.sender_name,
+    message?.senderName,
+    message?.author_name,
+    message?.authorName,
+    message?.user_name,
+    message?.userName,
+    message?.display_name,
+    message?.displayName,
+    message?.full_name,
+    message?.fullName,
+    message?.name,
+
+    user?.full_name,
+    user?.fullName,
+    user?.display_name,
+    user?.displayName,
+    user?.name,
+    user?.username,
+    user?.first_name &&
+      user?.last_name
+      ? `${user.first_name} ${user.last_name}`
+      : null,
+    user?.firstName &&
+      user?.lastName
+      ? `${user.firstName} ${user.lastName}`
+      : null,
+  ];
+
+  const actualName = candidates
+    .map((item) => text(item).trim())
+    .find(Boolean);
+
+  if (actualName) {
+    return actualName;
+  }
+
+  if (ownMessage) {
+    return 'You';
+  }
+
+  if (senderIsAdmin) {
+    return 'Support';
+  }
+
+  return 'Customer';
+};
+
+const getInitialsFromName = (name) => {
+  const clean = text(name).trim();
+
+  if (!clean) return '?';
+
+  return clean
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase();
+};
+
+const isDeleted = (message) =>
+  Boolean(
+    message?.is_deleted ||
+      message?.isDeleted ||
+      message?.deleted
+  );
+
+/* ================================================================
+   MESSAGE
+================================================================ */
+
+const ChatMessage = ({
+  message,
+  previousMessage,
+  nextMessage,
+  isAdmin,
+  onRetry,
+}) => {
+  if (!message) return null;
+
+  const senderIsAdmin =
+    getSenderIsAdmin(message);
 
   const ownMessage = getOwnMessage(
     message,
@@ -237,201 +401,262 @@ const normalizeMessageForRender = (message, isAdmin) => {
     senderIsAdmin
   );
 
-  return {
-    ...message,
-    __user: user,
-    __senderIsAdmin: senderIsAdmin,
-    __ownMessage: ownMessage,
-    __content: getMessageContent(message),
-    __createdAt: getMessageDate(message),
-    __deleted: isDeletedMessage(message),
-  };
-};
+  const previousSenderIsAdmin =
+    previousMessage
+      ? getSenderIsAdmin(previousMessage)
+      : null;
 
-const getConversationStatusText = (conversation) => {
-  const status = getStatus(conversation);
+  const previousOwn =
+    previousMessage
+      ? getOwnMessage(
+          previousMessage,
+          isAdmin,
+          previousSenderIsAdmin
+        )
+      : null;
 
-  if (status === 'closed') return 'Conversation closed';
-  if (conversation?.admin_id) return 'Support representative assigned';
+  const nextSenderIsAdmin =
+    nextMessage
+      ? getSenderIsAdmin(nextMessage)
+      : null;
 
-  return 'Waiting for support';
-};
+  const nextOwn =
+    nextMessage
+      ? getOwnMessage(
+          nextMessage,
+          isAdmin,
+          nextSenderIsAdmin
+        )
+      : null;
 
-// ================================================================
-// ChatMessage
-// ================================================================
+  const groupedPrevious =
+    previousMessage &&
+    previousOwn === ownMessage &&
+    previousSenderIsAdmin === senderIsAdmin &&
+    sameDay(
+      getMessageDate(previousMessage),
+      getMessageDate(message)
+    );
 
-const ChatMessage = ({
-  message,
-  isAdmin,
-  previousMessage,
-  nextMessage,
-  onRetry,
-}) => {
-  const normalized = normalizeMessageForRender(message, isAdmin);
-  if (!normalized) return null;
+  const groupedNext =
+    nextMessage &&
+    nextOwn === ownMessage &&
+    nextSenderIsAdmin === senderIsAdmin &&
+    sameDay(
+      getMessageDate(message),
+      getMessageDate(nextMessage)
+    );
 
-  const {
-    __user: user,
-    __senderIsAdmin: senderIsAdmin,
-    __ownMessage: ownMessage,
-    __content: content,
-    __createdAt: createdAt,
-    __deleted: deleted,
-  } = normalized;
-
-  const edited = Boolean(message?.is_edited || message?.edited);
-  const failed = message?.__status === 'failed';
-  const sending = message?.__status === 'sending';
-
-  const previousNormalized = normalizeMessageForRender(
-    previousMessage,
-    isAdmin
+  const senderName = getSenderName(
+    message,
+    {
+      ownMessage,
+      senderIsAdmin,
+    }
   );
 
-  const nextNormalized = normalizeMessageForRender(nextMessage, isAdmin);
+  const content = getMessageContent(message);
 
-  const groupedWithPrevious =
-    previousNormalized &&
-    previousNormalized.__ownMessage === ownMessage &&
-    previousNormalized.__senderIsAdmin === senderIsAdmin;
+  const failed =
+    message?.__status === 'failed';
 
-  const groupedWithNext =
-    nextNormalized &&
-    nextNormalized.__ownMessage === ownMessage &&
-    nextNormalized.__senderIsAdmin === senderIsAdmin;
+  const sending =
+    message?.__status === 'sending';
 
-  const senderName = senderIsAdmin
-    ? 'Support'
-    : ownMessage
-    ? 'You'
-    : user?.full_name || user?.name || 'Support';
+  const edited = Boolean(
+    message?.is_edited ||
+      message?.isEdited ||
+      message?.edited
+  );
+
+  const deleted = isDeleted(message);
 
   return (
     <div
-      className={`flex w-full ${
-        ownMessage ? 'justify-end' : 'justify-start'
-      } ${groupedWithPrevious ? 'mt-1' : 'mt-4 first:mt-0'}`}
+      className={[
+        'flex w-full',
+        ownMessage
+          ? 'justify-end'
+          : 'justify-start',
+        groupedPrevious
+          ? 'mt-0.5'
+          : 'mt-4',
+      ].join(' ')}
     >
       <div
-        className={`flex min-w-0 max-w-[92%] gap-2.5 sm:max-w-[72%] ${
-          ownMessage ? 'flex-row-reverse' : ''
-        }`}
+        className={[
+          'flex max-w-[88%] items-end gap-2',
+          'sm:max-w-[70%]',
+          ownMessage
+            ? 'flex-row-reverse'
+            : 'flex-row',
+        ].join(' ')}
       >
-        {/* Avatar only at the beginning of a message group */}
-        <div className="w-8 shrink-0">
-          {!groupedWithPrevious && (
+        {/* Avatar */}
+        <div className="w-7 shrink-0">
+          {!groupedPrevious ? (
             <div
-              className={`mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl ${
-                senderIsAdmin
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : ownMessage
+              className={[
+                'flex h-7 w-7 items-center justify-center',
+                'rounded-full text-[9px] font-bold',
+                ownMessage
                   ? 'bg-primary-100 text-primary-700'
-                  : 'bg-gray-100 text-gray-500'
-              }`}
+                  : senderIsAdmin
+                  ? 'bg-gray-900 text-white'
+                  : 'bg-gray-100 text-gray-600',
+              ].join(' ')}
             >
               {senderIsAdmin ? (
                 <ShieldCheck className="h-3.5 w-3.5" />
-              ) : user?.full_name || user?.name ? (
-                <span className="text-[10px] font-bold">
-                  {getInitials(user)}
-                </span>
               ) : (
-                <UserRound className="h-3.5 w-3.5" />
+                getInitialsFromName(
+                  senderName
+                )
               )}
             </div>
+          ) : (
+            <div />
           )}
         </div>
 
-        <div className={`min-w-0 ${ownMessage ? 'text-right' : 'text-left'}`}>
-          {!groupedWithPrevious && (
+        <div
+          className={[
+            'min-w-0',
+            ownMessage
+              ? 'items-end'
+              : 'items-start',
+          ].join(' ')}
+        >
+          {/* Sender */}
+          {!groupedPrevious && (
             <div
-              className={`mb-1.5 flex items-center gap-1.5 ${
-                ownMessage ? 'justify-end' : 'justify-start'
-              }`}
+              className={[
+                'mb-1 flex items-center gap-1.5',
+                ownMessage
+                  ? 'justify-end'
+                  : 'justify-start',
+              ].join(' ')}
             >
               <span className="text-[11px] font-semibold text-gray-500">
                 {senderName}
               </span>
 
               {senderIsAdmin && (
-                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">
+                <span className="text-[9px] font-medium text-gray-400">
                   Support
                 </span>
               )}
             </div>
           )}
 
+          {/* Bubble */}
           <div
-            className={`inline-block max-w-full px-3.5 py-2.5 text-sm leading-6 ${
+            className={[
+              'relative inline-block max-w-full',
+              'px-3.5 py-2.5',
+              'text-[13px] leading-[1.55]',
               ownMessage
-                ? `bg-primary-600 text-white shadow-sm ${
-                    groupedWithPrevious
+                ? [
+                    'bg-primary-600 text-white',
+                    groupedPrevious
                       ? 'rounded-2xl rounded-tr-md'
-                      : groupedWithNext
+                      : groupedNext
                       ? 'rounded-2xl rounded-br-md'
-                      : 'rounded-2xl rounded-tr-md'
-                  }`
-                : `border border-gray-200 bg-white text-gray-700 ${
-                    groupedWithPrevious
+                      : 'rounded-2xl rounded-tr-md',
+                  ].join(' ')
+                : [
+                    'border border-gray-200',
+                    'bg-white text-gray-800',
+                    groupedPrevious
                       ? 'rounded-2xl rounded-tl-md'
-                      : groupedWithNext
+                      : groupedNext
                       ? 'rounded-2xl rounded-bl-md'
-                      : 'rounded-2xl rounded-tl-md'
-                  }`
-            }`}
+                      : 'rounded-2xl rounded-tl-md',
+                  ].join(' '),
+              sending
+                ? 'opacity-70'
+                : '',
+              failed
+                ? 'border-rose-200'
+                : '',
+            ].join(' ')}
           >
             {deleted ? (
               <p
-                className={`italic ${
-                  ownMessage ? 'text-white/60' : 'text-gray-400'
-                }`}
+                className={
+                  ownMessage
+                    ? 'italic text-white/60'
+                    : 'italic text-gray-400'
+                }
               >
                 This message was deleted.
               </p>
             ) : (
-              <p className="whitespace-pre-wrap break-words">{content}</p>
+              <p className="whitespace-pre-wrap break-words">
+                {content}
+              </p>
             )}
           </div>
 
-          {!groupedWithNext && (
+          {/* Metadata */}
+          {!groupedNext && (
             <div
-              className={`mt-1.5 flex items-center gap-2 ${
-                ownMessage ? 'justify-end' : 'justify-start'
-              }`}
+              className={[
+                'mt-1 flex items-center gap-1.5',
+                ownMessage
+                  ? 'justify-end'
+                  : 'justify-start',
+              ].join(' ')}
             >
-              <span className="text-[10px] text-gray-400">
-                {formatTime(createdAt)}
+              <span className="text-[9px] text-gray-400">
+                {formatTime(
+                  getMessageDate(message)
+                )}
               </span>
 
               {edited && (
-                <span className="text-[10px] italic text-gray-400">
+                <span className="text-[9px] italic text-gray-400">
                   edited
                 </span>
               )}
 
               {sending && (
-                <span className="text-[10px] text-gray-400">
-                  Sending…
+                <span className="text-[9px] text-gray-400">
+                  Sending
                 </span>
               )}
 
               {failed && (
                 <>
-                  <span className="text-[10px] font-medium text-rose-500">
+                  <span className="text-[9px] font-semibold text-rose-500">
                     Failed
                   </span>
+
                   {onRetry && (
                     <button
                       type="button"
-                      onClick={() => onRetry(message)}
-                      className="text-[10px] font-semibold text-primary-600 hover:text-primary-700"
+                      onClick={() =>
+                        onRetry(message)
+                      }
+                      className="text-[9px] font-bold text-primary-600 hover:text-primary-700"
                     >
                       Retry
                     </button>
                   )}
                 </>
               )}
+
+              {ownMessage &&
+                !sending &&
+                !failed && (
+                  message?.read ||
+                  message?.is_read ||
+                  message?.isRead ? (
+                    <CheckCheck className="h-3 w-3 text-primary-500" />
+                  ) : (
+                    <Check className="h-3 w-3 text-gray-400" />
+                  )
+                )}
             </div>
           )}
         </div>
@@ -440,650 +665,654 @@ const ChatMessage = ({
   );
 };
 
-// ================================================================
-// ChatArea
-// ================================================================
+/* ================================================================
+   CHAT HEADER
+================================================================ */
 
-const ChatArea = ({
+const ChatHeader = ({
   conversation,
-  onToggleSidebar,
+  isAdmin,
   isMobile,
-  onNewChat,
+  onMenu,
   onBack,
-  switching,
+}) => {
+  const status = getStatus(
+    conversation
+  );
+
+  const assigned = Boolean(
+    conversation?.admin_id ??
+      conversation?.adminId ??
+      conversation?.assigned_to ??
+      conversation?.assignedTo
+  );
+
+  return (
+    <header className="relative z-20 h-[68px] shrink-0 border-b border-gray-200 bg-white">
+      <div className="flex h-full items-center gap-3 px-4 sm:px-6">
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50"
+            aria-label="Back"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+        )}
+
+        {isMobile && (
+          <button
+            type="button"
+            onClick={onMenu}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50"
+            aria-label="Conversations"
+          >
+            <Menu className="h-4 w-4" />
+          </button>
+        )}
+
+        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-700">
+          {isAdmin ? (
+            <UserRound className="h-4 w-4" />
+          ) : (
+            <Headphones className="h-4 w-4" />
+          )}
+
+          {status === 'open' && (
+            <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+          )}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-sm font-bold text-gray-900">
+            {getConversationTitle(
+              conversation
+            )}
+          </h1>
+
+          <div className="mt-0.5 flex items-center gap-1.5">
+            <span
+              className={[
+                'h-1.5 w-1.5 rounded-full',
+                status === 'closed'
+                  ? 'bg-gray-300'
+                  : assigned
+                  ? 'bg-emerald-500'
+                  : 'bg-amber-400',
+              ].join(' ')}
+            />
+
+            <span className="truncate text-[10px] font-medium text-gray-400">
+              {status === 'closed'
+                ? 'Closed'
+                : assigned
+                ? 'Support is handling this conversation'
+                : 'Waiting for support'}
+            </span>
+          </div>
+        </div>
+
+        <div className="hidden items-center gap-1.5 text-[10px] font-medium text-gray-400 sm:flex">
+          <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
+          Private
+        </div>
+      </div>
+    </header>
+  );
+};
+
+/* ================================================================
+   COMPOSER
+================================================================ */
+
+const Composer = ({
+  conversation,
+  onNewChat,
 }) => {
   const {
     sendMessage,
-    loading,
-    isAdmin,
     addLocalMessage,
     updateLocalMessage,
   } = useChat();
 
-  const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [newMessageAnnouncement, setNewMessageAnnouncement] = useState('');
+  const [value, setValue] =
+    useState('');
 
-  const messagesEndRef = useRef(null);
-  const messagesContainerRef = useRef(null);
-  const textareaRef = useRef(null);
-  const previousMessageCountRef = useRef(0);
-  const shouldScrollAfterSendRef = useRef(false);
+  const [sending, setSending] =
+    useState(false);
 
-  const messages = Array.isArray(conversation?.messages)
-    ? conversation.messages
-    : [];
+  const textareaRef =
+    useRef(null);
 
-  const isClosed =
-    conversation?.status === 'closed' ||
-    conversation?.status === 'resolved';
-
-  const assigned = Boolean(conversation?.admin_id);
-
-  const activeConversationId = getConversationId(conversation);
-
-  const scrollToBottom = (behavior = 'smooth') => {
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior,
-        block: 'end',
-      });
-    });
-  };
-
-  const isNearBottom = () => {
-    const element = messagesContainerRef.current;
-    if (!element) return true;
-
-    const distanceFromBottom =
-      element.scrollHeight -
-      element.scrollTop -
-      element.clientHeight;
-
-    return distanceFromBottom < 180;
-  };
-
-  // Scroll when opening a conversation and when the user is already near
-  // the bottom. New incoming messages won't yank the user away from older
-  // messages they are reading.
-  useEffect(() => {
-    const previousCount = previousMessageCountRef.current;
-    const countChanged = messages.length !== previousCount;
-
-    if (!countChanged) return;
-
-    const wasNearBottom =
-      previousCount === 0 || isNearBottom();
-
-    if (wasNearBottom || shouldScrollAfterSendRef.current) {
-      scrollToBottom(previousCount === 0 ? 'auto' : 'smooth');
-    }
-
-    if (messages.length > previousCount && previousCount > 0) {
-      const latest = messages[messages.length - 1];
-      const latestText = getMessageContent(latest);
-
-      if (latestText) {
-        setNewMessageAnnouncement(
-          `New message: ${latestText.slice(0, 100)}`
-        );
-
-        window.clearTimeout(
-          ChatArea.__announcementTimer
-        );
-
-        ChatArea.__announcementTimer = window.setTimeout(() => {
-          setNewMessageAnnouncement('');
-        }, 2500);
-      }
-    }
-
-    previousMessageCountRef.current = messages.length;
-    shouldScrollAfterSendRef.current = false;
-  }, [messages.length, activeConversationId]);
+  const closed =
+    getStatus(conversation) ===
+    'closed';
 
   useEffect(() => {
-    if (!conversation) return;
+    const textarea =
+      textareaRef.current;
 
-    previousMessageCountRef.current = messages.length;
-
-    const timer = setTimeout(() => {
-      textareaRef.current?.focus();
-      scrollToBottom('auto');
-    }, 120);
-
-    return () => clearTimeout(timer);
-  }, [activeConversationId]);
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
     if (!textarea) return;
 
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 132)}px`;
-  }, [message]);
 
-  useEffect(() => {
-    return () => {
-      if (ChatArea.__announcementTimer) {
-        window.clearTimeout(ChatArea.__announcementTimer);
-      }
-    };
-  }, []);
+    textarea.style.height = `${Math.min(
+      textarea.scrollHeight,
+      128
+    )}px`;
+  }, [value]);
 
-  const handleSend = async () => {
-    const trimmed = message.trim();
+  const send = async () => {
+    const content = value.trim();
 
     if (
-      !trimmed ||
-      !conversation ||
-      isClosed ||
-      sending
+      !content ||
+      sending ||
+      closed
     ) {
       return;
     }
 
-    const conversationId = getConversationId(conversation);
-    if (conversationId == null) return;
+    const conversationId =
+      getConversationId(
+        conversation
+      );
 
-    const optimisticId = `local-${Date.now()}-${Math.random()
-      .toString(36)
-      .slice(2, 8)}`;
+    if (conversationId == null) {
+      return;
+    }
 
-    const optimisticMessage = {
+    const optimisticId =
+      `local-${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 9)}`;
+
+    const optimistic = {
       id: optimisticId,
-      conversation_id: conversationId,
-      content: trimmed,
-      message: trimmed,
-      created_at: new Date().toISOString(),
+      conversation_id:
+        conversationId,
+      content,
+      message: content,
+      created_at:
+        new Date().toISOString(),
       is_own: true,
       __status: 'sending',
-      user: {
-        full_name: 'You',
-      },
     };
 
-    // Optional context methods enable optimistic UI. If they are not
-    // implemented by the current ChatContext, the server remains the source
-    // of truth and the existing sendMessage contract still works.
-    const canAddLocalMessage =
-      typeof addLocalMessage === 'function';
-
-    const canUpdateLocalMessage =
-      typeof updateLocalMessage === 'function';
-
-    setMessage('');
+    setValue('');
     setSending(true);
-    shouldScrollAfterSendRef.current = true;
 
     try {
-      if (canAddLocalMessage) {
-        addLocalMessage(conversationId, optimisticMessage);
+      if (
+        typeof addLocalMessage ===
+        'function'
+      ) {
+        addLocalMessage(
+          conversationId,
+          optimistic
+        );
       }
 
-      await sendMessage(conversationId, trimmed);
+      await sendMessage(
+        conversationId,
+        content
+      );
 
-      if (canUpdateLocalMessage) {
-        updateLocalMessage(conversationId, optimisticId, {
-          __status: 'sent',
-        });
+      if (
+        typeof updateLocalMessage ===
+        'function'
+      ) {
+        updateLocalMessage(
+          conversationId,
+          optimisticId,
+          {
+            __status: 'sent',
+          }
+        );
       }
     } catch (error) {
-      if (canUpdateLocalMessage) {
-        updateLocalMessage(conversationId, optimisticId, {
-          __status: 'failed',
-        });
-      } else {
-        setMessage(trimmed);
-      }
+      console.error(
+        'Failed to send message:',
+        error
+      );
 
-      console.error('Failed to send message:', error);
+      if (
+        typeof updateLocalMessage ===
+        'function'
+      ) {
+        updateLocalMessage(
+          conversationId,
+          optimisticId,
+          {
+            __status: 'failed',
+          }
+        );
+      } else {
+        setValue(content);
+      }
     } finally {
       setSending(false);
+
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+      });
     }
-  };
-
-  const handleRetry = async (failedMessage) => {
-    const retryText = getMessageContent(failedMessage);
-    if (!retryText || sending || isClosed) return;
-
-    setMessage(retryText);
-    setTimeout(() => {
-      textareaRef.current?.focus();
-    }, 0);
   };
 
   const handleKeyDown = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
+    if (
+      event.key === 'Enter' &&
+      !event.shiftKey
+    ) {
       event.preventDefault();
-      handleSend();
+      send();
     }
   };
 
-  const HeaderButton = ({ icon: Icon, label, onClick }) => (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={label}
-      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900 active:scale-95"
-    >
-      <Icon className="h-4 w-4" />
-    </button>
-  );
-
-  if (!conversation && switching) {
+  if (closed) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
-        <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3.5 sm:px-6">
-          {onBack && (
-            <HeaderButton
-              icon={ArrowLeft}
-              label="Back to support"
-              onClick={onBack}
-            />
+      <div className="shrink-0 border-t border-gray-200 bg-white px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-3">
+          <Clock3 className="h-4 w-4 shrink-0 text-gray-400" />
+
+          <p className="min-w-0 flex-1 text-xs text-gray-500">
+            This conversation is closed.
+          </p>
+
+          {onNewChat && (
+            <button
+              type="button"
+              onClick={onNewChat}
+              className="shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-[10px] font-bold text-white hover:bg-primary-700"
+            >
+              New chat
+            </button>
           )}
-
-          {isMobile && (
-            <HeaderButton
-              icon={Menu}
-              label="Open conversations"
-              onClick={onToggleSidebar}
-            />
-          )}
-
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-            <Headphones className="h-5 w-5" />
-          </div>
-
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-gray-900">
-              Opening conversation…
-            </p>
-            <p className="mt-0.5 text-xs text-gray-400">
-              Loading messages
-            </p>
-          </div>
-        </header>
-
-        <div className="flex min-h-0 flex-1 items-center justify-center">
-          <div className="flex flex-col items-center gap-3 text-gray-400">
-            <Loader2 className="h-6 w-6 animate-spin text-primary-500" />
-            <p className="text-xs font-medium">
-              Loading conversation
-            </p>
-          </div>
         </div>
       </div>
     );
   }
-
-  if (!conversation) {
-    return (
-      <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
-        <header className="flex shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 py-3.5 sm:px-6">
-          {onBack && (
-            <HeaderButton
-              icon={ArrowLeft}
-              label="Back to support"
-              onClick={onBack}
-            />
-          )}
-
-          {isMobile && (
-            <HeaderButton
-              icon={Menu}
-              label="Open conversations"
-              onClick={onToggleSidebar}
-            />
-          )}
-
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-            <Headphones className="h-5 w-5" />
-          </div>
-
-          <div>
-            <p className="text-sm font-bold text-gray-900">
-              Support centre
-            </p>
-            <p className="mt-0.5 text-xs text-gray-500">
-              We're here to help
-            </p>
-          </div>
-        </header>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-10">
-          <div className="flex min-h-full items-center justify-center">
-            <div className="w-full max-w-md text-center">
-              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-gray-200 bg-white text-primary-600 shadow-sm">
-                <Headphones className="h-7 w-7" />
-              </div>
-
-              <p className="mt-6 text-[10px] font-bold uppercase tracking-[0.16em] text-primary-600">
-                Customer support
-              </p>
-
-              <h2 className="mt-2 text-2xl font-bold tracking-tight text-gray-950">
-                How can we help?
-              </h2>
-
-              <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-gray-500">
-                Start a private conversation with our support team about
-                your account, payments, cards, or other services.
-              </p>
-
-              <div className="mt-7 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                {[
-                  ['Account', 'Account questions'],
-                  ['Payments', 'Payment assistance'],
-                  ['Cards', 'Card support'],
-                ].map(([title, text]) => (
-                  <div
-                    key={title}
-                    className="rounded-xl border border-gray-200 bg-white px-3.5 py-3 text-left"
-                  >
-                    <p className="text-[11px] font-semibold text-gray-800">
-                      {title}
-                    </p>
-                    <p className="mt-1 text-[10px] leading-4 text-gray-400">
-                      {text}
-                    </p>
-                  </div>
-                ))}
-              </div>
-
-              {onNewChat && (
-                <button
-                  type="button"
-                  onClick={onNewChat}
-                  className="mt-7 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-5 py-3 text-xs font-bold text-white shadow-sm transition hover:bg-primary-700 active:scale-[0.98]"
-                >
-                  <MessageCircle className="h-4 w-4" />
-                  Start a conversation
-                </button>
-              )}
-
-              <div className="mt-5 flex items-center justify-center gap-1.5 text-[10px] font-medium text-gray-400">
-                <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                Private support communication
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const statusText = getConversationStatusText(conversation);
-  const status = getStatus(conversation);
-
-  const statusColor =
-    status === 'closed'
-      ? 'text-gray-400'
-      : assigned
-      ? 'text-emerald-600'
-      : 'text-amber-600';
-
-  const statusDot =
-    status === 'closed'
-      ? 'bg-gray-400'
-      : assigned
-      ? 'bg-emerald-500'
-      : 'bg-amber-500';
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-gray-50">
-      {/* Header */}
-      <header className="shrink-0 border-b border-gray-200 bg-white">
-        <div className="flex items-center gap-3 px-4 py-3 sm:px-6">
-          {onBack && (
-            <HeaderButton
-              icon={ArrowLeft}
-              label="Back to support"
-              onClick={onBack}
+    <div className="shrink-0 border-t border-gray-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
+      <div className="mx-auto max-w-3xl">
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-1.5 transition focus-within:border-primary-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-100">
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              value={value}
+              rows={1}
+              maxLength={5000}
+              disabled={sending}
+              onChange={(event) =>
+                setValue(
+                  event.target.value
+                )
+              }
+              onKeyDown={
+                handleKeyDown
+              }
+              placeholder="Write a message..."
+              className="max-h-[128px] min-h-[42px] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-sm leading-5 text-gray-900 outline-none placeholder:text-gray-400"
             />
-          )}
 
-          {isMobile && (
-            <HeaderButton
-              icon={Menu}
-              label="Open conversations"
-              onClick={onToggleSidebar}
-            />
-          )}
-
-          <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-            {isAdmin ? (
-              <UserRound className="h-5 w-5" />
-            ) : (
-              <Headphones className="h-5 w-5" />
-            )}
-
-            {status !== 'closed' && (
-              <span
-                className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-white ${statusDot}`}
-              />
-            )}
-          </div>
-
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-bold text-gray-900">
-              {getConversationTitle(conversation)}
-            </h1>
-
-            <div className="mt-1 flex items-center gap-1.5">
-              <span className={`h-1.5 w-1.5 rounded-full ${statusDot}`} />
-              <span
-                className={`truncate text-[10px] font-semibold ${statusColor}`}
-              >
-                {statusText}
-              </span>
-            </div>
-          </div>
-
-          <div className="hidden items-center gap-1.5 text-[10px] font-medium text-gray-400 sm:flex">
-            <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-            Private
-          </div>
-        </div>
-      </header>
-
-      {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
-      >
-        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-4 py-5 sm:px-8 sm:py-7">
-          <div
-            className="sr-only"
-            aria-live="polite"
-          >
-            {newMessageAnnouncement}
-          </div>
-
-          {messages.length === 0 ? (
-            <div className="flex flex-1 items-center justify-center py-12">
-              <div className="text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-200 bg-white text-primary-600 shadow-sm">
-                  <MessageCircle className="h-6 w-6" />
-                </div>
-
-                <p className="mt-5 text-sm font-bold text-gray-800">
-                  Conversation started
-                </p>
-
-                <p className="mx-auto mt-1.5 max-w-xs text-xs leading-5 text-gray-500">
-                  Send your first message and our support team will assist
-                  you.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <>
-              <div className="mb-5 flex justify-center">
-                <div className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-gray-400 shadow-sm">
-                  Private conversation
-                </div>
-              </div>
-
-              <div className="flex flex-col">
-                {messages.map((msg, index) => {
-                  const previous = messages[index - 1];
-                  const next = messages[index + 1];
-                  const currentDate = getMessageDate(msg);
-                  const previousDate = getMessageDate(previous);
-
-                  const showDate =
-                    currentDate &&
-                    (!previousDate ||
-                      !isSameDay(currentDate, previousDate));
-
-                  return (
-                    <React.Fragment
-                      key={getMessageId(msg) || `message-${index}`}
-                    >
-                      {showDate && (
-                        <div className="my-5 flex items-center gap-3">
-                          <div className="h-px flex-1 bg-gray-200" />
-                          <span className="shrink-0 text-[10px] font-semibold text-gray-400">
-                            {formatDateSeparator(currentDate)}
-                          </span>
-                          <div className="h-px flex-1 bg-gray-200" />
-                        </div>
-                      )}
-
-                      <ChatMessage
-                        message={msg}
-                        isAdmin={isAdmin}
-                        previousMessage={previous}
-                        nextMessage={next}
-                        onRetry={handleRetry}
-                      />
-                    </React.Fragment>
-                  );
-                })}
-
-                <div ref={messagesEndRef} />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Composer */}
-      <div className="shrink-0 border-t border-gray-200 bg-white px-3 py-3 sm:px-6 sm:py-4">
-        <div className="mx-auto w-full max-w-3xl">
-          {isClosed ? (
-            <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gray-100 text-gray-400">
-                <Clock3 className="h-4 w-4" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="text-xs font-semibold text-gray-700">
-                  This conversation is closed
-                </p>
-                <p className="mt-0.5 text-[10px] text-gray-400">
-                  Start a new conversation for further assistance.
-                </p>
-              </div>
-
-              {onNewChat && (
-                <button
-                  type="button"
-                  onClick={onNewChat}
-                  className="shrink-0 rounded-lg bg-primary-600 px-3 py-2 text-[10px] font-semibold text-white transition hover:bg-primary-700"
-                >
-                  New chat
-                </button>
+            <button
+              type="button"
+              disabled={
+                sending ||
+                !value.trim()
+              }
+              onClick={send}
+              className={[
+                'flex h-10 w-10 shrink-0',
+                'items-center justify-center',
+                'rounded-xl transition',
+                value.trim() && !sending
+                  ? 'bg-primary-600 text-white hover:bg-primary-700'
+                  : 'bg-gray-200 text-gray-400',
+              ].join(' ')}
+              aria-label="Send"
+            >
+              {sending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
               )}
-            </div>
-          ) : (
-            <>
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-1.5 shadow-sm transition focus-within:border-primary-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-100">
-                <div className="flex items-end gap-2">
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={message}
-                    onChange={(event) =>
-                      setMessage(event.target.value)
-                    }
-                    onKeyDown={handleKeyDown}
-                    disabled={sending}
-                    placeholder="Write a message to support..."
-                    maxLength={5000}
-                    className="max-h-[132px] min-h-[42px] flex-1 resize-none overflow-y-auto bg-transparent px-3 py-2.5 text-sm leading-5 text-gray-900 placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  />
+            </button>
+          </div>
+        </div>
 
-                  <button
-                    type="button"
-                    onClick={handleSend}
-                    disabled={!message.trim() || sending}
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
-                      message.trim() && !sending
-                        ? 'bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:scale-95'
-                        : 'bg-gray-200 text-gray-400'
-                    }`}
-                    aria-label="Send message"
-                  >
-                    {sending ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Send className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
+        <div className="mt-1.5 flex items-center justify-between px-1">
+          <span className="text-[9px] text-gray-400">
+            Enter to send · Shift + Enter for a new line
+          </span>
 
-              <div className="mt-1.5 flex items-center justify-between px-1">
-                <p className="text-[10px] text-gray-400">
-                  Enter to send · Shift + Enter for a new line
-                </p>
-
-                <span className="hidden text-[10px] text-gray-400 sm:inline">
-                  {message.length}/5000
-                </span>
-              </div>
-            </>
-          )}
+          <span className="hidden text-[9px] text-gray-400 sm:block">
+            {value.length}/5000
+          </span>
         </div>
       </div>
     </div>
   );
 };
 
-// ================================================================
-// ConversationItem
-// ================================================================
+/* ================================================================
+   CHAT BODY
+================================================================ */
+
+const ChatBody = ({
+  conversation,
+  isAdmin,
+}) => {
+  const messages =
+    Array.isArray(
+      conversation?.messages
+    )
+      ? conversation.messages
+      : [];
+
+  const scrollRef =
+    useRef(null);
+
+  const bottomRef =
+    useRef(null);
+
+  const previousCount =
+    useRef(messages.length);
+
+  const announcementTimer =
+    useRef(null);
+
+  const [announcement, setAnnouncement] =
+    useState('');
+
+  const isNearBottom = () => {
+    const element =
+      scrollRef.current;
+
+    if (!element) return true;
+
+    const distance =
+      element.scrollHeight -
+      element.scrollTop -
+      element.clientHeight;
+
+    return distance < 160;
+  };
+
+  const scrollBottom = (
+    behavior = 'smooth'
+  ) => {
+    requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView(
+        {
+          behavior,
+          block: 'end',
+        }
+      );
+    });
+  };
+
+  useEffect(() => {
+    const oldCount =
+      previousCount.current;
+
+    const changed =
+      messages.length !== oldCount;
+
+    if (!changed) return;
+
+    const shouldScroll =
+      oldCount === 0 ||
+      isNearBottom();
+
+    if (shouldScroll) {
+      scrollBottom(
+        oldCount === 0
+          ? 'auto'
+          : 'smooth'
+      );
+    }
+
+    if (
+      messages.length > oldCount &&
+      oldCount > 0
+    ) {
+      const latest =
+        messages[
+          messages.length - 1
+        ];
+
+      const latestContent =
+        getMessageContent(latest);
+
+      if (latestContent) {
+        setAnnouncement(
+          `New message: ${latestContent.slice(
+            0,
+            100
+          )}`
+        );
+
+        if (
+          announcementTimer.current
+        ) {
+          clearTimeout(
+            announcementTimer.current
+          );
+        }
+
+        announcementTimer.current =
+          setTimeout(() => {
+            setAnnouncement('');
+          }, 2500);
+      }
+    }
+
+    previousCount.current =
+      messages.length;
+  }, [messages.length]);
+
+  useEffect(() => {
+    previousCount.current =
+      messages.length;
+
+    const timer =
+      setTimeout(() => {
+        scrollBottom('auto');
+      }, 50);
+
+    return () => {
+      clearTimeout(timer);
+
+      if (
+        announcementTimer.current
+      ) {
+        clearTimeout(
+          announcementTimer.current
+        );
+      }
+    };
+  }, [
+    getConversationId(
+      conversation
+    ),
+  ]);
+
+  const retry = (failedMessage) => {
+    const content =
+      getMessageContent(
+        failedMessage
+      );
+
+    if (!content) return;
+
+    window.dispatchEvent(
+      new CustomEvent(
+        'support-chat-retry',
+        {
+          detail: content,
+        }
+      )
+    );
+  };
+
+  return (
+    <div
+      ref={scrollRef}
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f8f9fb]"
+    >
+      <div className="mx-auto min-h-full w-full max-w-3xl px-4 py-5 sm:px-8 sm:py-7">
+        <div
+          className="sr-only"
+          aria-live="polite"
+        >
+          {announcement}
+        </div>
+
+        {messages.length === 0 ? (
+          <div className="flex min-h-[420px] items-center justify-center">
+            <div className="text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200">
+                <MessageCircle className="h-5 w-5" />
+              </div>
+
+              <p className="mt-4 text-sm font-semibold text-gray-800">
+                Start the conversation
+              </p>
+
+              <p className="mt-1 max-w-xs text-xs leading-5 text-gray-400">
+                Send a message below and a
+                support representative will
+                get back to you.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="mb-6 flex justify-center">
+              <span className="flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-[9px] font-medium text-gray-400 ring-1 ring-gray-200">
+                <ShieldCheck className="h-3 w-3 text-emerald-500" />
+                End-to-end support conversation
+              </span>
+            </div>
+
+            {messages.map(
+              (message, index) => {
+                const previous =
+                  messages[index - 1];
+
+                const next =
+                  messages[index + 1];
+
+                const currentDate =
+                  getMessageDate(
+                    message
+                  );
+
+                const previousDate =
+                  getMessageDate(
+                    previous
+                  );
+
+                const showDate =
+                  currentDate &&
+                  (!previousDate ||
+                    !sameDay(
+                      currentDate,
+                      previousDate
+                    ));
+
+                return (
+                  <React.Fragment
+                    key={
+                      getMessageId(
+                        message
+                      ) ??
+                      `message-${index}`
+                    }
+                  >
+                    {showDate && (
+                      <div className="my-6 flex items-center gap-3">
+                        <div className="h-px flex-1 bg-gray-200" />
+
+                        <span className="shrink-0 text-[9px] font-semibold text-gray-400">
+                          {formatDate(
+                            currentDate
+                          )}
+                        </span>
+
+                        <div className="h-px flex-1 bg-gray-200" />
+                      </div>
+                    )}
+
+                    <ChatMessage
+                      message={message}
+                      previousMessage={
+                        previous
+                      }
+                      nextMessage={
+                        next
+                      }
+                      isAdmin={isAdmin}
+                      onRetry={retry}
+                    />
+                  </React.Fragment>
+                )
+              }
+            )}
+
+            <div ref={bottomRef} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* ================================================================
+   CONVERSATION ITEM
+================================================================ */
 
 const ConversationItem = ({
   conversation,
   active,
-  selecting,
   onClick,
+  selecting,
 }) => {
-  const status = getStatus(conversation);
-  const unreadCount = getUnreadCount(conversation);
-  const unread = unreadCount > 0 && !active;
+  const unread =
+    getUnreadCount(
+      conversation
+    );
+
+  const status =
+    getStatus(conversation);
 
   return (
     <button
       type="button"
-      onClick={onClick}
       disabled={selecting}
-      className={`w-full border-b border-gray-100 px-4 py-3.5 text-left transition ${
+      onClick={onClick}
+      className={[
+        'w-full border-b border-gray-100',
+        'px-4 py-3 text-left',
+        'transition',
         active
-          ? 'bg-primary-50/70'
-          : 'bg-white hover:bg-gray-50'
-      } ${selecting ? 'cursor-wait opacity-70' : ''}`}
+          ? 'bg-primary-50'
+          : 'bg-white hover:bg-gray-50',
+      ].join(' ')}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex gap-3">
         <div
-          className={`relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+          className={[
+            'relative flex h-10 w-10',
+            'shrink-0 items-center justify-center',
+            'rounded-full',
             active
               ? 'bg-primary-100 text-primary-700'
-              : 'bg-gray-100 text-gray-500'
-          }`}
+              : 'bg-gray-100 text-gray-500',
+          ].join(' ')}
         >
           {selecting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -1091,64 +1320,68 @@ const ConversationItem = ({
             <MessageSquare className="h-4 w-4" />
           )}
 
-          {!selecting && status === 'open' && (
-            <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
-          )}
+          {status === 'open' &&
+            !selecting && (
+              <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+            )}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p
-              className={`min-w-0 flex-1 truncate text-xs ${
+              className={[
+                'min-w-0 flex-1 truncate text-xs',
                 unread
                   ? 'font-bold text-gray-900'
-                  : active
-                  ? 'font-semibold text-primary-900'
-                  : 'font-semibold text-gray-800'
-              }`}
+                  : 'font-semibold text-gray-800',
+              ].join(' ')}
             >
-              {getConversationTitle(conversation)}
+              {getConversationTitle(
+                conversation
+              )}
             </p>
 
-            <span className="shrink-0 text-[10px] font-medium text-gray-400">
+            <span className="shrink-0 text-[9px] text-gray-400">
               {formatConversationDate(
-                getConversationDate(conversation)
+                getConversationDate(
+                  conversation
+                )
               )}
             </span>
           </div>
 
           <p
-            className={`mt-1 truncate text-[10px] leading-5 ${
+            className={[
+              'mt-1 truncate text-[10px] leading-5',
               unread
                 ? 'font-medium text-gray-600'
-                : 'text-gray-500'
-            }`}
+                : 'text-gray-400',
+            ].join(' ')}
           >
-            {getConversationPreview(conversation)}
+            {getConversationPreview(
+              conversation
+            )}
           </p>
 
-          <div className="mt-1.5 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5">
-              {status === 'open' ? (
-                <>
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] font-semibold text-emerald-600">
-                    Open
-                  </span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-3 w-3 text-gray-400" />
-                  <span className="text-[10px] font-semibold text-gray-400">
-                    Closed
-                  </span>
-                </>
-              )}
-            </div>
+          <div className="mt-1.5 flex items-center justify-between">
+            <span
+              className={[
+                'text-[9px] font-semibold',
+                status === 'open'
+                  ? 'text-emerald-600'
+                  : 'text-gray-400',
+              ].join(' ')}
+            >
+              {status === 'open'
+                ? 'Open'
+                : 'Closed'}
+            </span>
 
-            {unread && (
+            {unread > 0 && (
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1.5 text-[9px] font-bold text-white">
-                {unreadCount > 99 ? '99+' : unreadCount}
+                {unread > 99
+                  ? '99+'
+                  : unread}
               </span>
             )}
           </div>
@@ -1158,59 +1391,79 @@ const ConversationItem = ({
   );
 };
 
-// ================================================================
-// ChatSidebar
-// ================================================================
+/* ================================================================
+   SIDEBAR
+================================================================ */
 
 const ChatSidebar = ({
-  conversations = [],
+  conversations,
   activeConversation,
-  selectingId,
-  onSelectConversation,
+  onSelect,
   onNewChat,
+  selectingId,
   loading,
-  mobile = false,
+  mobile,
   onClose,
 }) => {
-  const [search, setSearch] = useState('');
+  const [search, setSearch] =
+    useState('');
 
-  const filteredConversations = useMemo(() => {
-    const term = search.trim().toLowerCase();
+  const filtered =
+    useMemo(() => {
+      const query =
+        search.trim().toLowerCase();
 
-    if (!term) return conversations;
+      if (!query) {
+        return conversations;
+      }
 
-    return conversations.filter((conversation) => {
-      const title = getConversationTitle(conversation).toLowerCase();
-      const preview = getConversationPreview(conversation).toLowerCase();
-
-      return (
-        title.includes(term) ||
-        preview.includes(term)
+      return conversations.filter(
+        (conversation) => {
+          return (
+            getConversationTitle(
+              conversation
+            )
+              .toLowerCase()
+              .includes(query) ||
+            getConversationPreview(
+              conversation
+            )
+              .toLowerCase()
+              .includes(query)
+          );
+        }
       );
-    });
-  }, [conversations, search]);
+    }, [
+      conversations,
+      search,
+    ]);
 
-  const activeId = getConversationId(activeConversation);
+  const activeId =
+    getConversationId(
+      activeConversation
+    );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-white">
+      {/* Sidebar header */}
       <header className="shrink-0 border-b border-gray-200">
         <div className="flex items-center justify-between px-4 py-4">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-primary-600">
-              Support
-            </p>
-            <h2 className="mt-1 text-sm font-bold tracking-tight text-gray-900">
-              Conversations
+            <h2 className="text-sm font-bold text-gray-900">
+              Messages
             </h2>
+
+            <p className="mt-0.5 text-[10px] text-gray-400">
+              Your support conversations
+            </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2">
             <button
               type="button"
               onClick={onNewChat}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm transition hover:bg-primary-700 active:scale-95"
-              aria-label="Start new conversation"
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white hover:bg-primary-700"
+              aria-label="New conversation"
             >
               <Plus className="h-4 w-4" />
             </button>
@@ -1219,8 +1472,8 @@ const ChatSidebar = ({
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition hover:bg-gray-50 active:scale-95"
-                aria-label="Close conversations"
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-500 hover:bg-gray-50"
+                aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -1228,25 +1481,28 @@ const ChatSidebar = ({
           </div>
         </div>
 
-        <div className="px-4 pb-4">
-          <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 transition focus-within:border-primary-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-primary-100">
-            <Search className="h-3.5 w-3.5 shrink-0 text-gray-400" />
+        <div className="px-4 pb-3">
+          <div className="flex h-10 items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 focus-within:border-primary-300 focus-within:bg-white">
+            <Search className="h-3.5 w-3.5 text-gray-400" />
 
             <input
               value={search}
               onChange={(event) =>
-                setSearch(event.target.value)
+                setSearch(
+                  event.target.value
+                )
               }
-              placeholder="Search conversations"
-              className="h-10 min-w-0 flex-1 bg-transparent text-xs text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              placeholder="Search messages"
+              className="min-w-0 flex-1 bg-transparent text-xs outline-none placeholder:text-gray-400"
             />
 
             {search && (
               <button
                 type="button"
-                onClick={() => setSearch('')}
-                className="text-gray-400 transition hover:text-gray-600"
-                aria-label="Clear search"
+                onClick={() =>
+                  setSearch('')
+                }
+                className="text-gray-400"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -1255,111 +1511,118 @@ const ChatSidebar = ({
         </div>
       </header>
 
+      {/* Sidebar body */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {loading && conversations.length === 0 && (
-          <div className="space-y-1 p-3">
-            {[1, 2, 3, 4].map((item) => (
-              <div
-                key={item}
-                className="animate-pulse rounded-xl p-3"
-              >
-                <div className="flex gap-3">
-                  <div className="h-10 w-10 rounded-xl bg-gray-100" />
+        {loading &&
+          conversations.length === 0 && (
+            <div className="space-y-2 p-3">
+              {[1, 2, 3, 4].map(
+                (item) => (
+                  <div
+                    key={item}
+                    className="animate-pulse p-2"
+                  >
+                    <div className="flex gap-3">
+                      <div className="h-10 w-10 rounded-full bg-gray-100" />
 
-                  <div className="flex-1">
-                    <div className="h-3 w-2/3 rounded bg-gray-100" />
-                    <div className="mt-2 h-2.5 w-full rounded bg-gray-100" />
-                    <div className="mt-2 h-2 w-1/3 rounded bg-gray-100" />
+                      <div className="flex-1">
+                        <div className="h-3 w-2/3 rounded bg-gray-100" />
+                        <div className="mt-2 h-2.5 w-full rounded bg-gray-100" />
+                        <div className="mt-2 h-2 w-1/3 rounded bg-gray-100" />
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )
+              )}
+            </div>
+          )}
+
+        {!loading &&
+          filtered.length === 0 && (
+            <div className="px-6 py-14 text-center">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-gray-50 text-gray-400">
+                <MessageSquare className="h-5 w-5" />
               </div>
-            ))}
-          </div>
-        )}
 
-        {!loading && filteredConversations.length === 0 && (
-          <div className="px-6 py-14 text-center">
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-gray-50 text-gray-400">
-              <MessageSquare className="h-5 w-5" />
+              <p className="mt-4 text-xs font-bold text-gray-800">
+                {search
+                  ? 'No conversations found'
+                  : 'No conversations yet'}
+              </p>
+
+              <p className="mt-1.5 text-[10px] leading-5 text-gray-400">
+                {search
+                  ? 'Try another search.'
+                  : 'Start a conversation with support.'}
+              </p>
+
+              {!search && (
+                <button
+                  type="button"
+                  onClick={onNewChat}
+                  className="mt-4 rounded-xl bg-primary-600 px-4 py-2.5 text-[10px] font-bold text-white"
+                >
+                  Start conversation
+                </button>
+              )}
             </div>
+          )}
 
-            <p className="mt-4 text-xs font-bold text-gray-800">
-              {search
-                ? 'No conversations found'
-                : 'No conversations yet'}
-            </p>
-
-            <p className="mx-auto mt-1.5 max-w-[210px] text-[10px] leading-5 text-gray-500">
-              {search
-                ? 'Try another search term or clear your search.'
-                : 'Start a conversation with our support team when you need assistance.'}
-            </p>
-
-            {search ? (
-              <button
-                type="button"
-                onClick={() => setSearch('')}
-                className="mt-4 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-[10px] font-bold text-gray-600 transition hover:bg-gray-50"
-              >
-                Clear search
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onNewChat}
-                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary-600 px-3.5 py-2.5 text-[10px] font-bold text-white shadow-sm transition hover:bg-primary-700"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                New conversation
-              </button>
-            )}
-          </div>
-        )}
-
-        {filteredConversations.length > 0 && (
+        {filtered.length > 0 && (
           <>
-            <div className="flex items-center justify-between px-4 py-3">
-              <span className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
-                Recent
-              </span>
-
-              <span className="text-[10px] font-medium text-gray-400">
-                {filteredConversations.length}
+            <div className="px-4 py-3">
+              <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400">
+                Conversations
               </span>
             </div>
 
-            {filteredConversations.map((conversation) => {
-              const id = getConversationId(conversation);
+            {filtered.map(
+              (conversation, index) => {
+                const id =
+                  getConversationId(
+                    conversation
+                  );
 
-              return (
-                <ConversationItem
-                  key={id ?? `conversation-${Math.random()}`}
-                  conversation={conversation}
-                  active={id === activeId}
-                  selecting={
-                    selectingId != null &&
-                    selectingId === id
-                  }
-                  onClick={() => onSelectConversation(id)}
-                />
-              );
-            })}
+                return (
+                  <ConversationItem
+                    key={
+                      id ??
+                      `conversation-${index}`
+                    }
+                    conversation={
+                      conversation
+                    }
+                    active={
+                      id === activeId
+                    }
+                    selecting={
+                      selectingId === id
+                    }
+                    onClick={() =>
+                      onSelect(id)
+                    }
+                  />
+                );
+              }
+            )}
           </>
         )}
       </div>
 
+      {/* Sidebar footer */}
       <footer className="shrink-0 border-t border-gray-100 bg-gray-50 p-3">
         <div className="flex items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
-            <Clock3 className="h-4 w-4" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <ShieldCheck className="h-4 w-4" />
           </div>
 
           <div className="min-w-0">
             <p className="text-[10px] font-semibold text-gray-700">
-              Support availability
+              Private support
             </p>
-            <p className="mt-0.5 truncate text-[10px] text-gray-400">
-              Representatives respond during business hours
+
+            <p className="mt-0.5 truncate text-[9px] text-gray-400">
+              Your messages are protected
             </p>
           </div>
         </div>
@@ -1368,9 +1631,9 @@ const ChatSidebar = ({
   );
 };
 
-// ================================================================
-// NewChatModal
-// ================================================================
+/* ================================================================
+   NEW CHAT MODAL
+================================================================ */
 
 const NewChatModal = ({
   open,
@@ -1382,10 +1645,17 @@ const NewChatModal = ({
     newConversation,
   } = useChat();
 
-  const [subject, setSubject] = useState('');
-  const [category, setCategory] = useState('');
-  const [error, setError] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [subject, setSubject] =
+    useState('');
+
+  const [category, setCategory] =
+    useState('');
+
+  const [creating, setCreating] =
+    useState(false);
+
+  const [error, setError] =
+    useState('');
 
   useEffect(() => {
     if (!open) {
@@ -1399,107 +1669,155 @@ const NewChatModal = ({
   useEffect(() => {
     if (!open) return;
 
-    const handleEscape = (event) => {
-      if (event.key === 'Escape' && !creating) {
+    const escape = (event) => {
+      if (
+        event.key === 'Escape' &&
+        !creating
+      ) {
         onClose();
       }
     };
 
-    window.addEventListener('keydown', handleEscape);
+    window.addEventListener(
+      'keydown',
+      escape
+    );
 
     return () =>
-      window.removeEventListener('keydown', handleEscape);
-  }, [open, creating, onClose]);
+      window.removeEventListener(
+        'keydown',
+        escape
+      );
+  }, [
+    open,
+    creating,
+    onClose,
+  ]);
 
   if (!open) return null;
 
   const topics = [
-    ['Account', 'Account access or profile'],
-    ['Payments', 'Transfers or payment issues'],
-    ['Cards', 'Card support'],
-    ['Other', 'Something else'],
+    [
+      'Account',
+      'Account or profile',
+    ],
+    [
+      'Payments',
+      'Payments or transfers',
+    ],
+    [
+      'Cards',
+      'Card assistance',
+    ],
+    [
+      'Other',
+      'Something else',
+    ],
   ];
 
-  const handleSubmit = async (event) => {
+  const submit = async (event) => {
     event.preventDefault();
 
-    const trimmed = subject.trim();
+    const clean =
+      subject.trim();
 
-    if (!trimmed) {
-      setError('Please enter a subject for your conversation.');
+    if (!clean) {
+      setError(
+        'Please enter a subject.'
+      );
       return;
     }
 
-    setError('');
-
     const create =
-      createConversation || newConversation;
+      createConversation ||
+      newConversation;
 
-    if (typeof create !== 'function') {
+    if (
+      typeof create !==
+      'function'
+    ) {
       setError(
-        'Conversation service is not available. Please try again later.'
-      );
-      console.error(
-        'No conversation creation function found in context.'
+        'Conversation service is unavailable.'
       );
       return;
     }
 
     setCreating(true);
+    setError('');
 
     try {
-      // Keep compatibility with contexts that accept only a subject,
-      // while also supporting a richer second options argument.
-      let result;
-
-      try {
-        result = await create(trimmed, {
-          category: category || undefined,
+      const result =
+        await create(clean, {
+          category:
+            category || undefined,
         });
-      } catch (firstError) {
-        // If the existing context only expects one argument, retrying
-        // with the original contract preserves compatibility.
-        result = await create(trimmed);
-      }
 
       const created =
-        result?.conversation ||
-        result?.data?.conversation ||
-        result?.data ||
+        result?.conversation ??
+        result?.data?.conversation ??
+        result?.data ??
         result;
 
       if (
         created &&
-        getConversationId(created) != null
+        getConversationId(
+          created
+        ) != null
       ) {
         onCreated?.(created);
-      } else if (created) {
-        console.warn(
-          'Created conversation has no id/_id field:',
-          created
-        );
+        return;
+      }
+
+      setError(
+        'The conversation was created but could not be opened.'
+      );
+    } catch (firstError) {
+      /*
+       * Only fall back to the one-argument
+       * contract when the API explicitly
+       * indicates argument/signature trouble.
+       *
+       * This avoids accidentally creating
+       * duplicate conversations.
+       */
+      try {
+        const result =
+          await create(clean);
+
+        const created =
+          result?.conversation ??
+          result?.data?.conversation ??
+          result?.data ??
+          result;
+
+        if (
+          created &&
+          getConversationId(
+            created
+          ) != null
+        ) {
+          onCreated?.(created);
+          return;
+        }
+
         setError(
-          'Conversation was created but could not be opened. Please refresh and try again.'
+          'The conversation was created but could not be opened.'
         );
-      } else {
+      } catch (secondError) {
+        console.error(
+          'Conversation creation failed:',
+          secondError
+        );
+
         setError(
-          'Conversation was created but no data was returned.'
+          secondError?.response
+            ?.data?.message ||
+            secondError?.response
+              ?.data?.error ||
+            secondError?.message ||
+            'Unable to start the conversation.'
         );
       }
-    } catch (err) {
-      console.error(
-        'Conversation creation error:',
-        err
-      );
-
-      const message =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        err?.message ||
-        err?.error ||
-        'Unable to start the conversation. Please try again.';
-
-      setError(message);
     } finally {
       setCreating(false);
     }
@@ -1507,170 +1825,153 @@ const NewChatModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/45 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-950/40 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (
-          event.target === event.currentTarget &&
+          event.target ===
+            event.currentTarget &&
           !creating
         ) {
           onClose();
         }
       }}
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        className="w-full max-w-md overflow-hidden rounded-[26px] border border-gray-200 bg-white shadow-[0_30px_90px_-35px_rgba(15,23,42,0.5)]"
-      >
-        <div className="border-b border-gray-100 px-5 py-5 sm:px-6">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-                <MessageCircle className="h-5 w-5" />
-              </div>
-
-              <div>
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary-600">
-                  Customer support
-                </p>
-
-                <h2 className="mt-1 text-lg font-bold tracking-tight text-gray-900">
-                  Start a conversation
-                </h2>
-
-                <p className="mt-1 text-xs leading-5 text-gray-500">
-                  Choose a topic and briefly describe what you need.
-                </p>
-              </div>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-gray-100 px-5 py-5">
+          <div className="flex gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+              <MessageCircle className="h-5 w-5" />
             </div>
 
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={creating}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-gray-400 transition hover:bg-gray-50 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
+            <div>
+              <h2 className="text-base font-bold text-gray-900">
+                New conversation
+              </h2>
+
+              <p className="mt-1 text-xs text-gray-400">
+                Tell support what you need help with.
+              </p>
+            </div>
           </div>
+
+          <button
+            type="button"
+            disabled={creating}
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-50"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="space-y-5 px-5 py-5 sm:px-6">
+        <form onSubmit={submit}>
+          <div className="space-y-5 px-5 py-5">
             <div>
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-gray-400">
+              <p className="mb-2 text-[9px] font-bold uppercase tracking-[0.14em] text-gray-400">
                 Topic
               </p>
 
               <div className="grid grid-cols-2 gap-2">
-                {topics.map(([title, description]) => {
-                  const selected = category === title;
+                {topics.map(
+                  ([name, description]) => {
+                    const selected =
+                      category ===
+                      name;
 
-                  return (
-                    <button
-                      key={title}
-                      type="button"
-                      disabled={creating}
-                      onClick={() => {
-                        setCategory(title);
-                        if (!subject.trim()) {
-                          setSubject(title);
-                        }
-                        setError('');
-                      }}
-                      className={`rounded-xl border px-3 py-3 text-left transition ${
-                        selected
-                          ? 'border-primary-300 bg-primary-50 text-primary-700'
-                          : 'border-gray-200 bg-white text-gray-600 hover:border-primary-200 hover:bg-primary-50/50'
-                      } disabled:cursor-not-allowed disabled:opacity-60`}
-                    >
-                      <p className="text-[11px] font-semibold">
-                        {title}
-                      </p>
-                      <p className="mt-1 text-[10px] leading-4 text-gray-400">
-                        {description}
-                      </p>
-                    </button>
-                  );
-                })}
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        disabled={creating}
+                        onClick={() => {
+                          setCategory(
+                            name
+                          );
+
+                          if (
+                            !subject.trim()
+                          ) {
+                            setSubject(
+                              name
+                            );
+                          }
+
+                          setError('');
+                        }}
+                        className={[
+                          'rounded-xl border px-3 py-3 text-left transition',
+                          selected
+                            ? 'border-primary-300 bg-primary-50'
+                            : 'border-gray-200 hover:bg-gray-50',
+                        ].join(' ')}
+                      >
+                        <p className="text-[11px] font-semibold text-gray-800">
+                          {name}
+                        </p>
+
+                        <p className="mt-1 text-[9px] leading-4 text-gray-400">
+                          {description}
+                        </p>
+                      </button>
+                    );
+                  }
+                )}
               </div>
             </div>
 
             <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label
-                  htmlFor="support-subject"
-                  className="block text-xs font-semibold text-gray-700"
-                >
-                  What do you need help with?
-                </label>
-
-                <span className="text-[10px] text-gray-400">
-                  {subject.length}/120
-                </span>
-              </div>
+              <label
+                htmlFor="chat-subject"
+                className="mb-2 block text-xs font-semibold text-gray-700"
+              >
+                What do you need help with?
+              </label>
 
               <input
-                id="support-subject"
-                type="text"
+                id="chat-subject"
                 value={subject}
+                maxLength={120}
+                disabled={creating}
                 onChange={(event) => {
-                  setSubject(event.target.value);
+                  setSubject(
+                    event.target.value
+                  );
                   setError('');
                 }}
                 placeholder="e.g. I need help with a transfer"
-                autoFocus
-                maxLength={120}
-                disabled={creating}
-                className="h-12 w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition focus:border-primary-300 focus:bg-white focus:ring-2 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3 text-sm outline-none focus:border-primary-300 focus:bg-white focus:ring-2 focus:ring-primary-100"
               />
-
-              <p className="mt-1.5 px-1 text-[10px] text-gray-400">
-                A short description helps the support team understand your request.
-              </p>
-            </div>
-
-            <div className="flex gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3.5">
-              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
-
-              <div>
-                <p className="text-xs font-semibold text-emerald-800">
-                  Private support
-                </p>
-
-                <p className="mt-0.5 text-[10px] leading-5 text-emerald-700/70">
-                  Your conversation is visible only to you and authorised support staff.
-                </p>
-              </div>
             </div>
 
             {error && (
-              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3.5 py-3 text-xs font-medium text-rose-700">
+              <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2.5 text-xs text-rose-700">
                 {error}
               </div>
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4 sm:px-6">
+          <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 px-5 py-4">
             <button
               type="button"
-              onClick={onClose}
               disabled={creating}
-              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onClose}
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-semibold text-gray-600 hover:bg-gray-50"
             >
               Cancel
             </button>
 
             <button
               type="submit"
-              disabled={creating || !subject.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={
+                creating ||
+                !subject.trim()
+              }
+              className="inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-primary-700 disabled:opacity-50"
             >
               {creating ? (
                 <>
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Starting…
+                  Creating...
                 </>
               ) : (
                 <>
@@ -1686,23 +1987,22 @@ const NewChatModal = ({
   );
 };
 
-// ================================================================
-// ChatPage
-// ================================================================
+/* ================================================================
+   PAGE
+================================================================ */
 
 const MOBILE_BREAKPOINT = 768;
 
-const ChatPage = ({ onBack }) => {
-  
+const ChatPage = ({
+  onBack,
+}) => {
   const {
     conversations = [],
     currentConversation,
     selectConversation,
     loading,
+    isAdmin,
   } = useChat();
-
-  // no separate `currentConversation = a || b || null` line anymore —
-  // currentConversation now comes straight from context
 
   const [sidebarOpen, setSidebarOpen] =
     useState(false);
@@ -1713,32 +2013,49 @@ const ChatPage = ({ onBack }) => {
   const [selectingId, setSelectingId] =
     useState(null);
 
-  const [isMobile, setIsMobile] = useState(() =>
-    typeof window !== 'undefined'
-      ? window.matchMedia(
-          `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
-        ).matches
-      : false
-  );
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const media = window.matchMedia(
-      `(max-width: ${MOBILE_BREAKPOINT - 1}px)`
+  const [isMobile, setIsMobile] =
+    useState(() =>
+      typeof window !==
+      'undefined'
+        ? window.matchMedia(
+            `(max-width: ${
+              MOBILE_BREAKPOINT - 1
+            }px)`
+          ).matches
+        : false
     );
 
-    const handleChange = () => {
-      const mobile = media.matches;
-      setIsMobile(mobile);
+  useEffect(() => {
+    if (
+      typeof window ===
+      'undefined'
+    ) {
+      return;
+    }
 
-      if (!mobile) {
+    const media =
+      window.matchMedia(
+        `(max-width: ${
+          MOBILE_BREAKPOINT - 1
+        }px)`
+      );
+
+    const handleChange = () => {
+      setIsMobile(
+        media.matches
+      );
+
+      if (!media.matches) {
         setSidebarOpen(false);
       }
     };
 
     handleChange();
-    media.addEventListener('change', handleChange);
+
+    media.addEventListener(
+      'change',
+      handleChange
+    );
 
     return () =>
       media.removeEventListener(
@@ -1748,19 +2065,25 @@ const ChatPage = ({ onBack }) => {
   }, []);
 
   useEffect(() => {
-    if (currentConversation && isMobile) {
+    if (
+      currentConversation &&
+      isMobile
+    ) {
       setSidebarOpen(false);
     }
   }, [
-    getConversationId(currentConversation),
+    getConversationId(
+      currentConversation
+    ),
     isMobile,
   ]);
 
   useEffect(() => {
     if (
-      selectingId != null &&
-      getConversationId(currentConversation) ===
-        selectingId
+      selectingId !== null &&
+      getConversationId(
+        currentConversation
+      ) === selectingId
     ) {
       setSelectingId(null);
     }
@@ -1769,17 +2092,11 @@ const ChatPage = ({ onBack }) => {
     currentConversation,
   ]);
 
-  const runSelect = async (id) => {
-    if (id == null) {
-      console.warn(
-        'Tried to select a conversation with no id.'
-      );
-      return;
-    }
+  const select = async (id) => {
+    if (id == null) return;
 
     if (
-      selectingId === id &&
-      getConversationId(currentConversation) !== id
+      selectingId === id
     ) {
       return;
     }
@@ -1787,145 +2104,234 @@ const ChatPage = ({ onBack }) => {
     setSelectingId(id);
 
     try {
-      await selectConversation?.(id);
-
-      // Some contexts update synchronously, some asynchronously.
-      // The effect above clears this when the selected conversation arrives.
-      // This fallback prevents a permanent spinner when the context
-      // performs a synchronous/no-op selection.
-      window.setTimeout(() => {
-        setSelectingId((current) =>
-          current === id &&
-          getConversationId(currentConversation) === id
-            ? null
-            : current
-        );
-      }, 2500);
-    } catch (err) {
-      console.error(
-        'Failed to open conversation:',
-        err
+      await selectConversation?.(
+        id
       );
+    } catch (error) {
+      console.error(
+        'Failed to select conversation:',
+        error
+      );
+    } finally {
       setSelectingId(null);
     }
   };
 
-  const handleSelectConversation = (conversationId) => {
-    runSelect(conversationId);
-
-    if (isMobile) {
-      setSidebarOpen(false);
-    }
-  };
-
-  const handleNewChat = () => {
-    setNewChatOpen(true);
-  };
-
-  const handleCreated = (createdConversation) => {
+  const created = (
+    conversation
+  ) => {
     setNewChatOpen(false);
 
-    const id = getConversationId(
-      createdConversation
-    );
+    const id =
+      getConversationId(
+        conversation
+      );
 
     if (id != null) {
-      runSelect(id);
-    } else {
-      console.warn(
-        'Created conversation has no id/_id, cannot open it:',
-        createdConversation
-      );
+      select(id);
     }
-
-    setSidebarOpen(false);
   };
 
   return (
-    <>
-      <section className="flex h-full min-h-0 w-full">
-        <div className="relative flex h-full min-h-0 w-full overflow-hidden bg-white">
-          {/* Desktop sidebar */}
-          <aside className="hidden w-[288px] shrink-0 border-r border-gray-200 bg-white md:flex">
-            <ChatSidebar
-              conversations={conversations}
-              activeConversation={currentConversation}
-              selectingId={selectingId}
-              onSelectConversation={
-                handleSelectConversation
-              }
-              onNewChat={handleNewChat}
-              loading={loading}
-            />
-          </aside>
+    <section className="h-full min-h-0 w-full overflow-hidden bg-white">
+      <div className="relative flex h-full min-h-0 w-full overflow-hidden">
+        {/* ======================================================
+            DESKTOP SIDEBAR
+        ====================================================== */}
 
-          {/* Mobile sidebar */}
-          {isMobile && sidebarOpen && (
+        <aside className="hidden h-full w-[300px] shrink-0 border-r border-gray-200 bg-white md:flex">
+          <ChatSidebar
+            conversations={
+              conversations
+            }
+            activeConversation={
+              currentConversation
+            }
+            selectingId={
+              selectingId
+            }
+            onSelect={select}
+            onNewChat={() =>
+              setNewChatOpen(true)
+            }
+            loading={loading}
+          />
+        </aside>
+
+        {/* ======================================================
+            MOBILE SIDEBAR
+        ====================================================== */}
+
+        {isMobile &&
+          sidebarOpen && (
             <>
               <button
                 type="button"
-                aria-label="Close conversations"
-                onClick={() => setSidebarOpen(false)}
-                className="absolute inset-0 z-30 bg-gray-950/25 backdrop-blur-[1px]"
+                aria-label="Close sidebar"
+                onClick={() =>
+                  setSidebarOpen(false)
+                }
+                className="absolute inset-0 z-30 bg-gray-950/30"
               />
 
               <aside className="absolute inset-y-0 left-0 z-40 flex w-[88%] max-w-[340px] overflow-hidden border-r border-gray-200 bg-white shadow-2xl">
                 <ChatSidebar
-                  conversations={conversations}
-                  activeConversation={currentConversation}
-                  selectingId={selectingId}
-                  onSelectConversation={
-                    handleSelectConversation
+                  conversations={
+                    conversations
                   }
-                  onNewChat={handleNewChat}
+                  activeConversation={
+                    currentConversation
+                  }
+                  selectingId={
+                    selectingId
+                  }
+                  onSelect={select}
+                  onNewChat={() =>
+                    setNewChatOpen(true)
+                  }
                   loading={loading}
                   mobile
                   onClose={() =>
-                    setSidebarOpen(false)
+                    setSidebarOpen(
+                      false
+                    )
                   }
                 />
               </aside>
             </>
           )}
 
-          {/* Chat area */}
-          <main className="flex min-h-0 min-w-0 flex-1">
-            <ChatArea
-              conversation={currentConversation}
-              switching={selectingId != null}
-              onToggleSidebar={() =>
-                setSidebarOpen(true)
-              }
-              isMobile={isMobile}
-              onNewChat={handleNewChat}
-              onBack={onBack}
-            />
-          </main>
+        {/* ======================================================
+            MAIN CHAT
 
-          {/* Mobile conversations button */}
-          {isMobile &&
-            !sidebarOpen &&
-            !currentConversation && (
-              <button
-                type="button"
-                onClick={() =>
-                  setSidebarOpen(true)
+            IMPORTANT:
+            This is a flex column with min-h-0.
+
+            Header = fixed
+            Body   = only scrolling area
+            Composer = fixed
+        ====================================================== */}
+
+        <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {currentConversation ? (
+            <>
+              <ChatHeader
+                conversation={
+                  currentConversation
                 }
-                className="absolute left-4 top-4 z-20 flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-600 shadow-sm transition hover:bg-gray-50 active:scale-95"
-                aria-label="Open conversations"
-              >
-                <MessageSquare className="h-4 w-4" />
-              </button>
-            )}
-        </div>
-      </section>
+                isAdmin={isAdmin}
+                isMobile={isMobile}
+                onMenu={() =>
+                  setSidebarOpen(
+                    true
+                  )
+                }
+                onBack={onBack}
+              />
+
+              <ChatBody
+                conversation={
+                  currentConversation
+                }
+                isAdmin={isAdmin}
+              />
+
+              <Composer
+                conversation={
+                  currentConversation
+                }
+                onNewChat={() =>
+                  setNewChatOpen(true)
+                }
+              />
+            </>
+          ) : (
+            <>
+              <header className="flex h-[68px] shrink-0 items-center gap-3 border-b border-gray-200 bg-white px-4 sm:px-6">
+                {isMobile && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSidebarOpen(
+                        true
+                      )
+                    }
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-500"
+                  >
+                    <Menu className="h-4 w-4" />
+                  </button>
+                )}
+
+                {onBack && (
+                  <button
+                    type="button"
+                    onClick={onBack}
+                    className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200 text-gray-500"
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </button>
+                )}
+
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+                  <Headphones className="h-4 w-4" />
+                </div>
+
+                <div>
+                  <h1 className="text-sm font-bold text-gray-900">
+                    Support
+                  </h1>
+
+                  <p className="text-[10px] text-gray-400">
+                    We're here to help
+                  </p>
+                </div>
+              </header>
+
+              <div className="flex min-h-0 flex-1 items-center justify-center bg-[#f8f9fb] px-5">
+                <div className="max-w-sm text-center">
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-white text-gray-400 shadow-sm ring-1 ring-gray-200">
+                    <MessageCircle className="h-6 w-6" />
+                  </div>
+
+                  <h2 className="mt-5 text-lg font-bold text-gray-900">
+                    Need some help?
+                  </h2>
+
+                  <p className="mt-2 text-xs leading-5 text-gray-400">
+                    Start a conversation with
+                    our support team and we'll
+                    help you with your account,
+                    payments, cards, or other
+                    questions.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setNewChatOpen(
+                        true
+                      )
+                    }
+                    className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-primary-700"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Start conversation
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </main>
+      </div>
 
       <NewChatModal
         open={newChatOpen}
-        onClose={() => setNewChatOpen(false)}
-        onCreated={handleCreated}
+        onClose={() =>
+          setNewChatOpen(false)
+        }
+        onCreated={created}
       />
-    </>
+    </section>
   );
 };
 
