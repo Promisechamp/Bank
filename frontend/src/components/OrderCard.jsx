@@ -1,754 +1,1403 @@
-// orderCard.jsx
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { authAPI } from '../api';
-import Modal from './Modal';
 import {
-  CheckCircle,
   CreditCard,
-		Wifi,
-  Truck,
-  Sparkles,
-  ChevronRight,
   MapPin,
-  User,
-  Info,
-  ArrowRight,
+  Globe,
+  ArrowLeft,
+  CheckCircle2,
   Loader2,
-  PackageCheck,
+  ShieldCheck,
+  Truck,
+  AlertCircle,
+  ChevronDown,
   Copy,
   Check,
-  Lock,
-  AlertCircle,
-  ShieldCheck,
+  Sparkles,
+  LockKeyhole,
+  Wallet,
+  Clock3,
+  RefreshCw,
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { cardTrackingAPI } from '../api';
 
-/* =========================================================
-   CRYPTO CURRENCIES
-========================================================= */
-const CURRENCIES = [
+const CARD_FEE = 10;
+
+const PRIMARY = {
+  50: '#EEF2FF',
+  100: '#E0E7FF',
+  200: '#C7D2FE',
+  300: '#A5B4FC',
+  400: '#818CF8',
+  500: '#4F46E5',
+  600: '#4338CA',
+  700: '#3730A3',
+  800: '#312E81',
+  900: '#1E1B4B',
+};
+
+const PAYMENT_CURRENCIES = [
   {
-    id: 'btc',
-    name: 'Bitcoin',
+    value: 'BTC',
+    label: 'Bitcoin',
     symbol: 'BTC',
-    logo: 'https://assets.coincap.io/assets/icons/btc@2x.png',
+    logo: '₿',
+    description: 'Bitcoin network',
   },
   {
-    id: 'eth',
-    name: 'Ethereum',
+    value: 'ETH',
+    label: 'Ethereum',
     symbol: 'ETH',
-    logo: 'https://assets.coincap.io/assets/icons/eth@2x.png',
+    logo: '◆',
+    description: 'Ethereum network',
   },
   {
-    id: 'usdt',
-    name: 'Tether',
+    value: 'USDT',
+    label: 'Tether',
     symbol: 'USDT',
-    logo: 'https://assets.coincap.io/assets/icons/usdt@2x.png',
+    logo: '₮',
+    description: 'USDT network',
   },
   {
-    id: 'ltc',
-    name: 'Litecoin',
+    value: 'LTC',
+    label: 'Litecoin',
     symbol: 'LTC',
-    logo: 'https://assets.coincap.io/assets/icons/ltc@2x.png',
+    logo: 'Ł',
+    description: 'Litecoin network',
   },
   {
-    id: 'bch',
-    name: 'Bitcoin Cash',
+    value: 'BCH',
+    label: 'Bitcoin Cash',
     symbol: 'BCH',
-    logo: 'https://assets.coincap.io/assets/icons/bch@2x.png',
+    logo: '₿',
+    description: 'Bitcoin Cash network',
   },
   {
-    id: 'xrp',
-    name: 'XRP',
+    value: 'XRP',
+    label: 'XRP',
     symbol: 'XRP',
-    logo: 'https://assets.coincap.io/assets/icons/xrp@2x.png',
+    logo: 'X',
+    description: 'XRP network',
   },
 ];
 
-/* =========================================================
-   HELPERS
-========================================================= */
-const generateDepositAddress = (userId, currencyId) => {
-  const seed = `${userId}-${currencyId}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-    hash |= 0;
-  }
-  const random = Math.abs(hash);
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let address = '';
-  const length = 34 + (random % 9);
-  for (let i = 0; i < length; i++) {
-    address += chars.charAt((random + i * 17) % chars.length);
-  }
-  return address;
+const COUNTRIES = [
+  { value: 'NG', label: 'Nigeria', flag: '🇳🇬' },
+  { value: 'US', label: 'United States', flag: '🇺🇸' },
+  { value: 'GB', label: 'United Kingdom', flag: '🇬🇧' },
+  { value: 'CA', label: 'Canada', flag: '🇨🇦' },
+  { value: 'GH', label: 'Ghana', flag: '🇬🇭' },
+  { value: 'ZA', label: 'South Africa', flag: '🇿🇦' },
+  { value: 'KE', label: 'Kenya', flag: '🇰🇪' },
+  { value: 'OTHER', label: 'Other', flag: '🌎' },
+];
+
+const initialForm = {
+  cardholderName: '',
+  cardAddress: '',
+  cardCity: '',
+  cardState: '',
+  cardZip: '',
+  cardCountry: 'NG',
+  paymentCurrency: 'USDT',
 };
 
-const generateCardNumber = (userId = '') => {
-  const seed = `${userId}-${Date.now()}-${Math.random()}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-    hash |= 0;
+const generateWallet = (currency) => {
+  const chars =
+    '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+  const randomPart = (length) =>
+    Array.from(
+      { length },
+      () => chars[Math.floor(Math.random() * chars.length)]
+    ).join('');
+
+  switch (currency) {
+    case 'BTC':
+      return `btc-${randomPart(32)}`;
+    case 'ETH':
+      return `eth-${randomPart(36)}`;
+    case 'USDT':
+      return `usdt-${randomPart(34)}`;
+    case 'LTC':
+      return `ltc-${randomPart(32)}`;
+    case 'BCH':
+      return `bch-${randomPart(32)}`;
+    case 'XRP':
+      return `xrp-${randomPart(30)}`;
+    default:
+      return `wallet-${randomPart(36)}`;
   }
-  const random = Math.abs(hash);
-  const part1 = String(4000 + (random % 5000)).padStart(4, '0');
-  const part2 = String(1000 + ((random >> 3) % 9000)).padStart(4, '0');
-  const part3 = String(1000 + ((random >> 7) % 9000)).padStart(4, '0');
-  const part4 = String(1000 + ((random >> 11) % 9000)).padStart(4, '0');
-  return `${part1} ${part2} ${part3} ${part4}`;
 };
 
-const generateCardSecurity = (userId = '') => {
-  const seed = `${userId}-${Math.random()}`;
-  let hash = 0;
-  for (let i = 0; i < seed.length; i++) {
-    hash = ((hash << 5) - hash) + seed.charCodeAt(i);
-    hash |= 0;
+const OrderCard = () => {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+
+  const [form, setForm] = useState(() => ({
+    ...initialForm,
+    cardholderName:
+      user?.name ||
+      user?.full_name ||
+      `${user?.first_name || ''} ${user?.last_name || ''}`.trim(),
+  }));
+
+  const [step, setStep] = useState(1);
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [orderPlaced, setOrderPlaced] = useState(false);
+  const [hasExistingOrder, setHasExistingOrder] = useState(false);
+  const [checkingOrder, setCheckingOrder] = useState(true);
+  const isProcessing = useRef(false);
+
+  const [walletAddress, setWalletAddress] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const selectedCurrency = useMemo(
+    () =>
+      PAYMENT_CURRENCIES.find(
+        (currency) => currency.value === form.paymentCurrency
+      ),
+    [form.paymentCurrency]
+  );
+
+  // Check for existing orders on mount
+  useEffect(() => {
+  const checkExistingOrder = async () => {
+    try {
+      const response = await cardTrackingAPI.getMyCards();
+						console.log(response)
+      // response is { success: true, cards: [...] }
+      const cards = response?.cards || [];
+      if (cards.length > 0) {
+        setHasExistingOrder(true);
+      }
+    } catch (err) {
+      console.error('Error checking existing orders:', err);
+      setHasExistingOrder(false);
+    } finally {
+      setCheckingOrder(false);
+    }
+  };
+  checkExistingOrder();
+}, []);
+
+  useEffect(() => {
+    if (step === 2 && !walletAddress) {
+      setWalletAddress(generateWallet(form.paymentCurrency));
+    }
+  }, [step, walletAddress, form.paymentCurrency]);
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+
+    setForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+
+    setError('');
+  };
+
+  const handleCurrencyChange = (currency) => {
+    setForm((prev) => ({
+      ...prev,
+      paymentCurrency: currency,
+    }));
+
+    setWalletAddress(generateWallet(currency));
+    setError('');
+  };
+
+  const validateShipping = () => {
+    if (!form.cardholderName.trim()) {
+      setError('Please enter the cardholder name.');
+      return false;
+    }
+
+    if (!form.cardAddress.trim()) {
+      setError('Please enter your delivery address.');
+      return false;
+    }
+
+    if (!form.cardCity.trim()) {
+      setError('Please enter your city.');
+      return false;
+    }
+
+    if (!form.cardState.trim()) {
+      setError('Please enter your state or province.');
+      return false;
+    }
+
+    if (!form.cardZip.trim()) {
+      setError('Please enter your postal/ZIP code.');
+      return false;
+    }
+
+    if (!form.cardCountry) {
+      setError('Please select your country.');
+      return false;
+    }
+
+    return true;
+  };
+
+  const continueToPayment = () => {
+    if (!validateShipping()) return;
+
+    setError('');
+    setWalletAddress(generateWallet(form.paymentCurrency));
+    setStep(2);
+  };
+
+  const regenerateWallet = () => {
+    setWalletAddress(generateWallet(form.paymentCurrency));
+    setCopied(false);
+  };
+
+  const copyWallet = async () => {
+    try {
+      await navigator.clipboard.writeText(walletAddress);
+      setCopied(true);
+
+      setTimeout(() => {
+        setCopied(false);
+      }, 1800);
+    } catch (err) {
+      console.error('Copy failed:', err);
+    }
+  };
+
+  const placeOrder = async () => {
+    // Guards against double ordering
+    if (orderPlaced) {
+      setError('You have already placed an order. Please track your card.');
+      return;
+    }
+    if (isProcessing.current) return;
+    isProcessing.current = true;
+
+    if (!validateShipping()) {
+      setStep(1);
+      isProcessing.current = false;
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const payload = {
+        card_type: 'debit',
+        card_brand: 'TRUSTCDU',
+        cardholder_name: form.cardholderName.trim(),
+        card_fee: CARD_FEE,
+        currency: 'USD',
+        payment_currency: form.paymentCurrency,
+        payment_status: 'pending',
+        shipping_address: form.cardAddress.trim(),
+        shipping_city: form.cardCity.trim(),
+        shipping_state: form.cardState.trim(),
+        shipping_postal_code: form.cardZip.trim(),
+        shipping_country: form.cardCountry,
+        order_status: 'pending',
+        tracking_status: 'order_placed',
+        tracking_events: [
+          {
+            status: 'order_placed',
+            title: 'Order placed',
+            description: 'Your card order has been received.',
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+
+      const response = await cardTrackingAPI.create(payload);
+
+      const createdOrder =
+        response?.data ||
+        response?.card ||
+        response?.order ||
+        response;
+
+      setOrder(createdOrder);
+      setOrderPlaced(true);
+
+      setStep(3);
+
+      setTimeout(() => {
+        setStep(4);
+        setLoading(false);
+        isProcessing.current = false;
+      }, 3000);
+    } catch (err) {
+      console.error('Card order error:', err);
+
+      const message =
+        err?.message ||
+        err?.error ||
+        err?.data?.message ||
+        'Unable to place your card order. Please try again.';
+
+      setError(message);
+      setLoading(false);
+      isProcessing.current = false;
+    }
+  };
+
+  const viewTracking = () => {
+    if (order?.id) {
+      navigate(`/card-tracking/${order.id}`);
+    } else {
+      navigate('/card-tracking');
+    }
+  };
+
+  const handleBackToStep1 = () => {
+    if (orderPlaced) {
+      setError('Order already placed. Please track your card.');
+      return;
+    }
+    setStep(1);
+  };
+
+  // Show loading while checking for existing orders
+  if (checkingOrder) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-indigo-600" />
+      </div>
+    );
   }
-  const random = Math.abs(hash);
-  const month = String((random % 12) + 1).padStart(2, '0');
-  const year = String(27 + (random % 5));
-  const cvv = String(100 + (random % 900));
-  return { expiry: `${month}/${year}`, cvv };
-};
 
-/* =========================================================
-   CARD VISUAL
-========================================================= */
-
- 
- const DebitCard = ({ user, cardNumber = "5426 •••• •••• 8291", expiry = "12/30", cvv = "389" }) => {
-  const holderName = (user?.full_name || user?.name || 'CARD HOLDER').toUpperCase();
-
-  return (
-    <div className="relative w-full max-w-[400px] mx-auto aspect-[1.586/1] rounded-[24px] p-6 text-white shadow-2xl overflow-hidden group transition-all duration-500 hover:scale-[1.02] hover:shadow-indigo-500/20">
-      
-      {/* Rich Indigo Background Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-tr from-indigo-950 via-indigo-900 to-slate-950" />
-      
-      {/* Faint Gold Lines / Geometric Accents (SVG Overlay) */}
-      <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <linearGradient id="goldGlow" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#fef08a" stopOpacity="0" />
-            <stop offset="50%" stopColor="#fde047" stopOpacity="0.8" />
-            <stop offset="100%" stopColor="#ca8a04" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-        {/* Abstract Faint Gold Lines */}
-        <path d="M-50 50 Q 200 150 450 50" fill="none" stroke="url(#goldGlow)" strokeWidth="1.5" />
-        <path d="M0 220 Q 220 80 440 200" fill="none" stroke="url(#goldGlow)" strokeWidth="1" />
-        <path d="M100 -20 Q 300 250 350 280" fill="none" stroke="url(#goldGlow)" strokeWidth="0.75" />
-      </svg>
-
-      {/* Glowing Indigo & Gold Ambient Light Sources */}
-      <div className="absolute -top-20 -right-20 w-56 h-56 rounded-full bg-indigo-500/30 blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-20 -left-20 w-56 h-56 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-      
-      {/* Glassmorphism Border Shell */}
-      <div className="absolute inset-0 bg-white/[0.02] backdrop-blur-[1px] border border-indigo-200/15 rounded-[24px]" />
-
-      {/* Card Content Wrapper */}
-      <div className="relative z-10 flex h-full flex-col justify-between">
-        
-        {/* Top Row: Brand & Contactless/Network */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="h-2.5 w-2.5 rounded-full bg-gradient-to-r from-amber-200 to-amber-400 shadow-sm shadow-amber-300/50" />
-            <span className="text-xs font-semibold tracking-[0.25em] text-indigo-200">TRUSTCDU</span>
-          </div>
-          <div className="flex items-center gap-3 text-indigo-300/80">
-            <Wifi className="h-5 w-5 rotate-90" />
-            <CreditCard className="h-6 w-6 text-indigo-100" />
-          </div>
-        </div>
-
-        {/* Middle Row: Gold-accented EMV Chip & Card Number */}
-        <div className="space-y-4">
-          {/* Realistic Gold EMV Chip */}
-          <div className="relative h-9 w-12 rounded-md bg-gradient-to-tr from-amber-300 via-yellow-100 to-amber-400 p-1 shadow-md overflow-hidden border border-amber-500/40">
-            <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-[1px] opacity-40">
-              <div className="border border-amber-900 bg-amber-200/50 rounded-[1px]" />
-              <div className="border border-amber-900 bg-amber-200/50 rounded-[1px]" />
-              <div className="border border-amber-900 bg-amber-200/50 rounded-[1px]" />
-              <div className="border border-amber-900 bg-amber-200/50 rounded-[1px]" />
-              <div className="border border-amber-900 bg-amber-300 rounded-[1px]" />
-              <div className="border border-amber-900 bg-amber-200/50 rounded-[1px]" />
+  // If an existing order exists, show the "already ordered" screen
+  if (hasExistingOrder) {
+    return (
+      <div className="min-h-screen px-0 py-6 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-6xl">
+          {/* TOP NAV */}
+          <div className="mb-7 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => navigate(-1)}
+              className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900"
+            >
+              <ArrowLeft size={17} />
+              Back
+            </button>
+            <div className="hidden items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm sm:flex">
+              <ShieldCheck size={15} />
+              Secure card ordering
             </div>
           </div>
 
-          <p className="font-mono text-md tracking-[0.2em] text-indigo-50 drop-shadow-md">
-            {cardNumber}
-          </p>
+          {/* HEADER */}
+          <div className="mb-8">
+            <div className="flex items-start gap-4">
+              <div
+                className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg"
+                style={{
+                  background:
+                    'linear-gradient(135deg, #4F46E5 0%, #312E81 100%)',
+                }}
+              >
+                <CreditCard size={27} />
+              </div>
+              <div>
+                <div className="mb-1 flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">
+                    Premium Card
+                  </span>
+                  <Sparkles size={14} className="text-indigo-500" />
+                </div>
+                <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                  Your Card Order
+                </h1>
+                <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                  You already have a card order in progress. Track its status below.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* REPLACEMENT CONTENT */}
+          <div className="overflow-hidden rounded-3xl border border-white/80 bg-white shadow-xl shadow-indigo-100/40 p-8 sm:p-12 text-center">
+            <div className="mx-auto max-w-md">
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shadow-sm">
+                <CheckCircle2 size={42} />
+              </div>
+              <h2 className="mt-6 text-2xl font-black text-slate-900">
+                Card Already Ordered
+              </h2>
+              <p className="mt-3 text-sm leading-6 text-slate-500">
+                You have already placed an order for a physical card. Please track its delivery progress.
+              </p>
+              <button
+                type="button"
+                onClick={() => navigate('/card-tracking')}
+                className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5"
+                style={{
+                  background:
+                    'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)',
+                }}
+              >
+                Track my card
+                <ArrowLeft size={17} className="rotate-180" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- NORMAL ORDER FLOW (unchanged) ----------
+  return (
+    <div className="min-h-screen px-0 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-6xl">
+        {/* TOP NAV */}
+        <div className="mb-7 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/80 px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm backdrop-blur transition hover:bg-white hover:text-slate-900"
+          >
+            <ArrowLeft size={17} />
+            Back
+          </button>
+
+          <div className="hidden items-center gap-2 rounded-full border border-indigo-100 bg-white/80 px-4 py-2 text-xs font-bold text-indigo-700 shadow-sm sm:flex">
+            <ShieldCheck size={15} />
+            Secure card ordering
+          </div>
         </div>
 
-        {/* Bottom Row: Card Holder & Expiry */}
-        <div className="flex items-end justify-between">
-          <div className="space-y-0.5">
-            <p className="text-[9px] font-medium uppercase tracking-widest text-indigo-300/70">Cardholder</p>
-            <p className="text-xs font-semibold tracking-wider text-indigo-100 truncate max-w-[200px]">
-              {holderName}
-            </p>
-          </div>
-          <div className="space-y-0.5 text-right">
-            <p className="text-[9px] font-medium uppercase tracking-widest text-indigo-300/70">Expires</p>
-            <p className="text-xs font-semibold font-mono text-indigo-100">{expiry}</p>
+        {/* HEADER */}
+        <div className="mb-8">
+          <div className="flex items-start gap-4">
+            <div
+              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl text-white shadow-lg"
+              style={{
+                background:
+                  'linear-gradient(135deg, #4F46E5 0%, #312E81 100%)',
+              }}
+            >
+              <CreditCard size={27} />
+            </div>
+
+            <div>
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.2em] text-indigo-600">
+                  Premium Card
+                </span>
+
+                <Sparkles size={14} className="text-indigo-500" />
+              </div>
+
+              <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+                Order your card
+              </h1>
+
+              <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
+                Get your physical card delivered securely to your preferred
+                address.
+              </p>
+            </div>
           </div>
         </div>
 
+        {/* PROGRESS */}
+        <div className="mb-7 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-sm">
+          <div className="grid grid-cols-4">
+            <StepIndicator
+              number="1"
+              label="Delivery"
+              active={step >= 1}
+              completed={step > 1}
+            />
+
+            <StepIndicator
+              number="2"
+              label="Payment"
+              active={step >= 2}
+              completed={step > 2}
+            />
+
+            <StepIndicator
+              number="3"
+              label="Processing"
+              active={step >= 3}
+              completed={step > 3}
+            />
+
+            <StepIndicator
+              number="4"
+              label="Complete"
+              active={step >= 4}
+              completed={step >= 4}
+            />
+          </div>
+        </div>
+
+        {/* ERROR */}
+        {error && (
+          <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
+            <AlertCircle className="mt-0.5 shrink-0" size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        <div className="grid gap-7 lg:grid-cols-[1fr_370px]">
+          {/* MAIN */}
+          <div className="overflow-hidden rounded-3xl border border-white/80 bg-white shadow-xl shadow-indigo-100/40">
+            {/* STEP 1 */}
+            {step === 1 && (
+              <div className="p-5 sm:p-8">
+                <SectionHeading
+                  eyebrow="STEP 01"
+                  title="Delivery information"
+                  description="Tell us where you would like your physical card delivered."
+                />
+
+                <div className="space-y-5">
+                  <Input
+                    label="Cardholder name"
+                    name="cardholderName"
+                    value={form.cardholderName}
+                    onChange={handleChange}
+                    placeholder="Enter your full name"
+                    required
+                  />
+
+                  <div>
+                    <label className="mb-2 block text-sm font-bold text-slate-700">
+                      Delivery address
+                      <span className="ml-1 text-red-500">*</span>
+                    </label>
+
+                    <div className="relative">
+                      <MapPin
+                        size={18}
+                        className="absolute left-4 top-3.5 text-indigo-400"
+                      />
+
+                      <input
+                        type="text"
+                        name="cardAddress"
+                        value={form.cardAddress}
+                        onChange={handleChange}
+                        placeholder="Street address"
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Input
+                      label="City"
+                      name="cardCity"
+                      value={form.cardCity}
+                      onChange={handleChange}
+                      placeholder="City"
+                      required
+                    />
+
+                    <Input
+                      label="State / Province"
+                      name="cardState"
+                      value={form.cardState}
+                      onChange={handleChange}
+                      placeholder="State or province"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <Input
+                      label="Postal / ZIP code"
+                      name="cardZip"
+                      value={form.cardZip}
+                      onChange={handleChange}
+                      placeholder="Postal code"
+                      required
+                    />
+
+                    <CustomSelect
+                      label="Country"
+                      icon={<Globe size={17} />}
+                      value={form.cardCountry}
+                      options={COUNTRIES}
+                      onChange={(value) =>
+                        handleChange({
+                          target: {
+                            name: 'cardCountry',
+                            value,
+                          },
+                        })
+                      }
+                      renderSelected={(country) => (
+                        <>
+                          <span className="text-lg">{country?.flag}</span>
+                          <span>{country?.label}</span>
+                        </>
+                      )}
+                      renderOption={(country) => (
+                        <>
+                          <span className="text-lg">{country.flag}</span>
+                          <span>{country.label}</span>
+                        </>
+                      )}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={continueToPayment}
+                  className="mt-8 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0"
+                  style={{
+                    background:
+                      'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)',
+                  }}
+                >
+                  Continue to payment
+                  <ArrowLeft size={17} className="rotate-180" />
+                </button>
+              </div>
+            )}
+
+            {/* STEP 2 */}
+            {step === 2 && (
+              <div className="p-5 sm:p-8">
+                <SectionHeading
+                  eyebrow="STEP 02"
+                  title="Payment"
+                  description="Choose the currency for this payment."
+                />
+
+                {/* PRICE */}
+                <div
+                  className="mb-6 rounded-2xl p-5 text-white shadow-lg"
+                  style={{
+                    background:
+                      'linear-gradient(135deg, #1E1B4B 0%, #3730A3 55%, #4F46E5 100%)',
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wider text-indigo-200">
+                        Card order fee
+                      </p>
+
+                      <p className="mt-1 text-3xl font-black">
+                        ${CARD_FEE.toFixed(2)}
+                      </p>
+                    </div>
+
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-white/10">
+                      <CreditCard size={24} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* CUSTOM CURRENCY SELECT */}
+                <CustomSelect
+                  label="Payment currency"
+                  icon={<Wallet size={17} />}
+                  value={form.paymentCurrency}
+                  options={PAYMENT_CURRENCIES}
+                  onChange={handleCurrencyChange}
+                  renderSelected={(currency) => (
+                    <>
+                      <CurrencyLogo currency={currency} />
+                      <div className="text-left">
+                        <p className="font-bold text-slate-900">
+                          {currency?.label}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {currency?.symbol}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                  renderOption={(currency) => (
+                    <>
+                      <CurrencyLogo currency={currency} />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-bold text-slate-900">
+                          {currency.label}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          {currency.description}
+                        </p>
+                      </div>
+                      <span className="text-xs font-bold text-indigo-500">
+                        {currency.symbol}
+                      </span>
+                    </>
+                  )}
+                />
+
+                {/* WALLET */}
+                <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-100 text-indigo-600">
+                          <Wallet size={18} />
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-black text-slate-900">
+                            Payment address
+                          </p>
+
+                          <p className="text-xs text-slate-500">
+                            {selectedCurrency?.label}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={regenerateWallet}
+                      className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-indigo-600 shadow-sm transition hover:bg-indigo-50"
+                      title="Generate another address"
+                    >
+                      <RefreshCw size={16} />
+                    </button>
+                  </div>
+
+                  <div className="mt-4 rounded-xl border border-indigo-100 bg-white p-3">
+                    <div className="flex items-center gap-2">
+                      <code className="min-w-0 flex-1 break-all text-xs font-semibold leading-5 text-slate-700">
+                        {walletAddress}
+                      </code>
+
+                      <button
+                        type="button"
+                        onClick={copyWallet}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 transition hover:bg-indigo-100"
+                        title="Copy address"
+                      >
+                        {copied ? (
+                          <Check size={16} />
+                        ) : (
+                          <Copy size={16} />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* IMPORTANT WARNING */}
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex gap-3">
+                      <AlertCircle
+                        size={19}
+                        className="mt-0.5 shrink-0 text-amber-600"
+                      />
+
+                      <div>
+                        <p className="text-sm font-black text-amber-900">
+                          Crypto address — account specific
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-amber-800">
+                          This address is generated for this account
+                          and this payment only. Sending funds to
+                          a different address may result in permanent loss of money.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* NOTICE */}
+                <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex gap-3">
+                    <ShieldCheck
+                      size={19}
+                      className="mt-0.5 shrink-0 text-indigo-600"
+                    />
+
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">
+                        Security
+                      </p>
+
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        This payment is protected
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 flex flex-col-reverse gap-3 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={handleBackToStep1}
+                    className="flex-1 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Back
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={placeOrder}
+                    disabled={loading || orderPlaced}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)',
+                    }}
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={18} className="animate-spin" />
+                        Creating order...
+                      </>
+                    ) : orderPlaced ? (
+                      'Order placed'
+                    ) : (
+                      <>
+                        Place order
+                        <ArrowLeft size={17} className="rotate-180" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 3 - PROCESSING */}
+            {step === 3 && (
+              <div className="p-8 sm:p-14">
+                <div className="mx-auto max-w-md text-center">
+                  <div className="relative mx-auto h-24 w-24">
+                    <div className="absolute inset-0 animate-ping rounded-full bg-indigo-100" />
+
+                    <div
+                      className="relative flex h-24 w-24 items-center justify-center rounded-full text-white shadow-xl"
+                      style={{
+                        background:
+                          'linear-gradient(135deg, #4F46E5 0%, #312E81 100%)',
+                      }}
+                    >
+                      <Loader2 size={38} className="animate-spin" />
+                    </div>
+                  </div>
+
+                  <div className="mt-7">
+                    <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-indigo-600">
+                      Processing payment
+                    </span>
+
+                    <h2 className="mt-4 text-2xl font-black text-slate-900">
+                      Processing your order
+                    </h2>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-500">
+                      We are simulating the payment processing and preparing
+                      your card order record.
+                    </p>
+                  </div>
+
+                  <div className="mt-8 space-y-3 text-left">
+                    <ProcessingRow
+                      icon={<Check size={16} />}
+                      title="Order submitted"
+                      description="Your card request was received."
+                      completed
+                    />
+
+                    <ProcessingRow
+                      icon={<Loader2 size={16} className="animate-spin" />}
+                      title="Processing payment"
+                      description="Transaction is protected."
+                      active
+                    />
+
+                    <ProcessingRow
+                      icon={<Clock3 size={16} />}
+                      title="Preparing confirmation"
+                      description="Waiting for processing to complete."
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* STEP 4 - COMPLETE */}
+            {step === 4 && (
+              <div className="p-7 sm:p-12">
+                <div className="mx-auto max-w-lg text-center">
+                  <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shadow-sm">
+                    <CheckCircle2 size={42} />
+                  </div>
+
+                  <div className="mt-6">
+                    <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black uppercase tracking-wider text-emerald-700">
+                      Order created
+                    </span>
+
+                    <h2 className="mt-4 text-2xl font-black text-slate-900">
+                      Your card order is confirmed
+                    </h2>
+
+                    <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500">
+                      Your card order has been successfully created and
+                      added to your tracking history.
+                    </p>
+                  </div>
+
+                  {order?.order_id && (
+                    <div className="mt-7 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
+                      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">
+                        Order reference
+                      </p>
+
+                      <p className="mt-2 font-mono text-lg font-black tracking-wide text-indigo-900">
+                        {order.order_id}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 text-left shadow-sm">
+                    <div className="flex gap-3">
+                      <Truck
+                        size={21}
+                        className="mt-0.5 shrink-0 text-indigo-600"
+                      />
+
+                      <div>
+                        <p className="text-sm font-black text-slate-900">
+                          Delivery tracking
+                        </p>
+
+                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                          Follow your card order and delivery progress from
+                          your card tracking page.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={viewTracking}
+                    className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-bold text-white shadow-lg shadow-indigo-500/20 transition hover:-translate-y-0.5"
+                    style={{
+                      background:
+                        'linear-gradient(135deg, #4F46E5 0%, #3730A3 100%)',
+                    }}
+                  >
+                    Track my card
+                    <ArrowLeft size={17} className="rotate-180" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* PREMIUM CARD / SUMMARY */}
+          <aside className="h-fit lg:sticky lg:top-6">
+            <div className="overflow-hidden rounded-3xl border border-white/80 bg-white shadow-xl shadow-indigo-100/50">
+              <div className="p-5 sm:p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">
+                      Your card
+                    </p>
+
+                    <h3 className="mt-1 text-lg font-black text-slate-900">
+                      Premium Debit Card
+                    </h3>
+                  </div>
+
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                    <Sparkles size={17} />
+                  </div>
+                </div>
+
+                {/* PREMIUM CARD */}
+                <div
+                  className="group relative mt-5 aspect-[1.58/1] overflow-hidden rounded-2xl p-5 text-white shadow-2xl"
+                  style={{
+                    background:
+                      'linear-gradient(135deg, #1E1B4B 0%, #312E81 42%, #4F46E5 100%)',
+                  }}
+                >
+                  {/* decorative glow */}
+                  <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-indigo-400/20 blur-2xl" />
+                  <div className="absolute -bottom-20 -left-10 h-40 w-40 rounded-full bg-purple-400/20 blur-2xl" />
+
+                  {/* card shine */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-white/10 via-transparent to-transparent" />
+
+                  <div className="relative flex items-start justify-between">
+                    <div>
+                      <p className="text-[8px] font-bold uppercase tracking-[0.25em] text-white/50">
+                        Premium
+                      </p>
+
+                      <p className="mt-1 text-sm font-black tracking-[0.15em]">
+                        TRUSTCDU
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <div className="h-5 w-5 rounded-full border border-white/40 bg-white/20" />
+                      <CreditCard
+                        size={22}
+                        className="text-white/80"
+                      />
+                    </div>
+                  </div>
+
+                  {/* chip */}
+                  <div className="relative mt-8 h-7 w-10 overflow-hidden rounded-md border border-white/20 bg-gradient-to-br from-white/50 to-white/10 shadow-inner">
+                    <div className="absolute left-1/2 top-0 h-full w-px bg-white/30" />
+                    <div className="absolute left-0 top-1/2 h-px w-full bg-white/30" />
+                  </div>
+
+                  <div className="relative mt-4">
+                    <p className="font-mono text-sm tracking-[0.22em] text-white/90">
+                      •••• •••• •••• ••••
+                    </p>
+                  </div>
+
+                  <div className="relative mt-4 flex items-end justify-between">
+                    <div className="min-w-0">
+                      <p className="text-[7px] uppercase tracking-wider text-white/40">
+                        Cardholder
+                      </p>
+
+                      <p className="mt-1 max-w-[170px] truncate text-[10px] font-bold uppercase tracking-wider">
+                        {form.cardholderName || 'YOUR NAME'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-[7px] uppercase tracking-wider text-white/40">
+                        Type
+                      </p>
+
+                      <p className="mt-1 text-[10px] font-bold">
+                        DEBIT
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SUMMARY */}
+                <div className="my-5 h-px bg-slate-100" />
+
+                <div className="space-y-4">
+                  <SummaryRow
+                    label="Card fee"
+                    value={`$${CARD_FEE.toFixed(2)}`}
+                  />
+
+                  <SummaryRow
+                    label="Payment currency"
+                    value={form.paymentCurrency}
+                  />
+
+                  <SummaryRow
+                    label="Delivery"
+                    value="5–7 business days"
+                  />
+
+                  <SummaryRow
+                    label="Card type"
+                    value="Premium Debit"
+                  />
+                </div>
+
+                <div className="my-5 h-px bg-slate-100" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-slate-900">
+                    Total
+                  </span>
+
+                  <span className="text-2xl font-black text-indigo-600">
+                    ${CARD_FEE.toFixed(2)}
+                  </span>
+                </div>
+
+                {/* SECURITY */}
+                <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                  <div className="flex gap-3">
+                    <LockKeyhole
+                      size={18}
+                      className="mt-0.5 shrink-0 text-indigo-600"
+                    />
+
+                    <div>
+                      <p className="text-xs font-black text-indigo-900">
+                        Secure card information
+                      </p>
+
+                      <p className="mt-1 text-[11px] leading-5 text-indigo-700/80">
+                        Sensitive card authentication information is never
+                        stored in the tracking record.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
 };
 
-
-
-
-
 /* =========================================================
-   ORDER CARD MAIN COMPONENT
+   HELPER COMPONENTS (unchanged)
 ========================================================= */
-const OrderCard = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
 
-  // Card order state
-  const [showCardModal, setShowCardModal] = useState(false);
-  const [cardOrderStep, setCardOrderStep] = useState('address');
-  const [cardAddress, setCardAddress] = useState('');
-  const [cardCity, setCardCity] = useState('');
-  const [cardState, setCardState] = useState('');
-  const [cardZip, setCardZip] = useState('');
-  const [cardCountry, setCardCountry] = useState('US');
-  const [cardFee] = useState(10);
+const SectionHeading = ({ eyebrow, title, description }) => {
+  return (
+    <div className="mb-7">
+      <p className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-500">
+        {eyebrow}
+      </p>
 
-  //  data
-  const [Card, setCard] = useState(null);
+      <h2 className="mt-1.5 text-xl font-black tracking-tight text-slate-900">
+        {title}
+      </h2>
 
-  // Payment modal
-  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
-  const [selectedCurrency, setSelectedCurrency] = useState(CURRENCIES[0]);
-  const [depositAddress, setDepositAddress] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [paymentStep, setPaymentStep] = useState('idle');
-  const [error, setError] = useState('');
+      <p className="mt-1.5 text-sm leading-6 text-slate-500">
+        {description}
+      </p>
+    </div>
+  );
+};
 
-  // Pre-fill address from user profile when opening
-  const prefillAddress = async () => {
-    try {
-      const profileData = await authAPI.getProfile();
-      if (profileData.success && profileData.profile) {
-        const p = profileData.profile;
-        setCardAddress(p.address || '');
-        setCardCountry(p.country || 'US');
-        setCardCity(p.city || '');
-        setCardState(p.state || '');
-        setCardZip(p.zip || '');
-      }
-    } catch (err) {
-      console.error('Failed to fetch profile:', err);
-    }
-  };
+const StepIndicator = ({ number, label, active, completed }) => {
+  return (
+    <div
+      className={`relative flex items-center justify-center gap-2 border-b-2 px-2 py-4 transition sm:px-4 ${
+        active
+          ? 'border-indigo-600 bg-indigo-50/40'
+          : 'border-transparent bg-white'
+      }`}
+    >
+      <div
+        className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-black transition ${
+          active
+            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/20'
+            : 'bg-slate-100 text-slate-400'
+        }`}
+      >
+        {completed ? <CheckCircle2 size={16} /> : number}
+      </div>
 
-  const handleOrderCard = () => {
-    prefillAddress();
-    setCardOrderStep('address');
-    setShowCardModal(true);
-  };
+      <span
+        className={`hidden text-xs font-bold sm:block ${
+          active ? 'text-indigo-700' : 'text-slate-400'
+        }`}
+      >
+        {label}
+      </span>
+    </div>
+  );
+};
 
-  const handleAddressSubmit = (e) => {
-    e.preventDefault();
-    setError('');
-    if (!cardAddress || !cardCity || !cardState || !cardZip || !cardCountry) {
-      setError('Please complete your shipping address.');
-      return;
-    }
-    setCardOrderStep('review');
-  };
+const Input = ({
+  label,
+  name,
+  value,
+  onChange,
+  placeholder,
+  required = false,
+}) => {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-bold text-slate-700">
+        {label}
+        {required && <span className="ml-1 text-red-500">*</span>}
+      </label>
 
-  const handleProceedToPayment = () => {
-    setShowCardModal(false);
-    setPaymentModalOpen(true);
-    setPaymentStep('idle');
-    setSelectedCurrency(CURRENCIES[0]);
-    if (user) {
-      setDepositAddress(generateDepositAddress(user.id, CURRENCIES[0].id));
-    }
-  };
+      <input
+        type="text"
+        name={name}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        className="w-full rounded-xl border border-slate-200 bg-slate-50/50 px-4 py-3.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
+      />
+    </div>
+  );
+};
 
-  const handlePaymentMade = () => {
-    setPaymentStep('checking');
-    // Simulate processing
-    setTimeout(() => {
-      const security = generateCardSecurity(user?.id);
-      setCard({
-        number: generateCardNumber(user?.id),
-        expiry: security.expiry,
-        cvv: security.cvv,
-        orderId: `CARD-${Math.floor(100000 + Math.random() * 900000)}`,
-      });
-      setPaymentStep('done');
-    }, 3000);
-  };
+const CustomSelect = ({
+  label,
+  icon,
+  value,
+  options,
+  onChange,
+  renderSelected,
+  renderOption,
+}) => {
+  const [open, setOpen] = useState(false);
 
-  const handleCurrencySelect = (currency) => {
-    setSelectedCurrency(currency);
-    if (user) {
-      setDepositAddress(generateDepositAddress(user.id, currency.id));
-    }
-    setCopied(false);
-  };
-
-  const copyAddress = async () => {
-    try {
-      await navigator.clipboard.writeText(depositAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      setError('Unable to copy address.');
-    }
-  };
-
-  const resetCardFlow = () => {
-    setShowCardModal(false);
-    setPaymentModalOpen(false);
-    setPaymentStep('idle');
-    setCardOrderStep('address');
-    setCopied(false);
-    setError('');
-  };
+  const selected = options.find((option) => option.value === value);
 
   return (
-    <>
-      {/* =====================================================
-          DEBIT CARD SECTION (visible on the page)
-      ===================================================== */}
-      <section className="relative overflow-hidden rounded-[28px] border border-gray-200 bg-white shadow-sm">
-        <div className="absolute top-0 right-0 w-72 h-72 bg-primary-50 rounded-full blur-3xl opacity-60 pointer-events-none" />
-        <div className="relative p-6 sm:p-8">
-          <div className="flex flex-col lg:flex-row gap-8 items-center">
-            {/* Card visual */}
-            <div className="w-full lg:w-[52%]" id="card">
-              <DebitCard
-                user={user}
-                cardNumber={Card?.number || '5426 •••• •••• 8291'}
-                expiry={Card?.expiry || '12/29'}
-                cvv={Card?.cvv || '•••'}
-              />
-              <div className="flex items-center justify-center gap-2 mt-4 text-xs text-gray-400">
-                <ShieldCheck className="h-4 w-4" />
-                <span>Sample card • No financial data until activated</span>
-              </div>
-            </div>
+    <div className="relative">
+      <label className="mb-2 block text-sm font-bold text-slate-700">
+        {label}
+      </label>
 
-            {/* Description & order button */}
-            <div className="w-full lg:w-[48%]">
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary-50 text-primary-700 px-3 py-1.5 text-xs font-semibold">
-                <Sparkles className="h-3.5 w-3.5" />
-                Premium Card
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mt-4">
-                Your banking card,<br />
-                beautifully designed for convenience.
-              </h2>
-              <p className="text-sm text-gray-500 mt-3 leading-6">
-                Order a personalized debit card using your account
-                information. The card shown here is for this assignment
-                and does not represent a real financial product.
-              </p>
-              <div className="grid grid-cols-2 gap-3 mt-6">
-                <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
-                  <CreditCard className="h-5 w-5 text-gray-700" />
-                  <p className="text-xs text-gray-400 mt-3">Card type</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">Debit</p>
-                </div>
-                <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
-                  <Truck className="h-5 w-5 text-gray-700" />
-                  <p className="text-xs text-gray-400 mt-3">Delivery</p>
-                  <p className="text-sm font-semibold text-gray-900 mt-1">5–7 business days</p>
-                </div>
-              </div>
-              <div className="flex items-center justify-between mt-6 pt-5 border-t border-gray-100">
-                <div>
-                  <p className="text-xs text-gray-400">Card fee</p>
-                  <p className="text-xl font-bold text-gray-900">${cardFee.toFixed(2)}</p>
-                </div>
-                <button
-                  onClick={handleOrderCard}
-                  className="btn-primary inline-flex items-center gap-2"
-                >
-                  <CreditCard className="h-5 w-5" />
-                  Order Card
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        className={`flex w-full items-center gap-3 rounded-xl border bg-slate-50/50 px-4 py-3 text-left outline-none transition ${
+          open
+            ? 'border-indigo-500 bg-white ring-4 ring-indigo-500/10'
+            : 'border-slate-200 hover:border-indigo-200 hover:bg-white'
+        }`}
+      >
+        {icon && (
+          <span className="shrink-0 text-indigo-500">
+            {icon}
+          </span>
+        )}
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            {renderSelected(selected)}
           </div>
         </div>
-      </section>
 
-      {/* =====================================================
-          CARD ADDRESS + REVIEW MODAL
-      ===================================================== */}
-      <Modal
-        isOpen={showCardModal}
-        onClose={resetCardFlow}
-        title={cardOrderStep === 'address' ? 'Shipping Details' : 'Review Card Order'}
-        size="md"
-        position="bottom"
-        showCloseButton
-        closeOnOutsideClick={false}
-      >
-        {cardOrderStep === 'address' && (
-          <form onSubmit={handleAddressSubmit} className="space-y-5">
-            <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4 flex gap-3">
-              <MapPin className="h-5 w-5 text-primary-600 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-semibold text-gray-900">Where should we send your card?</p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Your profile information has been used to pre-fill the form where available.
-                </p>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Street address</label>
-              <input
-                type="text"
-                value={cardAddress}
-                onChange={(e) => setCardAddress(e.target.value)}
-                className="input-field"
-                placeholder="123 Main Street"
-                required
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                <input
-                  type="text"
-                  value={cardCity}
-                  onChange={(e) => setCardCity(e.target.value)}
-                  className="input-field"
-                  placeholder="City"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
-                <input
-                  type="text"
-                  value={cardState}
-                  onChange={(e) => setCardState(e.target.value)}
-                  className="input-field"
-                  placeholder="State"
-                  required
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">ZIP / Postal code</label>
-                <input
-                  type="text"
-                  value={cardZip}
-                  onChange={(e) => setCardZip(e.target.value)}
-                  className="input-field"
-                  placeholder="10001"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
-                <select
-                  value={cardCountry}
-                  onChange={(e) => setCardCountry(e.target.value)}
-                  className="input-field"
-                >
-                  <option value="US">United States</option>
-                  <option value="CA">Canada</option>
-                  <option value="GB">United Kingdom</option>
-                  <option value="DE">Germany</option>
-                  <option value="FR">France</option>
-                  <option value="AU">Australia</option>
-                  <option value="NG">Nigeria</option>
-                </select>
-              </div>
-            </div>
-            <div className="rounded-2xl border border-gray-200 p-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-700">Card fee</p>
-                <p className="text-xs text-gray-400 mt-1">One-time assignment fee</p>
-              </div>
-              <p className="text-lg font-bold text-gray-900">${cardFee.toFixed(2)}</p>
-            </div>
-            <div className="flex gap-3 pt-2">
-              <button type="button" onClick={resetCardFlow} className="btn-secondary flex-1">
-                Cancel
-              </button>
-              <button type="submit" className="btn-primary flex-1 inline-flex items-center justify-center gap-2">
-                Continue <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </form>
-        )}
+        <ChevronDown
+          size={17}
+          className={`shrink-0 text-slate-400 transition ${
+            open ? 'rotate-180 text-indigo-500' : ''
+          }`}
+        />
+      </button>
 
-        {cardOrderStep === 'review' && (
-          <div className="space-y-5">
-            <DebitCard user={user} cardNumber="5426 •••• •••• 8291" expiry="12/29" cvv="•••" />
-            <div className="rounded-2xl border border-gray-200 divide-y divide-gray-100">
-              <div className="p-4 flex items-start gap-3">
-                <User className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-xs text-gray-400">Card holder</p>
-                  <p className="text-sm font-medium text-gray-900 mt-1">{user?.full_name || 'Card Holder'}</p>
-                </div>
-              </div>
-              <div className="p-4 flex items-start gap-3">
-                <MapPin className="h-5 w-5 text-gray-400" />
-                <div>
-                  <p className="text-xs text-gray-400">Delivery address</p>
-                  <p className="text-sm font-medium text-gray-900 mt-1">{cardAddress}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {cardCity}, {cardState} {cardZip}
-                  </p>
-                  <p className="text-xs text-gray-500">{cardCountry}</p>
-                </div>
-              </div>
-              <div className="p-4 flex items-center justify-between">
-                <span className="text-sm text-gray-500">Card fee</span>
-                <span className="font-bold text-gray-900">${cardFee.toFixed(2)}</span>
-              </div>
-            </div>
-            
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setCardOrderStep('address')}
-                className="btn-secondary flex-1"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={handleProceedToPayment}
-                className="btn-primary flex-1 inline-flex items-center justify-center gap-2"
-              >
-                Proceed <ArrowRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Close select"
+            className="fixed inset-0 z-30 cursor-default"
+            onClick={() => setOpen(false)}
+          />
 
-      {/* =====================================================
-          PAYMENT MODAL
-      ===================================================== */}
-      <Modal
-        isOpen={paymentModalOpen}
-        onClose={resetCardFlow}
-        title={
-          paymentStep === 'idle'
-            ? 'Complete Card Order'
-            : paymentStep === 'checking'
-            ? 'Processing Order'
-            : 'Order Confirmed'
-        }
-        size="lg"
-        position="bottom"
-        showCloseButton={paymentStep === 'done'}
-        closeOnOutsideClick={false}
-      >
-        {paymentStep === 'idle' && (
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-gray-200 bg-white p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-400">Amount due</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">${cardFee.toFixed(2)}</p>
-                </div>
-                <div className="w-11 h-11 rounded-xl bg-primary-50 flex items-center justify-center">
-                  <CreditCard className="h-5 w-5 text-primary-600" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2 mt-4 text-xs text-gray-500">
-                <Lock className="h-3.5 w-3.5" /> Secured payment environment
-              </div>
-            </div>
+          <div className="absolute left-0 right-0 z-40 mt-2 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-2xl shadow-slate-900/10">
+            {options.map((option) => {
+              const selectedOption = option.value === value;
 
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Select currency</h3>
-                  <p className="text-xs text-gray-400 mt-1">Choose how you would like to make payment.</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {CURRENCIES.map((currency) => (
-                  <button
-                    key={currency.id}
-                    type="button"
-                    onClick={() => handleCurrencySelect(currency)}
-                    className={`relative p-4 rounded-2xl border text-left transition-all ${
-                      selectedCurrency.id === currency.id
-                        ? 'border-primary-500 bg-primary-50 ring-1 ring-primary-500'
-                        : 'border-gray-200 bg-white hover:border-gray-300'
-                    }`}
-                  >
-                    {selectedCurrency.id === currency.id && (
-                      <div className="absolute top-3 right-3">
-                        <CheckCircle className="h-4 w-4 text-primary-600" />
-                      </div>
-                    )}
-                    <img
-                      src={currency.logo}
-                      alt={currency.name}
-                      className="w-9 h-9 object-contain"
-                      onError={(e) => (e.currentTarget.style.display = 'none')}
-                    />
-                    <p className="text-sm font-semibold text-gray-900 mt-3">{currency.symbol}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{currency.name}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-sm font-semibold text-gray-700">Payment address</label>
-                <span className="text-[10px] uppercase tracking-wider font-semibold text-gray-400">
-                  {selectedCurrency.symbol}
-                </span>
-              </div>
-              <div className="rounded-2xl border border-gray-200 bg-gray-50 p-4 flex items-center gap-3">
-                <p className="font-mono text-xs sm:text-sm text-gray-700 break-all flex-1">{depositAddress}</p>
+              return (
                 <button
                   type="button"
-                  onClick={copyAddress}
-                  className="w-10 h-10 rounded-xl bg-white border border-gray-200 flex items-center justify-center hover:border-primary-300 transition-colors flex-shrink-0"
-                  title="Copy address"
+                  key={option.value}
+                  onClick={() => {
+                    onChange(option.value);
+                    setOpen(false);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${
+                    selectedOption
+                      ? 'bg-indigo-50'
+                      : 'hover:bg-slate-50'
+                  }`}
                 >
-                  {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4 text-gray-500" />}
+                  {renderOption(option)}
+
+                  {selectedOption && (
+                    <Check
+                      size={17}
+                      className="ml-auto shrink-0 text-indigo-600"
+                    />
+                  )}
                 </button>
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 flex gap-3">
-              <Info className="h-5 w-5 text-amber-600 flex-shrink-0" />
-              <div>
-
-                <p className="text-xs text-amber-700 mt-1 leading-5">
-                  Clicking the button below start the payment process.
-                </p>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={handlePaymentMade}
-              className="btn-primary w-full py-3.5 inline-flex items-center justify-center gap-2"
-            >
-              <CheckCircle className="h-5 w-5" /> I've completed the  Payment
-            </button>
+              );
+            })}
           </div>
-        )}
+        </>
+      )}
+    </div>
+  );
+};
 
-        {paymentStep === 'checking' && (
-          <div className="text-center py-10">
-            <div className="relative w-20 h-20 mx-auto">
-              <div className="absolute inset-0 rounded-full border-4 border-primary-100" />
-              <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-primary-600 animate-spin" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <CreditCard className="h-7 w-7 text-primary-600" />
-              </div>
-            </div>
-            <h3 className="text-xl font-bold text-gray-900 mt-6">Preparing your card order</h3>
-            <p className="text-sm text-gray-500 max-w-md mx-auto mt-2 leading-6">
-              We're checking the payment confirmation and preparing your card order details.
-            </p>
-            <div className="max-w-sm mx-auto mt-8 space-y-3 text-left">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm text-gray-600">Order details verified</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-sm text-gray-600">Shipping address confirmed</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <Loader2 className="h-5 w-5 text-primary-600 animate-spin" />
-                <span className="text-sm text-gray-600">Preparing card order</span>
-              </div>
-            </div>
-          </div>
-        )}
+const CurrencyLogo = ({ currency }) => {
+  if (!currency) return null;
 
-        {paymentStep === 'done' && (
-          <div className="py-4">
-            <div className="text-center">
-              <div className="relative w-20 h-20 mx-auto">
-                <div className="absolute inset-0 rounded-full bg-green-100 animate-pulse" />
-                <div className="relative w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
-                  <PackageCheck className="h-9 w-9 text-green-600" />
-                </div>
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 mt-6">Your card is on its way</h3>
-              <p className="text-sm text-gray-500 max-w-md mx-auto mt-2 leading-6">
-                Your card order has been successfully created. Your card will be with you within
-                <span className="font-semibold text-gray-700"> 5–7 business days.</span>
-              </p>
-            </div>
+  return (
+    <div
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-black text-white shadow-sm"
+      style={{
+        background:
+          'linear-gradient(135deg, #4F46E5 0%, #312E81 100%)',
+      }}
+    >
+      {currency.logo}
+    </div>
+  );
+};
 
-            <div className="rounded-2xl bg-gray-50 border border-gray-200 p-5 mt-7">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs text-gray-400">Order reference</p>
-                  <p className="font-mono font-semibold text-gray-900 mt-1">{Card?.orderId}</p>
-                </div>
-                <CheckCircle className="h-5 w-5 text-green-600" />
-              </div>
-              <div className="mt-5 pt-5 border-t border-gray-200">
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 rounded-xl bg-primary-50 flex items-center justify-center">
-                    <Truck className="h-4 w-4 text-primary-600" />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">Estimated delivery</p>
-                    <p className="text-xs text-gray-500 mt-0.5">5–7 business days</p>
-                  </div>
-                </div>
-              </div>
-            </div>
+const SummaryRow = ({ label, value }) => {
+  return (
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <span className="text-slate-500">{label}</span>
 
-            {Card && (
-              <div className="mt-7">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400 mb-3 text-center">
-                  Your card
-                </p>
-                <DebitCard user={user} cardNumber={Card.number} expiry={Card.expiry} cvv={Card.cvv} />
-              </div>
-            )}
+      <span className="text-right font-bold text-slate-900">
+        {value}
+      </span>
+    </div>
+  );
+};
 
-            <div className="flex flex-col sm:flex-row gap-3 mt-7">
-              <button
-                type="button"
-                onClick={() => {
-                  resetCardFlow();
-                  navigate('/card-tracking');
-                }}
-                className="btn-primary flex-1 inline-flex items-center justify-center gap-2"
-              >
-                <Truck className="h-4 w-4" /> Track Card Movement <ArrowRight className="h-4 w-4" />
-              </button>
-              <button type="button" onClick={resetCardFlow} className="btn-secondary flex-1">
-                Close
-              </button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </>
+const ProcessingRow = ({
+  icon,
+  title,
+  description,
+  completed = false,
+  active = false,
+}) => {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-xl border p-3 ${
+        completed
+          ? 'border-emerald-100 bg-emerald-50/50'
+          : active
+            ? 'border-indigo-100 bg-indigo-50/60'
+            : 'border-slate-100 bg-slate-50'
+      }`}
+    >
+      <div
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+          completed
+            ? 'bg-emerald-100 text-emerald-600'
+            : active
+              ? 'bg-indigo-100 text-indigo-600'
+              : 'bg-slate-200 text-slate-400'
+        }`}
+      >
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-xs font-black text-slate-900">
+          {title}
+        </p>
+
+        <p className="mt-0.5 text-[11px] text-slate-500">
+          {description}
+        </p>
+      </div>
+    </div>
   );
 };
 

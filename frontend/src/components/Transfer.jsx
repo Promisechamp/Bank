@@ -6,13 +6,11 @@ import { toast } from 'sonner';
 import {
   ArrowRight,
   ArrowUpRight,
-  Building2,
   Check,
   CheckCircle,
   ChevronDown,
   Clock3,
   CreditCard,
-  ExternalLink,
   HelpCircle,
   Landmark,
   Loader2,
@@ -26,7 +24,6 @@ import {
   ShieldCheck,
   User,
   Wallet,
-  X,
   Zap,
 } from 'lucide-react';
 
@@ -54,23 +51,29 @@ const CustomSelect = ({
   }, []);
 
   return (
-    <div className={`relative ${className}`} onClick={(e) => e.stopPropagation()}>
+    <div
+      className={`relative ${className}`}
+      onClick={(e) => e.stopPropagation()}
+    >
       <button
         type="button"
         disabled={disabled}
         onClick={() => setOpen((v) => !v)}
-        className="input-field w-full flex items-center justify-between text-left disabled:opacity-60 disabled:cursor-not-allowed"
+        className="flex h-12 w-full items-center justify-between rounded-xl border border-gray-200 bg-white px-4 text-left text-sm shadow-sm outline-none transition hover:border-gray-300 focus:border-primary-500 focus:ring-4 focus:ring-primary-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
         <span className={selected ? 'text-gray-900' : 'text-gray-400'}>
           {selected?.label || placeholder}
         </span>
+
         <ChevronDown
-          className={`h-4 w-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`h-4 w-4 text-gray-400 transition-transform ${
+            open ? 'rotate-180' : ''
+          }`}
         />
       </button>
 
       {open && !disabled && (
-        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-2xl border border-gray-200 bg-white p-1.5 shadow-xl">
+        <div className="absolute z-50 mt-2 w-full overflow-hidden rounded-xl border border-gray-200 bg-white p-1 shadow-xl">
           {options.map((option) => (
             <button
               key={option.value}
@@ -79,7 +82,7 @@ const CustomSelect = ({
                 onChange(option.value);
                 setOpen(false);
               }}
-              className={`w-full rounded-xl px-3 py-2.5 text-left text-sm transition ${
+              className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${
                 option.value === value
                   ? 'bg-primary-50 text-primary-700'
                   : 'text-gray-700 hover:bg-gray-50'
@@ -87,10 +90,16 @@ const CustomSelect = ({
             >
               <div className="flex items-center justify-between gap-3">
                 <span>{option.label}</span>
-                {option.value === value && <Check className="h-4 w-4" />}
+
+                {option.value === value && (
+                  <Check className="h-4 w-4" />
+                )}
               </div>
+
               {option.description && (
-                <p className="mt-0.5 text-xs text-gray-400">{option.description}</p>
+                <p className="mt-1 text-xs text-gray-400">
+                  {option.description}
+                </p>
               )}
             </button>
           ))}
@@ -101,28 +110,43 @@ const CustomSelect = ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* Small UI primitives                                                        */
+/* Status                                                                     */
 /* -------------------------------------------------------------------------- */
 
 const StatusPill = ({ status }) => {
   const normalized = String(status || 'active').toLowerCase();
+
   const restricted = ['frozen', 'banned', 'suspended'].includes(normalized);
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+      className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
         restricted
           ? 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200'
           : 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200'
       }`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${restricted ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          restricted ? 'bg-amber-500' : 'bg-emerald-500'
+        }`}
+      />
+
       {normalized.charAt(0).toUpperCase() + normalized.slice(1)}
     </span>
   );
 };
 
-const InfoBanner = ({ icon: Icon, title, children, tone = 'gray', action }) => {
+/* -------------------------------------------------------------------------- */
+/* Info Banner                                                                */
+/* -------------------------------------------------------------------------- */
+
+const InfoBanner = ({
+  icon: Icon,
+  title,
+  children,
+  tone = 'gray',
+}) => {
   const tones = {
     gray: 'border-gray-200 bg-gray-50 text-gray-700',
     amber: 'border-amber-200 bg-amber-50 text-amber-900',
@@ -130,25 +154,35 @@ const InfoBanner = ({ icon: Icon, title, children, tone = 'gray', action }) => {
   };
 
   return (
-    <div className={`rounded-2xl border p-4 ${tones[tone]}`}>
+    <div className={`rounded-xl border p-4 ${tones[tone]}`}>
       <div className="flex gap-3">
-        <div className="mt-0.5 shrink-0">
-          <Icon className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
+        <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+
+        <div className="min-w-0">
           <p className="text-sm font-semibold">{title}</p>
-          <div className="mt-1 text-xs leading-5 opacity-80">{children}</div>
-          {action}
+
+          <div className="mt-1 text-xs leading-5 opacity-80">
+            {children}
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
-const InitializationStep = ({ active, completed, icon, label }) => (
+/* -------------------------------------------------------------------------- */
+/* Initialization                                                             */
+/* -------------------------------------------------------------------------- */
+
+const InitializationStep = ({
+  active,
+  completed,
+  icon,
+  label,
+}) => (
   <div className="flex items-center gap-3">
     <div
-      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition ${
+      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
         completed
           ? 'bg-emerald-100 text-emerald-600'
           : active
@@ -164,9 +198,14 @@ const InitializationStep = ({ active, completed, icon, label }) => (
         icon
       )}
     </div>
+
     <p
       className={`text-sm ${
-        active ? 'font-semibold text-primary-700' : completed ? 'text-emerald-700' : 'text-gray-500'
+        active
+          ? 'font-semibold text-primary-700'
+          : completed
+            ? 'text-emerald-700'
+            : 'text-gray-500'
       }`}
     >
       {label}
@@ -174,15 +213,34 @@ const InitializationStep = ({ active, completed, icon, label }) => (
   </div>
 );
 
-const ProcessingScreen = ({ icon, title, message }) => (
+/* -------------------------------------------------------------------------- */
+/* Processing Screen                                                          */
+/* -------------------------------------------------------------------------- */
+
+const ProcessingScreen = ({
+  icon,
+  title,
+  message,
+}) => (
   <div className="py-8 text-center">
     <div className="relative mx-auto h-16 w-16">
       <div className="absolute inset-0 rounded-full border-4 border-gray-100" />
+
       <div className="absolute inset-0 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
-      <div className="absolute inset-0 flex items-center justify-center">{icon}</div>
+
+      <div className="absolute inset-0 flex items-center justify-center">
+        {icon}
+      </div>
     </div>
-    <h3 className="mt-6 text-lg font-semibold text-gray-900">{title}</h3>
-    <p className="mx-auto mt-2 max-w-xs text-sm leading-5 text-gray-500">{message}</p>
+
+    <h3 className="mt-6 text-lg font-semibold text-gray-900">
+      {title}
+    </h3>
+
+    <p className="mx-auto mt-2 max-w-xs text-sm leading-5 text-gray-500">
+      {message}
+    </p>
+
     <div className="mt-5 flex justify-center gap-1">
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
       <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:150ms]" />
@@ -192,26 +250,36 @@ const ProcessingScreen = ({ icon, title, message }) => (
 );
 
 /* -------------------------------------------------------------------------- */
-/* Transfer type cards                                                        */
+/* Transfer Type                                                              */
 /* -------------------------------------------------------------------------- */
 
-const TransferTypeCard = ({ active, icon: Icon, title, description, badge, onClick, disabled }) => (
+const TransferTypeCard = ({
+  active,
+  icon: Icon,
+  title,
+  description,
+  badge,
+  onClick,
+  disabled,
+}) => (
   <button
     type="button"
     onClick={onClick}
     disabled={disabled}
-    className={`group relative w-full rounded-2xl border p-4 text-left transition-all ${
+    className={`group relative w-full rounded-xl border px-5 py-4 text-left transition ${
       active
-        ? 'border-primary-300 bg-primary-50/70 shadow-sm'
+        ? 'border-primary-500 bg-primary-50'
         : disabled
-          ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-70'
-          : 'border-gray-200 bg-white hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md'
+          ? 'cursor-not-allowed border-gray-200 bg-gray-50 opacity-60'
+          : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
     }`}
   >
-    <div className="flex items-start gap-3">
+    <div className="flex items-start gap-4">
       <div
-        className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${
-          active ? 'bg-primary-600 text-white' : 'bg-gray-100 text-gray-600'
+        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
+          active
+            ? 'bg-primary-600 text-white'
+            : 'bg-gray-100 text-gray-600'
         }`}
       >
         <Icon className="h-5 w-5" />
@@ -219,24 +287,127 @@ const TransferTypeCard = ({ active, icon: Icon, title, description, badge, onCli
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-bold text-gray-900">{title}</p>
+          <p className="text-sm font-bold text-gray-900">
+            {title}
+          </p>
+
           {badge && (
-            <span className="rounded-full bg-gray-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
               {badge}
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
+
+        <p className="mt-1 text-xs leading-5 text-gray-500">
+          {description}
+        </p>
       </div>
 
-      {active && <CheckCircle className="mt-1 h-4 w-4 shrink-0 text-primary-600" />}
+      {active && (
+        <CheckCircle className="mt-1 h-4 w-4 shrink-0 text-primary-600" />
+      )}
     </div>
   </button>
 );
 
+/* -------------------------------------------------------------------------- */
+/* Classic Debit Card                                                         */
+/* -------------------------------------------------------------------------- */
+
+const ClassicDebitCard = ({
+  userName = 'CARDHOLDER NAME',
+}) => {
+  return (
+    <div className="relative mx-auto w-full max-w-[430px]">
+      <div className="relative aspect-[1.586/1] overflow-hidden rounded-[22px] bg-primary-600 p-6 text-white shadow-2xl shadow-primary-900/20 sm:p-7">
+        {/* Fine architectural lines */}
+        <div className="pointer-events-none absolute inset-0">
+          <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full border border-white/10" />
+          <div className="absolute -right-16 -top-16 h-56 w-56 rounded-full border border-white/10" />
+          <div className="absolute -right-8 -top-8 h-40 w-40 rounded-full border border-white/10" />
+
+          <div className="absolute bottom-[-100px] left-[-100px] h-64 w-64 rounded-full border border-white/10" />
+          <div className="absolute bottom-[-75px] left-[-75px] h-48 w-48 rounded-full border border-white/10" />
+
+          <div className="absolute left-0 top-1/2 h-px w-full bg-white/10" />
+
+          <div className="absolute left-[14%] top-0 h-full w-px bg-white/10" />
+          <div className="absolute left-[28%] top-0 h-full w-px bg-white/10" />
+
+          <div className="absolute bottom-0 right-[18%] h-full w-px bg-white/5" />
+        </div>
+
+        {/* Card header */}
+        <div className="relative z-10 flex items-start justify-between">
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-[0.35em] text-white/55">
+              Debit
+            </p>
+
+            <p className="mt-1 text-sm font-semibold tracking-wide">
+              Everyday
+            </p>
+          </div>
+
+          <div className="text-right">
+            <p className="text-[9px] uppercase tracking-[0.25em] text-white/50">
+              Member
+            </p>
+
+            <p className="mt-1 text-xs font-semibold">
+              ACTIVE
+            </p>
+          </div>
+        </div>
+
+        {/* Chip */}
+        <div className="relative z-10 mt-9">
+          <div className="relative h-10 w-14 overflow-hidden rounded-lg border border-white/30 bg-white/15">
+            <div className="absolute left-1/2 top-0 h-full w-px bg-white/30" />
+            <div className="absolute left-0 top-1/2 h-px w-full bg-white/30" />
+            <div className="absolute left-1/2 top-1/2 h-5 w-8 -translate-x-1/2 -translate-y-1/2 rounded border border-white/20" />
+          </div>
+        </div>
+
+        {/* Card number */}
+        <div className="relative z-10 mt-6">
+          <p className="font-mono text-[15px] tracking-[0.18em] text-white/90 sm:text-base">
+            •••• &nbsp; •••• &nbsp; •••• &nbsp; 2841
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="absolute bottom-6 left-6 right-6 z-10 flex items-end justify-between sm:bottom-7 sm:left-7 sm:right-7">
+          <div>
+            <p className="text-[8px] uppercase tracking-[0.25em] text-white/45">
+              Cardholder
+            </p>
+
+            <p className="mt-1 max-w-[210px] truncate text-[11px] font-semibold uppercase tracking-wider text-white/90">
+              {userName}
+            </p>
+          </div>
+
+          <div className="text-right">
+            <p className="text-[8px] uppercase tracking-[0.25em] text-white/45">
+              Valid thru
+            </p>
+
+            <p className="mt-1 text-[11px] font-semibold tracking-wider">
+              12/29
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* Card shadow line */}
+      <div className="mx-7 h-2 rounded-b-full bg-primary-900/10" />
+    </div>
+  );
+};
 
 /* -------------------------------------------------------------------------- */
-/* Main Transfer Component                                                    */
+/* Main                                                                       */
 /* -------------------------------------------------------------------------- */
 
 const Transfer = () => {
@@ -293,11 +464,9 @@ const Transfer = () => {
     try {
       setFetching(true);
 
-      // Delay execution for 5 seconds
-      await new Promise(resolve => setTimeout(resolve, 5000));
-
       const data = await accountsAPI.getAll();
       const loadedAccounts = data.accounts || [];
+
       setAccounts(loadedAccounts);
 
       if (!fromAccount && loadedAccounts.length) {
@@ -325,6 +494,7 @@ const Transfer = () => {
           account_type: response.account.account_type,
           account_id: response.account.id,
         });
+
         setRecipientName(response.account.owner_name);
       } else {
         setAccountCheckResult({ exists: false });
@@ -332,18 +502,27 @@ const Transfer = () => {
         setAccountCheckError('Account not found.');
       }
     } catch (err) {
-      setAccountCheckError(err?.error || 'Unable to verify account number.');
+      setAccountCheckError(
+        err?.error || 'Unable to verify account number.'
+      );
     } finally {
       setAccountCheckLoading(false);
     }
   };
 
-  const getAccount = (id) => accounts.find((account) => account.id === id);
+  const getAccount = (id) =>
+    accounts.find((account) => account.id === id);
 
-  const selectedAccount = useMemo(() => getAccount(fromAccount), [fromAccount, accounts]);
+  const selectedAccount = useMemo(
+    () => getAccount(fromAccount),
+    [fromAccount, accounts]
+  );
 
   const availableBalance = useMemo(
-    () => (selectedAccount ? Number(selectedAccount.balance || 0) : 0),
+    () =>
+      selectedAccount
+        ? Number(selectedAccount.balance || 0)
+        : 0,
     [selectedAccount]
   );
 
@@ -352,7 +531,9 @@ const Transfer = () => {
       accounts.map((account) => ({
         value: account.id,
         label: `${account.account_type} — ${formatCurrency(account.balance)}`,
-        description: `${account.account_number || 'Account'} • ${account.status || 'active'}`,
+        description: `${account.account_number || 'Account'} • ${
+          account.status || 'active'
+        }`,
       })),
     [accounts]
   );
@@ -369,22 +550,42 @@ const Transfer = () => {
 
   const handleTransferSubmit = async (e) => {
     e.preventDefault();
+
     setError('');
     setSuccess('');
     setReference('');
     setResultStatus('');
 
-    if (!fromAccount) return setError('Please select an account.');
-    if (!recipientAccountNumber) return setError('Please enter the recipient account number.');
-    if (!accountCheckResult?.exists) return setError('Please enter a valid recipient account number.');
+    if (!fromAccount) {
+      return setError('Please select an account.');
+    }
+
+    if (!recipientAccountNumber) {
+      return setError(
+        'Please enter the recipient account number.'
+      );
+    }
+
+    if (!accountCheckResult?.exists) {
+      return setError(
+        'Please enter a valid recipient account number.'
+      );
+    }
 
     const amountNum = Number(amount);
+
     if (!validateAmount(amountNum) || amountNum <= 0) {
-      return setError('Please enter a valid amount greater than 0.');
+      return setError(
+        'Please enter a valid amount greater than 0.'
+      );
     }
 
     if (amountNum > availableBalance) {
-      return setError(`Insufficient funds. Available balance: ${formatCurrency(availableBalance)}`);
+      return setError(
+        `Insufficient funds. Available balance: ${formatCurrency(
+          availableBalance
+        )}`
+      );
     }
 
     setLoading(true);
@@ -392,19 +593,28 @@ const Transfer = () => {
 
     try {
       await sleep(500);
+
       setInitializationStep('verifying_recipient');
       await sleep(700);
+
       setInitializationStep('creating_transfer');
 
-      const response = await transactionsAPI.initiateTransfer({
-        fromAccountId: fromAccount,
-        amount: amountNum,
-        description: description || 'Same bank transfer',
-        recipientAccountNumber,
-        recipientName,
-      });
+      const response =
+        await transactionsAPI.initiateTransfer({
+          fromAccountId: fromAccount,
+          amount: amountNum,
+          description:
+            description || 'Same bank transfer',
+          recipientAccountNumber,
+          recipientName,
+        });
 
-      if (!response?.success) throw new Error(response?.error || 'Unable to initiate transfer.');
+      if (!response?.success) {
+        throw new Error(
+          response?.error ||
+            'Unable to initiate transfer.'
+        );
+      }
 
       setInitializationStep('sending_otp');
       await sleep(900);
@@ -417,16 +627,29 @@ const Transfer = () => {
         setOtpStep('sent');
         setOtpModalOpen(true);
         setInitializationStep('idle');
+
         toast.success('Verification code sent');
       } else {
         setReference(response.reference || '');
-        setResultStatus(response.status || 'completed');
-        setSuccess(response.message || 'Transfer completed successfully.');
+        setResultStatus(
+          response.status || 'completed'
+        );
+
+        setSuccess(
+          response.message ||
+            'Transfer completed successfully.'
+        );
+
         resetTransferForm();
         await fetchAccounts();
       }
     } catch (err) {
-      setError(err?.error || err?.message || 'Transfer initiation failed.');
+      setError(
+        err?.error ||
+          err?.message ||
+          'Transfer initiation failed.'
+      );
+
       setInitializationStep('idle');
     } finally {
       setLoading(false);
@@ -438,7 +661,9 @@ const Transfer = () => {
     setOtpError('');
 
     if (!otpCode || otpCode.length !== 6) {
-      setOtpError('Enter the 6-digit OTP sent to your email.');
+      setOtpError(
+        'Enter the 6-digit OTP sent to your email.'
+      );
       return;
     }
 
@@ -448,51 +673,87 @@ const Transfer = () => {
     try {
       await sleep(1000);
 
-      const response = await transactionsAPI.verifyTransfer({
-        reference: otpReference,
-        otp: otpCode,
-      });
+      const response =
+        await transactionsAPI.verifyTransfer({
+          reference: otpReference,
+          otp: otpCode,
+        });
 
       if (!response?.success) {
         const nextAttempts = otpAttempts + 1;
+
         setOtpAttempts(nextAttempts);
 
         if (nextAttempts >= 3) {
-          setOtpError('Too many failed attempts. Please try again later.');
+          setOtpError(
+            'Too many failed attempts. Please try again later.'
+          );
+
           setOtpStep('idle');
+
           await sleep(500);
           setOtpModalOpen(false);
         } else {
-          setOtpError(`Invalid OTP. ${3 - nextAttempts} attempt${3 - nextAttempts === 1 ? '' : 's'} remaining.`);
+          setOtpError(
+            `Invalid OTP. ${
+              3 - nextAttempts
+            } attempt${
+              3 - nextAttempts === 1 ? '' : 's'
+            } remaining.`
+          );
+
           setOtpStep('sent');
         }
+
         return;
       }
 
       setOtpStep('processing');
+
       await sleep(1800);
 
       if (response.status === 'pending_review') {
         setOtpStep('pending_review');
-        setReference(response.reference || otpReference);
+
+        setReference(
+          response.reference || otpReference
+        );
+
         setResultStatus('pending_review');
+
         toast.success('Transfer submitted for review');
+
         return;
       }
 
       if (response.status === 'completed') {
         setOtpStep('completed');
-        setReference(response.reference || otpReference);
+
+        setReference(
+          response.reference || otpReference
+        );
+
         setResultStatus('completed');
+
         toast.success('Transfer completed');
+
         await fetchAccounts();
+
         return;
       }
 
-      setOtpError('The transfer returned an unexpected status.');
+      setOtpError(
+        'The transfer returned an unexpected status.'
+      );
+
       setOtpStep('sent');
     } catch (err) {
-      setOtpError(err?.error || err?.message || 'Unable to verify this transaction.');
+      setOtpError(
+        err?.error ||
+          err?.message ||
+          'Unable to verify this transaction.'
+      );
+
       setOtpStep('sent');
     } finally {
       setOtpLoading(false);
@@ -500,7 +761,13 @@ const Transfer = () => {
   };
 
   const closeOtpModal = () => {
-    if (otpStep === 'verifying' || otpStep === 'processing') return;
+    if (
+      otpStep === 'verifying' ||
+      otpStep === 'processing'
+    ) {
+      return;
+    }
+
     setOtpModalOpen(false);
     setOtpStep('idle');
     setOtpCode('');
@@ -511,7 +778,7 @@ const Transfer = () => {
   if (fetching) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary-50">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-primary-100 bg-primary-50">
           <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
         </div>
 
@@ -532,164 +799,236 @@ const Transfer = () => {
     'CARDHOLDER NAME';
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-7 pb-12">
-      {/* Header */}
-      <div className="flex flex-col justify-between gap-5 md:flex-row md:items-end">
-        <div>
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-primary-50 px-3 py-1.5 text-xs font-semibold text-primary-700">
-            <Zap className="h-3.5 w-3.5" />
-            Banking services
+    <div className="mx-auto w-full max-w-7xl pb-14">
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Page Header                                                         */}
+      {/* ------------------------------------------------------------------ */}
+
+      <header className="border-b border-gray-200 pb-7">
+        <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-end">
+          <div>
+            <div className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-600">
+              <span className="h-px w-7 bg-primary-600" />
+              Payments
+            </div>
+
+            <h1 className="text-3xl font-semibold tracking-tight text-gray-950 sm:text-4xl">
+              Transfer money
+            </h1>
+
+            <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">
+              Send money securely between eligible accounts and
+              verify every transfer before it is completed.
+            </p>
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-gray-950 sm:text-4xl">Move money & manage cards</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
-            Send money securely, manage transfer restrictions, and request your debit card from one place.
+
+          <a
+            href="/withdraw#card"
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-gray-800 shadow-sm transition hover:border-gray-300 hover:bg-gray-50"
+          >
+            <CreditCard className="h-4 w-4 text-primary-600" />
+            Order debit card
+          </a>
+        </div>
+      </header>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Service Information                                                */}
+      {/* ------------------------------------------------------------------ */}
+
+      <div className="grid rounded-xl p-4 mt-6 border border-gray-200 sm:grid-cols-3">
+        <div className="flex items-center gap-3 border-b border-gray-200 py-5 sm:border-b-0 sm:border-r sm:pr-6">
+          <ShieldCheck className="h-5 w-5 text-primary-600" />
+
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-gray-400">
+              Security
+            </p>
+
+            <p className="mt-0.5 text-sm font-semibold text-gray-900">
+              OTP protected
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 border-b border-gray-200 py-5 sm:border-b-0 sm:px-6 sm:border-r">
+          <ArrowUpRight className="h-5 w-5 text-primary-600" />
+
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-gray-400">
+              Transfers
+            </p>
+
+            <p className="mt-0.5 text-sm font-semibold text-gray-900">
+              Same-bank enabled
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 py-5 sm:pl-6">
+          <CreditCard className="h-5 w-5 text-primary-600" />
+
+          <div>
+            <p className="text-[11px] uppercase tracking-wider text-gray-400">
+              Card
+            </p>
+
+            <p className="mt-0.5 text-sm font-semibold text-gray-900">
+              Debit card ordering
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Transfer Navigation                                                 */}
+      {/* ------------------------------------------------------------------ */}
+
+      <section className="mt-8">
+        <div className="mb-4">
+          <p className="text-sm font-semibold text-gray-900">
+            Transfer type
+          </p>
+
+          <p className="mt-1 text-xs text-gray-500">
+            Select where you want the funds to go.
           </p>
         </div>
 
-        <a href='/withdraw#card'
-          type="button"
-          className="inline-flex items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-800 shadow-sm transition hover:-translate-y-0.5 hover:border-gray-300 hover:shadow-md"
-        >
-          <CreditCard className="h-4 w-4 text-primary-600" />
-          Order debit card
-        </a>
-      </div>
-
-      {/* Service strip */}
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-              <ShieldCheck className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Security</p>
-              <p className="text-sm font-semibold text-gray-900">OTP protected</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-              <ArrowUpRight className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Transfers</p>
-              <p className="text-sm font-semibold text-gray-900">Same-bank enabled</p>
-            </div>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
-              <CreditCard className="h-4 w-4" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-400">Cards</p>
-              <p className="text-sm font-semibold text-gray-900">Debit card ordering</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Transfer type navigation */}
-      <div>
-        <div className="mb-3">
-          <p className="text-sm font-bold text-gray-900">Transfer type</p>
-          <p className="mt-1 text-xs text-gray-500">Choose the service that matches where your money is going.</p>
-        </div>
-
-        <div className="grid gap-3 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-3">
           <TransferTypeCard
             active={transferType === 'internal'}
             icon={Wallet}
             title="Internal"
-            badge="Self"
-            description="Move money between accounts owned by you."
+            badge="SELF"
+            description="Move funds between accounts owned by you."
             onClick={() => {
               setTransferType('internal');
               setError('');
             }}
           />
+
           <TransferTypeCard
             active={transferType === 'external'}
             icon={Send}
             title="External"
-            badge="Same bank"
-            description="Send money to another customer account within the bank."
+            badge="SAME BANK"
+            description="Send funds to another customer account."
             onClick={() => {
               setTransferType('external');
               setError('');
             }}
           />
+
           <TransferTypeCard
             active={transferType === 'interbank'}
             icon={Landmark}
-            badge="Suspended"
             title="Interbank"
-            description="Send money to an account held at another bank."
+            badge="SUSPENDED"
+            description="Send funds to an account at another bank."
             onClick={() => {
               setTransferType('interbank');
               setError('');
             }}
           />
         </div>
-      </div>
+      </section>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Messages                                                            */}
+      {/* ------------------------------------------------------------------ */}
 
       {success && transferType === 'external' && (
-        <InfoBanner icon={CheckCircle} title="Transfer completed" tone="blue">
-          {success}
-          {reference && <span className="ml-1 font-mono">Reference: {reference}</span>}
-        </InfoBanner>
+        <div className="mt-6">
+          <InfoBanner
+            icon={CheckCircle}
+            title="Transfer completed"
+            tone="blue"
+          >
+            {success}
+
+            {reference && (
+              <span className="ml-1 font-mono">
+                Reference: {reference}
+              </span>
+            )}
+          </InfoBanner>
+        </div>
       )}
 
       {error && transferType === 'external' && (
-        <InfoBanner icon={AlertCircleIcon} title="Transfer could not be started">
-          {error}
-        </InfoBanner>
+        <div className="mt-6">
+          <InfoBanner
+            icon={AlertCircleIcon}
+            title="Transfer could not be started"
+          >
+            {error}
+          </InfoBanner>
+        </div>
       )}
 
-      {/* Internal */}
+      {/* ------------------------------------------------------------------ */}
+      {/* INTERNAL                                                            */}
+      {/* ------------------------------------------------------------------ */}
+
       {transferType === 'internal' && (
-        <div className="grid gap-5 lg:grid-cols-[1.25fr_.75fr]">
-          <div className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-            <div className="border-b border-gray-100 p-6 sm:p-8">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50 text-primary-600">
-                <Wallet className="h-6 w-6" />
+        <div className="mt-7 grid gap-8 lg:grid-cols-[1fr_400px]">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+            <div className="border-b border-gray-200 p-7 sm:p-9">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                <Wallet className="h-5 w-5" />
               </div>
-              <h2 className="mt-5 text-2xl font-bold text-gray-950">Open another self account first</h2>
+
+              <h2 className="mt-6 text-2xl font-semibold tracking-tight text-gray-950">
+                Open another self account first
+              </h2>
+
               <p className="mt-2 max-w-xl text-sm leading-6 text-gray-500">
-                Internal transfers are designed for moving funds between accounts owned by you. You need another eligible self-owned account before money can be moved internally.
+                Internal transfers are designed for moving funds
+                between accounts owned by you. You need another
+                eligible self-owned account before money can be
+                moved internally.
               </p>
             </div>
 
-            <div className="grid gap-3 p-6 sm:grid-cols-2 sm:p-8">
-              <div className="rounded-2xl border border-gray-200 p-4">
-                <div className="flex items-center gap-3">
-                  <User className="h-5 w-5 text-primary-600" />
-                  <p className="text-sm font-semibold text-gray-900">Contact your account manager</p>
-                </div>
+            <div className="grid gap-px bg-gray-200 sm:grid-cols-2">
+              <div className="bg-white p-6">
+                <User className="h-5 w-5 text-primary-600" />
+
+                <p className="mt-5 text-sm font-semibold text-gray-900">
+                  Contact your account manager
+                </p>
+
                 <p className="mt-2 text-xs leading-5 text-gray-500">
-                  Your account manager can help you request another self-owned account.
+                  Your account manager can help you request
+                  another self-owned account.
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-gray-200 p-4">
-                <div className="flex items-center gap-3">
-                  <MapPin className="h-5 w-5 text-primary-600" />
-                  <p className="text-sm font-semibold text-gray-900">Visit a branch</p>
-                </div>
+              <div className="bg-white p-6">
+                <MapPin className="h-5 w-5 text-primary-600" />
+
+                <p className="mt-5 text-sm font-semibold text-gray-900">
+                  Visit a branch
+                </p>
+
                 <p className="mt-2 text-xs leading-5 text-gray-500">
-                  A branch representative can assist with opening an additional account.
+                  A branch representative can assist with opening
+                  an additional account.
                 </p>
               </div>
             </div>
 
-            <div className="border-t border-gray-100 bg-gray-50 p-6 sm:p-8">
+            <div className="border-t border-gray-200 bg-gray-50 p-6">
               <button
                 type="button"
-                onClick={() => toast.info('Please contact your account manager or visit a branch to open another self account.')}
-                className="btn-primary inline-flex items-center gap-2"
+                onClick={() =>
+                  toast.info(
+                    'Please contact your account manager or visit a branch to open another self account.'
+                  )
+                }
+                className="btn-primary inline-flex items-center gap-2 rounded-xl"
               >
                 <Plus className="h-4 w-4" />
                 Request another account
@@ -697,43 +1036,77 @@ const Transfer = () => {
             </div>
           </div>
 
-          <div className="rounded-3xl border border-gray-200 bg-gray-950 p-6 text-white shadow-sm">
-            <ShieldCheck className="h-7 w-7 text-white/80" />
-            <p className="mt-8 text-xs font-semibold uppercase tracking-[0.2em] text-white/40">Internal transfer</p>
-            <h3 className="mt-2 text-xl font-bold">Your accounts stay separated</h3>
-            <p className="mt-2 text-sm leading-6 text-white/60">
-              Once another self-owned account is available, it can be used as a destination for internal movement.
+          <div className="relative overflow-hidden rounded-2xl bg-gray-950 p-8 text-white">
+            <div className="absolute right-0 top-0 h-64 w-64 rounded-full border border-white/10" />
+            <div className="absolute right-10 top-10 h-44 w-44 rounded-full border border-white/10" />
+
+            <ShieldCheck className="relative h-6 w-6 text-white/70" />
+
+            <p className="relative mt-12 text-[10px] font-semibold uppercase tracking-[0.25em] text-white/40">
+              Internal transfer
+            </p>
+
+            <h3 className="relative mt-2 text-xl font-semibold">
+              Keep your accounts organized
+            </h3>
+
+            <p className="relative mt-3 text-sm leading-6 text-white/55">
+              Once another eligible self-owned account is
+              available, it can be selected as an internal
+              transfer destination.
             </p>
           </div>
         </div>
       )}
 
-      {/* Interbank */}
+      {/* ------------------------------------------------------------------ */}
+      {/* INTERBANK                                                           */}
+      {/* ------------------------------------------------------------------ */}
+
       {transferType === 'interbank' && (
-        <div className="overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-sm">
-          <div className="grid gap-0 lg:grid-cols-[1fr_360px]">
-            <div className="p-7 sm:p-10">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600">
-                <ShieldAlert className="h-7 w-7" />
+        <div className="mt-7 overflow-hidden rounded-2xl border border-amber-200 bg-white">
+          <div className="grid lg:grid-cols-[1fr_350px]">
+            <div className="p-8 sm:p-10">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-50 text-amber-600">
+                <ShieldAlert className="h-6 w-6" />
               </div>
-              <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-amber-600">Temporary restriction</p>
-              <h2 className="mt-2 text-3xl font-bold tracking-tight text-gray-950">Interbank transfers are suspended</h2>
+
+              <p className="mt-7 text-[10px] font-bold uppercase tracking-[0.25em] text-amber-600">
+                Temporary restriction
+              </p>
+
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-gray-950">
+                Interbank transfers are suspended
+              </h2>
+
               <p className="mt-3 max-w-2xl text-sm leading-6 text-gray-500">
-                Interbank transfers are temporarily suspended due to suspicious account activities. To lift the restriction, please visit a branch or contact your account manager.
+                Interbank transfers are temporarily suspended
+                due to suspicious account activities. To lift the
+                restriction, please visit a branch or contact your
+                account manager.
               </p>
 
               <div className="mt-7 flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={() => toast.info('Please contact your account manager or visit a branch to lift the interbank restriction.')}
-                  className="btn-primary inline-flex items-center gap-2"
+                  onClick={() =>
+                    toast.info(
+                      'Please contact your account manager or visit a branch to lift the interbank restriction.'
+                    )
+                  }
+                  className="btn-primary inline-flex items-center gap-2 rounded-xl"
                 >
                   <User className="h-4 w-4" />
                   Contact account manager
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => toast.info('Please visit your nearest branch for assistance.')}
+                  onClick={() =>
+                    toast.info(
+                      'Please visit your nearest branch for assistance.'
+                    )
+                  }
                   className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50"
                 >
                   <MapPin className="h-4 w-4" />
@@ -742,208 +1115,357 @@ const Transfer = () => {
               </div>
             </div>
 
-            <div className="border-t border-amber-100 bg-amber-50/50 p-7 lg:border-l lg:border-t-0">
+            <div className="border-t border-amber-100 bg-amber-50/60 p-8 lg:border-l lg:border-t-0">
               <Clock3 className="h-6 w-6 text-amber-600" />
-              <p className="mt-5 text-sm font-bold text-gray-900">Why no transfer form?</p>
+
+              <p className="mt-6 text-sm font-semibold text-gray-900">
+                Why no transfer form?
+              </p>
+
               <p className="mt-2 text-xs leading-5 text-gray-600">
-                The restriction must be reviewed before interbank functionality becomes available again.
+                The restriction must be reviewed before
+                interbank functionality becomes available again.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* External */}
+      {/* ------------------------------------------------------------------ */}
+      {/* EXTERNAL TRANSFER                                                  */}
+      {/* ------------------------------------------------------------------ */}
+
       {transferType === 'external' && (
-        <form onSubmit={handleTransferSubmit} className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm">
-          <div className="grid lg:grid-cols-[1.05fr_.95fr]">
-            <div className="space-y-6 p-6 sm:p-8">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary-600">Same-bank transfer</p>
-                <h2 className="mt-2 text-2xl font-bold tracking-tight text-gray-950">Send money securely</h2>
-                <p className="mt-1 text-sm text-gray-500">Enter the recipient and amount, then verify the transaction with OTP.</p>
+        <form
+          onSubmit={handleTransferSubmit}
+          className="mt-7 overflow-hidden rounded-2xl border border-gray-200 bg-white"
+        >
+          <div className="grid lg:grid-cols-[1fr_430px]">
+
+            {/* Form */}
+            <div className="p-7 sm:p-9">
+              <div className="border-b border-gray-100 pb-6">
+                <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-primary-600">
+                  Same-bank transfer
+                </p>
+
+                <h2 className="mt-2 text-2xl font-semibold tracking-tight text-gray-950">
+                  Send money securely
+                </h2>
+
+                <p className="mt-2 text-sm leading-6 text-gray-500">
+                  Enter the recipient and amount, then verify
+                  the transaction with OTP.
+                </p>
               </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">From account</label>
-                <CustomSelect
-                  value={fromAccount}
-                  onChange={setFromAccount}
-                  options={accountOptions}
-                  placeholder="Select an account"
-                />
-                {selectedAccount && (
-                  <div className="mt-2 flex items-center justify-between text-xs">
-                    <span className="text-gray-400">Available balance</span>
-                    <span className="font-semibold text-gray-700">{formatCurrency(availableBalance)}</span>
+              <div className="mt-7 space-y-6">
+
+                {/* From */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    From account
+                  </label>
+
+                  <CustomSelect
+                    value={fromAccount}
+                    onChange={setFromAccount}
+                    options={accountOptions}
+                    placeholder="Select an account"
+                  />
+
+                  {selectedAccount && (
+                    <div className="mt-2 flex items-center justify-between text-xs">
+                      <span className="text-gray-400">
+                        Available balance
+                      </span>
+
+                      <span className="font-semibold text-gray-700">
+                        {formatCurrency(availableBalance)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Recipient */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    Recipient account number
+                  </label>
+
+                  <div className="relative">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={recipientAccountNumber}
+                      onChange={(e) =>
+                        setRecipientAccountNumber(
+                          e.target.value.replace(/\s/g, '')
+                        )
+                      }
+                      className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 pr-11 text-sm outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+                      placeholder="Enter account number"
+                      required
+                    />
+
+                    {accountCheckLoading && (
+                      <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-primary-600" />
+                    )}
+
+                    {accountCheckResult?.exists && (
+                      <CheckCircle className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-emerald-600" />
+                    )}
                   </div>
-                )}
-              </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">Recipient account number</label>
-                <div className="relative">
+                  {accountCheckResult?.exists && (
+                    <div className="mt-3 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-emerald-600">
+                        <User className="h-4 w-4" />
+                      </div>
+
+                      <div>
+                        <p className="text-sm font-bold text-emerald-950">
+                          {accountCheckResult.owner_name}
+                        </p>
+
+                        <p className="mt-0.5 text-xs text-emerald-700">
+                          {accountCheckResult.account_type} • Account verified
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {accountCheckError && (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      {accountCheckError}
+                    </p>
+                  )}
+                </div>
+
+                {/* Amount */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    Amount
+                  </label>
+
+                  <div className="relative">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-gray-500">
+                      $
+                    </span>
+
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={amount}
+                      onChange={(e) =>
+                        setAmount(e.target.value)
+                      }
+                      className="h-14 w-full rounded-xl border border-gray-200 bg-white pl-9 pr-4 text-xl font-semibold outline-none transition placeholder:text-gray-300 hover:border-gray-300 focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+                      placeholder="0.00"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-gray-700">
+                    Description{' '}
+                    <span className="font-normal text-gray-400">
+                      (optional)
+                    </span>
+                  </label>
+
                   <input
                     type="text"
-                    inputMode="numeric"
-                    value={recipientAccountNumber}
-                    onChange={(e) => setRecipientAccountNumber(e.target.value.replace(/\s/g, ''))}
-                    className="input-field pr-11"
-                    placeholder="Enter account number"
-                    required
+                    value={description}
+                    onChange={(e) =>
+                      setDescription(e.target.value)
+                    }
+                    className="h-12 w-full rounded-xl border border-gray-200 bg-white px-4 text-sm outline-none transition placeholder:text-gray-400 hover:border-gray-300 focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
+                    placeholder="e.g. Payment for services"
                   />
-                  {accountCheckLoading && (
-                    <Loader2 className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 animate-spin text-primary-600" />
-                  )}
-                  {accountCheckResult?.exists && (
-                    <CheckCircle className="absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2 text-emerald-600" />
-                  )}
                 </div>
 
-                {accountCheckResult?.exists && (
-                  <div className="mt-3 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-emerald-600">
-                      <User className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-sm font-bold text-emerald-950">{accountCheckResult.owner_name}</p>
-                      <p className="mt-0.5 text-xs text-emerald-700">{accountCheckResult.account_type} • Account verified</p>
+                <InfoBanner
+                  icon={ShieldCheck}
+                  title="Protected transfer"
+                >
+                  Your transaction is verified with a one-time
+                  code before funds are moved. Restricted
+                  accounts may require additional review.
+                </InfoBanner>
+
+                {/* Progress */}
+                {loading && (
+                  <div className="rounded-xl border border-primary-100 bg-primary-50 p-5">
+                    <div className="space-y-3">
+                      <InitializationStep
+                        active={
+                          initializationStep === 'preparing'
+                        }
+                        completed={[
+                          'verifying_recipient',
+                          'creating_transfer',
+                          'sending_otp',
+                        ].includes(initializationStep)}
+                        icon={
+                          <Wallet className="h-4 w-4" />
+                        }
+                        label="Preparing transfer"
+                      />
+
+                      <InitializationStep
+                        active={
+                          initializationStep ===
+                          'verifying_recipient'
+                        }
+                        completed={[
+                          'creating_transfer',
+                          'sending_otp',
+                        ].includes(initializationStep)}
+                        icon={
+                          <Search className="h-4 w-4" />
+                        }
+                        label="Verifying recipient"
+                      />
+
+                      <InitializationStep
+                        active={
+                          initializationStep ===
+                          'creating_transfer'
+                        }
+                        completed={
+                          initializationStep ===
+                          'sending_otp'
+                        }
+                        icon={
+                          <ArrowRight className="h-4 w-4" />
+                        }
+                        label="Creating transfer"
+                      />
+
+                      <InitializationStep
+                        active={
+                          initializationStep === 'sending_otp'
+                        }
+                        completed={false}
+                        icon={
+                          <Mail className="h-4 w-4" />
+                        }
+                        label="Sending verification code"
+                      />
                     </div>
                   </div>
                 )}
 
-                {accountCheckError && <p className="mt-2 text-xs font-medium text-red-600">{accountCheckError}</p>}
+                <button
+                  type="submit"
+                  disabled={
+                    loading || accountCheckLoading
+                  }
+                  className="btn-primary inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl"
+                >
+                  {loading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : (
+                    <Send className="h-5 w-5" />
+                  )}
+
+                  {loading
+                    ? 'Preparing transfer...'
+                    : 'Continue to verification'}
+                </button>
               </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">Amount (USD)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-semibold text-gray-500">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.01"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="input-field pl-8 text-lg font-semibold"
-                    placeholder="0.00"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-semibold text-gray-700">
-                  Description <span className="font-normal text-gray-400">(optional)</span>
-                </label>
-                <input
-                  type="text"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="input-field"
-                  placeholder="e.g. Payment for services"
-                />
-              </div>
-
-              <InfoBanner icon={ShieldCheck} title="Protected transfer">
-                Your transaction is verified with a one-time code before funds are moved. Restricted accounts may require additional administrator review.
-              </InfoBanner>
-
-              {loading && (
-                <div className="rounded-2xl border border-primary-100 bg-primary-50 p-4">
-                  <div className="space-y-3">
-                    <InitializationStep
-                      active={initializationStep === 'preparing'}
-                      completed={['verifying_recipient', 'creating_transfer', 'sending_otp'].includes(initializationStep)}
-                      icon={<Wallet className="h-4 w-4" />}
-                      label="Preparing transfer"
-                    />
-                    <InitializationStep
-                      active={initializationStep === 'verifying_recipient'}
-                      completed={['creating_transfer', 'sending_otp'].includes(initializationStep)}
-                      icon={<Search className="h-4 w-4" />}
-                      label="Verifying recipient"
-                    />
-                    <InitializationStep
-                      active={initializationStep === 'creating_transfer'}
-                      completed={initializationStep === 'sending_otp'}
-                      icon={<ArrowRight className="h-4 w-4" />}
-                      label="Creating transfer"
-                    />
-                    <InitializationStep
-                      active={initializationStep === 'sending_otp'}
-                      completed={false}
-                      icon={<Mail className="h-4 w-4" />}
-                      label="Sending verification code"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading || accountCheckLoading}
-                className="btn-primary w-full inline-flex items-center justify-center gap-2"
-              >
-                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
-                {loading ? 'Preparing transfer...' : 'Continue to verification'}
-              </button>
             </div>
 
-            <div className="border-t border-gray-100 bg-gray-50/70 p-6 sm:p-8 lg:border-l lg:border-t-0">
+            {/* Summary */}
+            <div className="border-t border-gray-200 bg-gray-50/70 p-7 sm:p-9 lg:border-l lg:border-t-0">
               <div className="sticky top-6">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-400">Transfer summary</p>
-                  <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-bold text-gray-500 ring-1 ring-gray-200">
-                    SAME BANK
+
+                <div className="flex items-center justify-between border-b border-gray-200 pb-4">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.25em] text-gray-400">
+                    Transfer summary
+                  </p>
+
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-primary-600">
+                    Same bank
                   </span>
                 </div>
 
-                <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-5">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-100 text-gray-600">
+                <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white">
+
+                  {/* From */}
+                  <div className="flex items-center gap-4 p-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gray-100 text-gray-600">
                       <Wallet className="h-5 w-5" />
                     </div>
+
                     <div className="min-w-0">
-                      <p className="text-[11px] text-gray-400">From</p>
-                      <p className="truncate text-sm font-semibold text-gray-900">
-                        {selectedAccount?.account_type || 'Select account'}
+                      <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                        From
+                      </p>
+
+                      <p className="mt-1 truncate text-sm font-semibold text-gray-900">
+                        {selectedAccount?.account_type ||
+                          'Select account'}
                       </p>
                     </div>
                   </div>
 
-                  <div className="my-4 ml-5 h-7 border-l border-dashed border-gray-300" />
+                  <div className="ml-[39px] h-7 border-l border-dashed border-gray-300" />
 
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                  {/* To */}
+                  <div className="flex items-center gap-4 p-5">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
                       <User className="h-5 w-5" />
                     </div>
+
                     <div className="min-w-0">
-                      <p className="text-[11px] text-gray-400">To</p>
-                      <p className="truncate text-sm font-semibold text-gray-900">
-                        {recipientName || 'Recipient will appear here'}
+                      <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                        To
+                      </p>
+
+                      <p className="mt-1 truncate text-sm font-semibold text-gray-900">
+                        {recipientName ||
+                          'Recipient will appear here'}
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-3 rounded-2xl border border-gray-200 bg-white p-5">
-                  <p className="text-xs text-gray-400">Amount</p>
-                  <p className="mt-1 text-3xl font-bold tracking-tight text-gray-950">
-                    {formatCurrency(Number(amount) || 0)}
+                {/* Amount */}
+                <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white p-6">
+                  <p className="text-[10px] uppercase tracking-wider text-gray-400">
+                    Amount
                   </p>
-                  <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4 text-xs">
-                    <span className="text-gray-400">Security</span>
-                    <span className="inline-flex items-center gap-1 font-semibold text-emerald-600">
+
+                  <p className="mt-2 text-3xl font-semibold tracking-tight text-gray-950">
+                    {formatCurrency(
+                      Number(amount) || 0
+                    )}
+                  </p>
+
+                  <div className="mt-5 flex items-center justify-between border-t border-gray-100 pt-4">
+                    <span className="text-xs text-gray-400">
+                      Verification
+                    </span>
+
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-600">
                       <LockKeyhole className="h-3.5 w-3.5" />
-                      OTP verified
+                      OTP protected
                     </span>
                   </div>
                 </div>
 
-                <div className="mt-4 flex gap-2 text-xs leading-5 text-gray-400">
+                <div className="mt-5 flex gap-2 text-xs leading-5 text-gray-400">
                   <HelpCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <p>Never share your OTP with another person.</p>
+
+                  <p>
+                    Never share your verification code with
+                    another person.
+                  </p>
                 </div>
               </div>
             </div>
@@ -951,80 +1473,151 @@ const Transfer = () => {
         </form>
       )}
 
-      {/* Debit card CTA */}
-      <div className="overflow-hidden rounded-3xl bg-gray-950 p-6 text-white shadow-sm sm:p-8">
-        <div className="grid items-center gap-7 lg:grid-cols-[1fr_420px]">
+      {/* ------------------------------------------------------------------ */}
+      {/* DEBIT CARD SECTION                                                  */}
+      {/* ------------------------------------------------------------------ */}
+
+      <section className="mt-10 border-t border-gray-200 pt-10">
+        <div className="grid items-center gap-10 lg:grid-cols-[1fr_500px]">
+
           <div>
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10">
-              <CreditCard className="h-5 w-5" />
+            <div className="mb-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary-600">
+              <CreditCard className="h-4 w-4" />
+              Debit card
             </div>
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.2em] text-white/40">Debit card</p>
-            <h2 className="mt-2 text-2xl font-bold">Need a card for everyday spending?</h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-white/60">
-              Order your debit card, choose your delivery preference, and receive a card reference you can use to track the simulated order.
+
+            <h2 className="text-3xl font-semibold tracking-tight text-gray-950">
+              A card designed for everyday spending.
+            </h2>
+
+            <p className="mt-3 max-w-xl text-sm leading-6 text-gray-500">
+              Order your debit card and manage your everyday
+              spending from the same account you use for
+              transfers.
             </p>
-            <a href='withdraw#card'
-              type="button"
-              className="mt-6 inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-gray-900 transition hover:bg-gray-100"
+
+            <div className="mt-7 flex flex-wrap gap-x-7 gap-y-3 text-xs text-gray-500">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-primary-600" />
+                Secure payments
+              </div>
+
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-primary-600" />
+                Everyday spending
+              </div>
+
+              <div className="flex items-center gap-2">
+                <CheckCircle className="h-4 w-4 text-primary-600" />
+                Track your card
+              </div>
+            </div>
+
+            <a
+              href="/withdraw#card"
+              className="btn-primary mt-7 inline-flex items-center gap-2 rounded-xl"
             >
               Order debit card
               <ArrowRight className="h-4 w-4" />
             </a>
           </div>
 
+          <ClassicDebitCard userName={userName} />
 
         </div>
-      </div>
+      </section>
 
-      {/* OTP Modal */}
+      {/* ------------------------------------------------------------------ */}
+      {/* OTP MODAL                                                           */}
+      {/* ------------------------------------------------------------------ */}
+
       <Modal
         isOpen={otpModalOpen}
         onClose={closeOtpModal}
         title="Verify transfer"
         size="sm"
         position="center"
-        showCloseButton={otpStep === 'sent' || otpStep === 'completed' || otpStep === 'pending_review'}
+        showCloseButton={
+          otpStep === 'sent' ||
+          otpStep === 'completed' ||
+          otpStep === 'pending_review'
+        }
         closeOnOutsideClick={false}
       >
         {otpStep === 'sent' && (
-          <form onSubmit={handleOtpSubmit} className="space-y-6">
+          <form
+            onSubmit={handleOtpSubmit}
+            className="space-y-6"
+          >
             <div className="text-center">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-50">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-primary-50">
                 <Mail className="h-7 w-7 text-primary-600" />
               </div>
-              <h3 className="mt-4 font-semibold text-gray-900">Verify your transfer</h3>
+
+              <h3 className="mt-5 font-semibold text-gray-900">
+                Verify your transfer
+              </h3>
+
               <p className="mt-2 text-sm leading-5 text-gray-500">
-                A 6-digit verification code was sent to your registered email address.
+                A 6-digit verification code was sent to your
+                registered email address.
               </p>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-semibold text-gray-700">Verification code</label>
+              <label className="mb-2 block text-sm font-semibold text-gray-700">
+                Verification code
+              </label>
+
               <input
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
                 value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
-                className="input-field text-center font-mono text-2xl tracking-[0.35em]"
+                onChange={(e) =>
+                  setOtpCode(
+                    e.target.value.replace(/\D/g, '')
+                  )
+                }
+                className="h-14 w-full rounded-xl border border-gray-200 text-center font-mono text-2xl tracking-[0.35em] outline-none focus:border-primary-500 focus:ring-4 focus:ring-primary-100"
                 placeholder="••••••"
                 autoFocus
               />
-              {otpError && <p className="mt-2 text-sm text-red-600">{otpError}</p>}
+
+              {otpError && (
+                <p className="mt-2 text-sm text-red-600">
+                  {otpError}
+                </p>
+              )}
             </div>
 
-            <button type="submit" disabled={otpLoading} className="btn-primary w-full inline-flex items-center justify-center gap-2">
-              {otpLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : <LockKeyhole className="h-5 w-5" />}
-              {otpLoading ? 'Verifying...' : 'Verify transfer'}
+            <button
+              type="submit"
+              disabled={otpLoading}
+              className="btn-primary inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl"
+            >
+              {otpLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <LockKeyhole className="h-5 w-5" />
+              )}
+
+              {otpLoading
+                ? 'Verifying...'
+                : 'Verify transfer'}
             </button>
 
-            <p className="text-center text-[11px] text-gray-400">Reference: {otpReference}</p>
+            <p className="text-center text-[11px] text-gray-400">
+              Reference: {otpReference}
+            </p>
           </form>
         )}
 
         {otpStep === 'verifying' && (
           <ProcessingScreen
-            icon={<LockKeyhole className="h-7 w-7 text-primary-600" />}
+            icon={
+              <LockKeyhole className="h-7 w-7 text-primary-600" />
+            }
             title="Verifying OTP"
             message="We're securely validating your verification code."
           />
@@ -1032,7 +1625,9 @@ const Transfer = () => {
 
         {otpStep === 'processing' && (
           <ProcessingScreen
-            icon={<ArrowRight className="h-7 w-7 text-primary-600" />}
+            icon={
+              <ArrowRight className="h-7 w-7 text-primary-600" />
+            }
             title="Processing transfer"
             message="Your transfer is being posted. Please don't close this window."
           />
@@ -1043,20 +1638,32 @@ const Transfer = () => {
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100">
               <CheckCircle className="h-9 w-9 text-emerald-600" />
             </div>
-            <h3 className="mt-5 text-xl font-semibold text-gray-900">Transfer successful</h3>
+
+            <h3 className="mt-5 text-xl font-semibold text-gray-900">
+              Transfer successful
+            </h3>
+
             <p className="mt-2 text-sm leading-5 text-gray-500">
-              Your OTP was verified and the transfer has been completed.
+              Your OTP was verified and the transfer has been
+              completed.
             </p>
-            <div className="mt-5 rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Transaction reference</p>
-              <p className="mt-1 font-mono text-sm font-medium text-gray-900">{reference}</p>
+
+            <div className="mt-5 rounded-xl bg-gray-50 p-4">
+              <p className="text-xs text-gray-500">
+                Transaction reference
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-medium text-gray-900">
+                {reference}
+              </p>
             </div>
+
             <button
               onClick={() => {
                 closeOtpModal();
                 resetTransferForm();
               }}
-              className="btn-primary mt-5 w-full"
+              className="btn-primary mt-5 w-full rounded-xl"
             >
               Done
             </button>
@@ -1068,26 +1675,44 @@ const Transfer = () => {
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
               <Clock3 className="h-9 w-9 text-amber-600" />
             </div>
-            <h3 className="mt-5 text-xl font-semibold text-gray-900">Transfer pending review</h3>
+
+            <h3 className="mt-5 text-xl font-semibold text-gray-900">
+              Transfer pending review
+            </h3>
+
             <p className="mt-2 text-sm leading-5 text-gray-500">
-              Your OTP was verified successfully. Because the account is currently restricted, the transfer requires administrator approval before funds can move.
+              Your OTP was verified successfully. Because the
+              account is currently restricted, the transfer
+              requires administrator approval before funds can
+              move.
             </p>
 
             <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left">
               <div className="flex gap-3">
                 <Clock3 className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
                 <div>
-                  <p className="text-sm font-semibold text-amber-900">Awaiting approval</p>
+                  <p className="text-sm font-semibold text-amber-900">
+                    Awaiting approval
+                  </p>
+
                   <p className="mt-1 text-xs leading-5 text-amber-800">
-                    No money has been moved from your account. The transaction will only complete if an administrator approves it.
+                    No money has been moved from your account.
+                    The transaction will only complete if an
+                    administrator approves it.
                   </p>
                 </div>
               </div>
             </div>
 
             <div className="mt-4 rounded-xl bg-gray-50 p-3">
-              <p className="text-xs text-gray-500">Transaction reference</p>
-              <p className="mt-1 font-mono text-sm font-medium text-gray-900">{reference}</p>
+              <p className="text-xs text-gray-500">
+                Transaction reference
+              </p>
+
+              <p className="mt-1 font-mono text-sm font-medium text-gray-900">
+                {reference}
+              </p>
             </div>
 
             <button
@@ -1095,21 +1720,29 @@ const Transfer = () => {
                 closeOtpModal();
                 resetTransferForm();
               }}
-              className="btn-primary mt-5 w-full"
+              className="btn-primary mt-5 w-full rounded-xl"
             >
               Done
             </button>
           </div>
         )}
       </Modal>
-
-      
     </div>
   );
 };
 
+/* -------------------------------------------------------------------------- */
+/* Alert Icon                                                                 */
+/* -------------------------------------------------------------------------- */
+
 const AlertCircleIcon = (props) => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    {...props}
+  >
     <circle cx="12" cy="12" r="10" />
     <line x1="12" y1="8" x2="12" y2="12" />
     <line x1="12" y1="16" x2="12.01" y2="16" />

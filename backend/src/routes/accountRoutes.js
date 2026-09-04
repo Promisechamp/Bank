@@ -5,7 +5,7 @@ const {
   getAccount,
   getBalance,
   closeAccount,
-  checkAccountExists,  // ✅ Add this
+  checkAccountExists, 
 } = require('../controllers/accountController');
 const { authenticate } = require('../middleware/auth');
 

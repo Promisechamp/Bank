@@ -31,6 +31,7 @@ import Deposit from './components/Deposit';
 import Withdraw from './components/Withdraw';
 import Transfer from './components/Transfer';
 import Profile from './components/Profile';
+import CardTracking from './components/CardTracking';
 
 // Admin Components
 import AdminDashboard from './components/admin/AdminDashboard';
@@ -41,6 +42,9 @@ import TransactionDetail from './components/admin/TransactionDetail';
 import AccountsList from './components/admin/AccountsList';
 import AccountDetails from './components/admin/AccountDetails';
 import PendingTransactions from './components/admin/PendingTransactions';
+import AdminCardTracking from './components/admin/AdminCardTracking';
+
+
 
 // API
 import api, {
@@ -415,7 +419,31 @@ function AppRoutes() {
 										</UserRoute>
 								}
 						/>
+						
+						<Route
+								path="/card-tracking"
+								element={
+										<UserRoute>
+												<Layout>
+														<CardTracking />
+												</Layout>
+										</UserRoute>
+								}
+						/>
+						
+     <Route
+								path="/card-tracking/:id"
+								element={
+										<UserRoute>
+												<Layout>
+														<CardTracking />
+												</Layout>
+										</UserRoute>
+								}
+						/>
 
+						
+						
 
       {/* ======================================================
           ADMIN
@@ -518,17 +546,39 @@ function AppRoutes() {
       />
 						
 				
-
-<Route
-  path="/admin/support"
-  element={
-    <AdminRoute>
-      <AdminLayout>
-        <Support />
-      </AdminLayout>
-    </AdminRoute>
-  }
-/>
+						
+						<Route
+								path="/admin/support"
+								element={
+										<AdminRoute>
+												<AdminLayout>
+														<Support />
+												</AdminLayout>
+										</AdminRoute>
+								}
+						/>
+						
+						<Route
+								path="/admin/card"
+								element={
+										<AdminRoute>
+												<AdminLayout>
+														<AdminCardTracking />
+												</AdminLayout>
+										</AdminRoute>
+								}
+						/>
+						
+							<Route
+								path="/admin/card-tracking/:id"
+								element={
+										<AdminRoute>
+												<AdminLayout>
+														<CardTracking />
+												</AdminLayout>
+										</AdminRoute>
+								}
+						/>
 
 
       {/* ======================================================
@@ -571,6 +621,8 @@ function App() {
 }
 
 export default App;
+
+
 
 
 

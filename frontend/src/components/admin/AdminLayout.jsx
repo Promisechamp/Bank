@@ -183,6 +183,12 @@ const AdminLayout = ({ children }) => {
       label: 'Chats',
       badge: 0,
     },
+				{
+      to: '/admin/card',
+      icon: CreditCard,
+      label: 'Cards Order',
+      badge: 0,
+    },
   ];
 
   const secondaryItems = [

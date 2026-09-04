@@ -1,21 +1,17 @@
 // src/components/chat/AdminChatPage.jsx
+// Clean admin inbox: support messages always on the RIGHT, optimistic sends,
+// single scroll region, mobile-safe height (visualViewport + dvh).
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  CheckCheck,
   ChevronLeft,
-  Circle,
-  Clock3,
   Menu,
   MessageCircle,
   MoreHorizontal,
   RefreshCw,
   Search,
   Send,
-  ShieldCheck,
-  Ticket,
-  UserRound,
   X,
 } from 'lucide-react';
 
@@ -36,7 +32,7 @@ const getConversationId = (conversation) =>
   conversation?.id ?? conversation?._id ?? null;
 
 const getMessageId = (message) =>
-  message?.id ?? message?._id ?? null;
+  message?.id ?? message?._id ?? message?.message_id ?? null;
 
 const getUser = (message) =>
   message?.user ||
@@ -44,6 +40,8 @@ const getUser = (message) =>
   message?.author ||
   message?.created_by ||
   message?.createdBy ||
+  message?.sender_user ||
+  message?.senderUser ||
   {};
 
 const getMessageContent = (message) =>
@@ -109,7 +107,6 @@ const getConversationDate = (conversation) =>
 
 const getStatus = (conversation) => {
   const status = String(conversation?.status || 'open').toLowerCase();
-
   return status === 'closed' ||
     status === 'resolved' ||
     status === 'complete'
@@ -125,13 +122,8 @@ const getConversationMessages = (conversation) =>
 
 const getConversationPreview = (conversation) => {
   const messages = getConversationMessages(conversation);
-
   const lastMessage = [...messages].reverse().find(Boolean);
-
-  if (isDeletedMessage(lastMessage)) {
-    return 'Message deleted';
-  }
-
+  if (isDeletedMessage(lastMessage)) return 'Message deleted';
   return (
     getMessageContent(lastMessage) ||
     normalizeText(
@@ -145,15 +137,9 @@ const getConversationPreview = (conversation) => {
 
 const getInitials = (name) => {
   const value = normalizeText(name);
-
   if (!value) return '?';
-
   const parts = value.split(/\s+/).filter(Boolean);
-
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return parts
     .slice(0, 2)
     .map((part) => part[0])
@@ -163,30 +149,20 @@ const getInitials = (name) => {
 
 const parseDate = (value) => {
   if (!value) return null;
-
   const date = new Date(value);
-
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
 const formatTime = (value) => {
   const date = parseDate(value);
-
   if (!date) return '';
-
-  return date.toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 };
 
 const formatQueueDate = (value) => {
   const date = parseDate(value);
-
   if (!date) return '';
-
   const now = new Date();
-
   if (
     date.getFullYear() === now.getFullYear() &&
     date.getMonth() === now.getMonth() &&
@@ -194,19 +170,13 @@ const formatQueueDate = (value) => {
   ) {
     return formatTime(date);
   }
-
-  return date.toLocaleDateString([], {
-    month: 'short',
-    day: 'numeric',
-  });
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 };
 
 const isSameDay = (a, b) => {
   const first = parseDate(a);
   const second = parseDate(b);
-
   if (!first || !second) return false;
-
   return (
     first.getFullYear() === second.getFullYear() &&
     first.getMonth() === second.getMonth() &&
@@ -216,39 +186,30 @@ const isSameDay = (a, b) => {
 
 const formatDateSeparator = (value) => {
   const date = parseDate(value);
-
   if (!date) return '';
-
   const today = new Date();
-
-  if (isSameDay(date, today)) {
-    return 'Today';
-  }
-
+  if (isSameDay(date, today)) return 'Today';
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-
-  if (isSameDay(date, yesterday)) {
-    return 'Yesterday';
-  }
-
+  if (isSameDay(date, yesterday)) return 'Yesterday';
   return date.toLocaleDateString([], {
     month: 'short',
     day: 'numeric',
-    year:
-      date.getFullYear() === today.getFullYear()
-        ? undefined
-        : 'numeric',
+    year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
   });
 };
 
+const makeLocalId = () =>
+  `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+const PENDING_MATCH_WINDOW_MS = 2 * 60 * 1000;
+
 /* -------------------------------------------------------------------------- */
-/* Sender detection                                                           */
+/* Sender detection — admin / support ALWAYS renders on the right             */
 /* -------------------------------------------------------------------------- */
 
 const getSenderName = (message, fallback = '') => {
   const user = getUser(message);
-
   return normalizeText(
     message?.sender_name ??
       message?.senderName ??
@@ -273,50 +234,55 @@ const getSenderName = (message, fallback = '') => {
 
 const getSenderRole = (message) => {
   const user = getUser(message);
-
   return String(
     message?.sender_role ??
       message?.senderRole ??
       message?.role ??
       user?.role ??
+      user?.user_role ??
+      user?.userRole ??
+      user?.type ??
       ''
   ).toLowerCase();
 };
 
 const isAdminUser = (user) => {
-  const role = String(user?.role || '').toLowerCase();
-
+  const role = String(user?.role || user?.user_role || user?.type || '').toLowerCase();
   return Boolean(
     user?.is_admin ||
       user?.isAdmin ||
+      user?.is_staff ||
+      user?.isStaff ||
+      user?.is_support ||
+      user?.isSupport ||
       ['admin', 'support', 'staff', 'agent', 'administrator'].includes(role)
   );
 };
 
+/**
+ * Support / admin messages go on the RIGHT in the admin inbox.
+ * Prefer explicit flags; fall back to role / user object.
+ * Optimistic local messages are marked is_own / is_admin.
+ */
 const isSupportMessage = (message) => {
-  if (message?.is_own !== undefined && message?.is_own !== null) {
-    return Boolean(message.is_own);
-  }
+  if (!message) return false;
 
-  if (message?.isOwn !== undefined && message?.isOwn !== null) {
-    return Boolean(message.isOwn);
-  }
+  // Optimistic local send from admin UI
+  if (message.__local === true) return true;
+  if (message.is_own === true || message.isOwn === true) return true;
 
   if (message?.is_admin !== undefined && message?.is_admin !== null) {
     return Boolean(message.is_admin);
   }
-
   if (message?.isAdmin !== undefined && message?.isAdmin !== null) {
     return Boolean(message.isAdmin);
   }
-
   if (
     message?.sender_is_admin !== undefined &&
     message?.sender_is_admin !== null
   ) {
     return Boolean(message.sender_is_admin);
   }
-
   if (
     message?.senderIsAdmin !== undefined &&
     message?.senderIsAdmin !== null
@@ -324,11 +290,18 @@ const isSupportMessage = (message) => {
     return Boolean(message.senderIsAdmin);
   }
 
-  const role = getSenderRole(message);
-
+  const direction = String(message?.direction || message?.sender_type || message?.senderType || '').toLowerCase();
   if (
-    ['admin', 'support', 'staff', 'agent', 'administrator'].includes(role)
+    direction === 'outbound' ||
+    direction === 'outgoing' ||
+    direction === 'admin' ||
+    direction === 'support'
   ) {
+    return true;
+  }
+
+  const role = getSenderRole(message);
+  if (['admin', 'support', 'staff', 'agent', 'administrator'].includes(role)) {
     return true;
   }
 
@@ -336,13 +309,11 @@ const isSupportMessage = (message) => {
 };
 
 /* -------------------------------------------------------------------------- */
-/* UI helpers                                                                  */
+/* UI primitives                                                              */
 /* -------------------------------------------------------------------------- */
 
 const Avatar = ({ name, support = false, size = 'md' }) => {
-  const displayName =
-    normalizeText(name) || (support ? 'Support' : 'Customer');
-
+  const displayName = normalizeText(name) || (support ? 'Support' : 'Customer');
   const sizeClass =
     size === 'sm'
       ? 'h-8 w-8 text-[10px]'
@@ -367,14 +338,11 @@ const Avatar = ({ name, support = false, size = 'md' }) => {
 
 const StatusBadge = ({ status }) => {
   const closed = status === 'closed';
-
   return (
     <span
       className={[
         'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold',
-        closed
-          ? 'bg-gray-100 text-gray-500'
-          : 'bg-emerald-50 text-emerald-700',
+        closed ? 'bg-gray-100 text-gray-500' : 'bg-emerald-50 text-emerald-700',
       ].join(' ')}
     >
       <span
@@ -392,11 +360,7 @@ const StatusBadge = ({ status }) => {
 /* Queue                                                                      */
 /* -------------------------------------------------------------------------- */
 
-const QueueRow = ({
-  conversation,
-  active,
-  onClick,
-}) => {
+const QueueRow = ({ conversation, active, onClick }) => {
   const customerName = getCustomerName(conversation);
   const status = getStatus(conversation);
 
@@ -406,14 +370,11 @@ const QueueRow = ({
       onClick={onClick}
       className={[
         'group w-full border-b border-gray-100 px-4 py-4 text-left transition-colors',
-        active
-          ? 'bg-indigo-50/70'
-          : 'bg-white hover:bg-gray-50',
+        active ? 'bg-indigo-50/70' : 'bg-white hover:bg-gray-50',
       ].join(' ')}
     >
       <div className="flex gap-3">
         <Avatar name={customerName} />
-
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0">
@@ -425,24 +386,19 @@ const QueueRow = ({
               >
                 {customerName}
               </p>
-
               <p className="mt-0.5 truncate text-[11px] text-gray-400">
                 {getConversationTitle(conversation)}
               </p>
             </div>
-
             <span className="shrink-0 text-[10px] text-gray-400">
               {formatQueueDate(getConversationDate(conversation))}
             </span>
           </div>
-
           <p className="mt-2 line-clamp-2 text-xs leading-5 text-gray-500">
             {getConversationPreview(conversation)}
           </p>
-
           <div className="mt-2.5 flex items-center justify-between">
             <StatusBadge status={status} />
-
             {conversation?.unread_count > 0 && (
               <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1.5 text-[9px] font-bold text-white">
                 {conversation.unread_count > 99
@@ -467,24 +423,13 @@ const Queue = ({
   onRefresh,
 }) => {
   const filtered = useMemo(() => {
-    const list = Array.isArray(conversations)
-      ? conversations
-      : [];
-
+    const list = Array.isArray(conversations) ? conversations : [];
     const search = normalizeText(filter).toLowerCase();
-
     if (!search) return list;
-
     return list.filter((conversation) => {
-      const customerName =
-        getCustomerName(conversation).toLowerCase();
-
-      const title =
-        getConversationTitle(conversation).toLowerCase();
-
-      const preview =
-        getConversationPreview(conversation).toLowerCase();
-
+      const customerName = getCustomerName(conversation).toLowerCase();
+      const title = getConversationTitle(conversation).toLowerCase();
+      const preview = getConversationPreview(conversation).toLowerCase();
       return (
         customerName.includes(search) ||
         title.includes(search) ||
@@ -498,14 +443,11 @@ const Queue = ({
       <div className="border-b border-gray-100 px-4 py-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-bold text-gray-900">
-              Conversations
-            </h2>
+            <h2 className="text-sm font-bold text-gray-900">Conversations</h2>
             <p className="mt-0.5 text-[11px] text-gray-400">
               {conversations?.length || 0} total conversations
             </p>
           </div>
-
           <button
             type="button"
             onClick={onRefresh}
@@ -514,30 +456,25 @@ const Queue = ({
             aria-label="Refresh conversations"
           >
             <RefreshCw
-              className={[
-                'h-3.5 w-3.5',
-                loading ? 'animate-spin' : '',
-              ].join(' ')}
+              className={['h-3.5 w-3.5', loading ? 'animate-spin' : ''].join(
+                ' '
+              )}
             />
           </button>
         </div>
-
         <div className="relative mt-4">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-
           <input
             type="text"
             value={filter}
-            onChange={(event) =>
-              onFilterChange(event.target.value)
-            }
+            onChange={(event) => onFilterChange(event.target.value)}
             placeholder="Search conversations..."
             className="h-10 w-full rounded-xl border border-gray-200 bg-gray-50 pl-9 pr-3 text-xs text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
           />
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {loading && filtered.length === 0 ? (
           <div className="flex h-40 items-center justify-center">
             <div className="flex items-center gap-2 text-xs text-gray-400">
@@ -550,11 +487,9 @@ const Queue = ({
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
               <MessageCircle className="h-5 w-5 text-gray-400" />
             </div>
-
             <p className="mt-4 text-sm font-semibold text-gray-700">
               No conversations
             </p>
-
             <p className="mt-1 text-xs leading-5 text-gray-400">
               New customer conversations will appear here.
             </p>
@@ -562,18 +497,12 @@ const Queue = ({
         ) : (
           filtered.map((conversation) => {
             const id = getConversationId(conversation);
-
             return (
               <QueueRow
                 key={id || Math.random()}
                 conversation={conversation}
-                active={
-                  id ===
-                  getConversationId(activeConversation)
-                }
-                onClick={() =>
-                  id && onSelectConversation(id)
-                }
+                active={id === getConversationId(activeConversation)}
+                onClick={() => id && onSelectConversation(id)}
               />
             );
           })
@@ -584,7 +513,7 @@ const Queue = ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* Message bubble                                                             */
+/* Message bubble — support ALWAYS on the right                               */
 /* -------------------------------------------------------------------------- */
 
 const MessageBubble = ({
@@ -593,29 +522,23 @@ const MessageBubble = ({
   previousMessage,
   nextMessage,
 }) => {
+  // In admin UI: support/admin = right side
   const support = isSupportMessage(message);
   const deleted = isDeletedMessage(message);
   const createdAt = getMessageDate(message);
+  const sending = message?.__status === 'sending';
+  const failed = message?.__status === 'failed';
 
   const fallbackName = support ? 'You' : customerName;
-
-  const senderName =
-    getSenderName(message, fallbackName) ||
-    fallbackName;
+  const senderName = getSenderName(message, fallbackName) || fallbackName;
 
   const previousSupport = previousMessage
     ? isSupportMessage(previousMessage)
     : null;
+  const nextSupport = nextMessage ? isSupportMessage(nextMessage) : null;
 
-  const nextSupport = nextMessage
-    ? isSupportMessage(nextMessage)
-    : null;
-
-  const sameAsPrevious =
-    previousMessage && previousSupport === support;
-
-  const sameAsNext =
-    nextMessage && nextSupport === support;
+  const sameAsPrevious = previousMessage && previousSupport === support;
+  const sameAsNext = nextMessage && nextSupport === support;
 
   return (
     <div
@@ -628,11 +551,7 @@ const MessageBubble = ({
       {!support && (
         <div className="w-8 shrink-0">
           {!sameAsNext && (
-            <Avatar
-              name={senderName}
-              support={false}
-              size="sm"
-            />
+            <Avatar name={senderName} support={false} size="sm" />
           )}
         </div>
       )}
@@ -653,13 +572,11 @@ const MessageBubble = ({
             <span className="max-w-[180px] truncate text-[10px] font-semibold text-gray-500">
               {senderName}
             </span>
-
             {support && (
               <span className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-indigo-600">
                 Support
               </span>
             )}
-
             <span className="text-[9px] text-gray-400">
               {formatTime(createdAt)}
             </span>
@@ -682,14 +599,14 @@ const MessageBubble = ({
                     ? 'rounded-2xl rounded-tl-md'
                     : 'rounded-2xl rounded-bl-md',
                 ].join(' '),
+            sending ? 'opacity-70' : '',
+            failed ? 'ring-1 ring-rose-300' : '',
           ].join(' ')}
         >
           {deleted ? (
             <p
               className={
-                support
-                  ? 'italic text-indigo-100'
-                  : 'italic text-gray-400'
+                support ? 'italic text-indigo-100' : 'italic text-gray-400'
               }
             >
               This message was deleted.
@@ -701,14 +618,18 @@ const MessageBubble = ({
           )}
         </div>
 
-        {!nextMessage && (
+        {!sameAsNext && (
           <div
             className={[
-              'mt-1 px-1 text-[9px] text-gray-400',
-              support ? 'text-right' : 'text-left',
+              'mt-1 flex items-center gap-1.5 px-1 text-[9px] text-gray-400',
+              support ? 'justify-end' : 'justify-start',
             ].join(' ')}
           >
-            {formatTime(createdAt)}
+            <span>{formatTime(createdAt)}</span>
+            {sending && <span className="italic">Sending…</span>}
+            {failed && (
+              <span className="font-semibold text-rose-500">Failed</span>
+            )}
           </div>
         )}
       </div>
@@ -716,11 +637,7 @@ const MessageBubble = ({
       {support && (
         <div className="w-8 shrink-0">
           {!sameAsNext && (
-            <Avatar
-              name={senderName}
-              support
-              size="sm"
-            />
+            <Avatar name={senderName} support size="sm" />
           )}
         </div>
       )}
@@ -729,29 +646,24 @@ const MessageBubble = ({
 };
 
 /* -------------------------------------------------------------------------- */
-/* Empty state                                                                */
+/* Empty / header / composer                                                  */
 /* -------------------------------------------------------------------------- */
 
 const EmptyConversation = () => (
-  <div className="flex h-full min-h-[420px] flex-col items-center justify-center px-6 text-center">
+  <div className="flex h-full min-h-[320px] flex-col items-center justify-center px-6 text-center">
     <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-50">
       <MessageCircle className="h-7 w-7 text-indigo-500" />
     </div>
-
     <h2 className="mt-5 text-base font-bold text-gray-900">
       Select a conversation
     </h2>
-
     <p className="mt-2 max-w-sm text-xs leading-5 text-gray-400">
-      Choose a customer conversation from the left to view
-      messages and respond.
+      Choose a customer conversation from the left to view messages and respond.
     </p>
   </div>
 );
 
-/* -------------------------------------------------------------------------- */
-/* Chat header                                                                */
-/* -------------------------------------------------------------------------- */
+const CheckCircleIcon = () => <Check className="h-3.5 w-3.5" />;
 
 const ChatHeader = ({
   conversation,
@@ -765,7 +677,7 @@ const ChatHeader = ({
   const status = getStatus(conversation);
 
   return (
-    <header className="flex min-h-[76px] shrink-0 items-center justify-between border-b border-gray-100 bg-white px-4 sm:px-6">
+    <header className="flex min-h-[64px] shrink-0 items-center justify-between border-b border-gray-100 bg-white px-3 sm:px-5">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
@@ -775,22 +687,15 @@ const ChatHeader = ({
         >
           <ChevronLeft className="h-5 w-5" />
         </button>
-
-        <Avatar
-          name={customerName}
-          size="lg"
-        />
-
+        <Avatar name={customerName} size="lg" />
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h1 className="truncate text-sm font-bold text-gray-900 sm:text-base">
               {customerName}
             </h1>
-
             <StatusBadge status={status} />
           </div>
-
-          <div className="mt-1 flex min-w-0 items-center gap-2">
+          <div className="mt-0.5 flex min-w-0 items-center gap-2">
             {email ? (
               <span className="truncate text-[10px] text-gray-400 sm:text-xs">
                 {email}
@@ -813,13 +718,9 @@ const ChatHeader = ({
           aria-label="Refresh conversation"
         >
           <RefreshCw
-            className={[
-              'h-4 w-4',
-              refreshing ? 'animate-spin' : '',
-            ].join(' ')}
+            className={['h-4 w-4', refreshing ? 'animate-spin' : ''].join(' ')}
           />
         </button>
-
         {status === 'open' && (
           <button
             type="button"
@@ -830,7 +731,6 @@ const ChatHeader = ({
             Close
           </button>
         )}
-
         {status === 'closed' && (
           <button
             type="button"
@@ -841,7 +741,6 @@ const ChatHeader = ({
             Reopen
           </button>
         )}
-
         <button
           type="button"
           className="flex h-9 w-9 items-center justify-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
@@ -854,34 +753,26 @@ const ChatHeader = ({
   );
 };
 
-const CheckCircleIcon = () => (
-  <Check className="h-3.5 w-3.5" />
-);
+const ReplyBar = ({ value, onChange, onSend, disabled, closed }) => {
+  const textareaRef = useRef(null);
 
-/* -------------------------------------------------------------------------- */
-/* Reply composer                                                             */
-/* -------------------------------------------------------------------------- */
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }, [value]);
 
-const ReplyBar = ({
-  value,
-  onChange,
-  onSend,
-  disabled,
-  closed,
-}) => {
   const handleKeyDown = (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-
-      if (!disabled && value.trim()) {
-        onSend();
-      }
+      if (!disabled && value.trim()) onSend();
     }
   };
 
   if (closed) {
     return (
-      <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-4 sm:px-6">
+      <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-3 sm:px-6">
         <div className="flex items-center justify-center gap-2 rounded-xl bg-gray-50 px-4 py-3 text-xs text-gray-500">
           <CheckCircleIcon />
           This conversation is closed.
@@ -891,18 +782,18 @@ const ReplyBar = ({
   }
 
   return (
-    <div className="shrink-0 border-t border-gray-100 bg-white p-3 sm:p-4">
+    <div className="shrink-0 border-t border-gray-100 bg-white p-3 sm:p-4 safe-area-pb">
       <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-gray-200 bg-gray-50 p-2 transition focus-within:border-indigo-300 focus-within:bg-white focus-within:ring-2 focus-within:ring-indigo-100">
         <textarea
+          ref={textareaRef}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Write a reply..."
           rows={1}
           disabled={disabled}
-          className="max-h-32 min-h-[42px] flex-1 resize-none bg-transparent px-2.5 py-2 text-sm leading-5 text-gray-800 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
+          className="max-h-[120px] min-h-[42px] flex-1 resize-none overflow-y-auto bg-transparent px-2.5 py-2 text-sm leading-5 text-gray-800 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
         />
-
         <button
           type="button"
           onClick={onSend}
@@ -917,8 +808,7 @@ const ReplyBar = ({
           )}
         </button>
       </div>
-
-      <p className="mx-auto mt-2 hidden max-w-3xl px-2 text-[9px] text-gray-400 sm:block">
+      <p className="mx-auto mt-1.5 hidden max-w-3xl px-2 text-[9px] text-gray-400 sm:block">
         Press Enter to send · Shift + Enter for a new line
       </p>
     </div>
@@ -947,38 +837,100 @@ export default function AdminChatPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
 
+  // Optimistic messages keyed by conversation id
+  const [pendingByConversation, setPendingByConversation] = useState({});
+
   const messagesEndRef = useRef(null);
+  const scrollRef = useRef(null);
+  const rootRef = useRef(null);
 
-  const conversationId =
-    getConversationId(currentConversation);
-
+  const conversationId = getConversationId(currentConversation);
   const customerName = currentConversation
     ? getCustomerName(currentConversation)
     : 'Customer';
-
   const status = currentConversation
     ? getStatus(currentConversation)
     : 'open';
 
-  const messages = useMemo(
-    () =>
-      currentConversation
-        ? getConversationMessages(currentConversation)
-        : [],
-    [currentConversation]
-  );
+  // Merge server messages + pending optimistics for display
+  const pendingForCurrent =
+    (conversationId != null && pendingByConversation[conversationId]) || [];
 
+  const messages = useMemo(() => {
+    const existing = currentConversation
+      ? getConversationMessages(currentConversation)
+      : [];
+    if (pendingForCurrent.length === 0) return existing;
+    return [...existing, ...pendingForCurrent];
+  }, [currentConversation, pendingForCurrent]);
+
+  // Prune pending once server copy appears
+  useEffect(() => {
+    if (conversationId == null) return;
+    const existing = currentConversation
+      ? getConversationMessages(currentConversation)
+      : [];
+
+    setPendingByConversation((prev) => {
+      const currentPending = prev[conversationId];
+      if (!currentPending?.length) return prev;
+
+      const stillPending = currentPending.filter((pending) => {
+        if (pending.__status === 'failed') return true;
+        return !existing.some((m) => {
+          if (!isSupportMessage(m)) return false;
+          if (getMessageContent(m) !== pending.content) return false;
+          const t1 = parseDate(getMessageDate(m));
+          const t2 = parseDate(pending.created_at);
+          if (!t1 || !t2) return true;
+          return Math.abs(t1.getTime() - t2.getTime()) < PENDING_MATCH_WINDOW_MS;
+        });
+      });
+
+      if (stillPending.length === currentPending.length) return prev;
+      return { ...prev, [conversationId]: stillPending };
+    });
+  }, [currentConversation, conversationId]);
+
+  // Keep composer visible above mobile keyboard (visualViewport)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const root = rootRef.current;
+    if (!root) return;
+
+    const sync = () => {
+      const vv = window.visualViewport;
+      // Cap height to visible viewport so keyboard doesn't cover composer
+      root.style.height = `${vv.height}px`;
+    };
+
+    sync();
+    window.visualViewport.addEventListener('resize', sync);
+    window.visualViewport.addEventListener('scroll', sync);
+    return () => {
+      window.visualViewport.removeEventListener('resize', sync);
+      window.visualViewport.removeEventListener('scroll', sync);
+      if (root) root.style.height = '';
+    };
+  }, []);
+
+  // Auto-scroll to bottom when messages change (only if near bottom or first load)
   useEffect(() => {
     if (!currentConversation) return;
+    const el = scrollRef.current;
+    const nearBottom =
+      !el ||
+      el.scrollHeight - el.scrollTop - el.clientHeight < 180;
 
-    const timer = window.setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'end',
-      });
-    }, 50);
-
-    return () => window.clearTimeout(timer);
+    if (nearBottom) {
+      const timer = window.setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: messages.length > 1 ? 'smooth' : 'auto',
+          block: 'end',
+        });
+      }, 40);
+      return () => window.clearTimeout(timer);
+    }
   }, [currentConversation, messages.length]);
 
   useEffect(() => {
@@ -987,7 +939,6 @@ export default function AdminChatPage() {
 
   const refreshConversations = async () => {
     if (typeof fetchConversations !== 'function') return;
-
     try {
       setRefreshing(true);
       await fetchConversations();
@@ -998,38 +949,72 @@ export default function AdminChatPage() {
 
   const handleSelectConversation = async (id) => {
     if (!id) return;
-
     await selectConversation(id);
     setQueueOpen(false);
   };
 
   const handleCloseConversation = async () => {
     if (!conversationId) return;
-
     await closeConversation(conversationId);
   };
 
+  const addPending = useCallback((cid, message) => {
+    setPendingByConversation((prev) => ({
+      ...prev,
+      [cid]: [...(prev[cid] || []), message],
+    }));
+  }, []);
+
+  const updatePending = useCallback((cid, id, patch) => {
+    setPendingByConversation((prev) => ({
+      ...prev,
+      [cid]: (prev[cid] || []).map((m) =>
+        m.id === id ? { ...m, ...patch } : m
+      ),
+    }));
+  }, []);
+
   const handleSend = async () => {
     const trimmed = reply.trim();
+    if (!trimmed || !conversationId || sending) return;
 
-    if (!trimmed || !conversationId || sending) {
-      return;
-    }
+    const localId = makeLocalId();
+    const createdAt = new Date().toISOString();
+
+    // Optimistic bubble on the RIGHT (support)
+    addPending(conversationId, {
+      id: localId,
+      conversation_id: conversationId,
+      content: trimmed,
+      message: trimmed,
+      created_at: createdAt,
+      is_own: true,
+      is_admin: true,
+      __local: true,
+      __status: 'sending',
+    });
+
+    setReply('');
+    setSending(true);
 
     try {
-      setSending(true);
-
       await sendMessage(conversationId, trimmed);
-
-      setReply('');
+      updatePending(conversationId, localId, { __status: 'sent' });
+    } catch (err) {
+      console.error('Failed to send message:', err);
+      updatePending(conversationId, localId, { __status: 'failed' });
     } finally {
       setSending(false);
     }
   };
 
   return (
-    <div className="h-[100dvh] overflow-hidden bg-gray-50 text-gray-900">
-      <div className="flex h-full overflow-hidden">
+    <div
+      ref={rootRef}
+      className="flex h-[100dvh] max-h-[100dvh] flex-col overflow-hidden bg-gray-50 text-gray-900"
+      style={{ height: '100dvh' }}
+    >
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {/* Desktop queue */}
         <div className="hidden w-[330px] shrink-0 border-r border-gray-200 lg:block">
           <Queue
@@ -1052,7 +1037,6 @@ export default function AdminChatPage() {
               onClick={() => setQueueOpen(false)}
               className="absolute inset-0 bg-black/20"
             />
-
             <div className="relative h-full w-[88%] max-w-[360px] shadow-2xl">
               <div className="absolute right-[-44px] top-4">
                 <button
@@ -1064,7 +1048,6 @@ export default function AdminChatPage() {
                   <X className="h-4 w-4" />
                 </button>
               </div>
-
               <Queue
                 conversations={conversations}
                 activeConversation={currentConversation}
@@ -1078,11 +1061,11 @@ export default function AdminChatPage() {
           </div>
         )}
 
-        {/* Chat */}
-        <main className="flex min-w-0 flex-1 flex-col bg-[#f7f8fa]">
+        {/* Chat pane — only this column scrolls its middle section */}
+        <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#f7f8fa]">
           {!currentConversation ? (
             <>
-              <div className="flex h-[76px] shrink-0 items-center border-b border-gray-100 bg-white px-4 sm:px-6">
+              <div className="flex h-[64px] shrink-0 items-center border-b border-gray-100 bg-white px-4 sm:px-6">
                 <button
                   type="button"
                   onClick={() => setQueueOpen(true)}
@@ -1091,17 +1074,13 @@ export default function AdminChatPage() {
                 >
                   <Menu className="h-5 w-5" />
                 </button>
-
                 <div className="ml-3 lg:ml-0">
-                  <p className="text-sm font-bold text-gray-900">
-                    Support inbox
-                  </p>
+                  <p className="text-sm font-bold text-gray-900">Support inbox</p>
                   <p className="mt-0.5 text-[10px] text-gray-400">
                     Manage customer conversations
                   </p>
                 </div>
               </div>
-
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <EmptyConversation />
               </div>
@@ -1116,34 +1095,26 @@ export default function AdminChatPage() {
                 refreshing={refreshing}
               />
 
-              {/* Mobile menu */}
-              <button
-                type="button"
-                onClick={() => setQueueOpen(true)}
-                className="absolute left-3 top-[22px] z-10 hidden h-9 w-9 items-center justify-center rounded-lg bg-white text-gray-500 shadow-sm lg:hidden"
-                aria-label="Open conversations"
+              {/* ONLY scrollable region */}
+              <div
+                ref={scrollRef}
+                className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
               >
-                <Menu className="h-4 w-4" />
-              </button>
-
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                <div className="mx-auto w-full max-w-4xl px-3 py-5 sm:px-6 sm:py-7">
+                <div className="mx-auto w-full max-w-4xl px-3 py-4 sm:px-6 sm:py-6">
                   {error && (
-                    <div className="mb-5 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs text-red-600">
+                    <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-xs text-red-600">
                       {normalizeText(error)}
                     </div>
                   )}
 
                   {messages.length === 0 ? (
-                    <div className="flex min-h-[420px] flex-col items-center justify-center text-center">
+                    <div className="flex min-h-[280px] flex-col items-center justify-center text-center">
                       <div className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-sm">
                         <MessageCircle className="h-6 w-6 text-gray-400" />
                       </div>
-
                       <p className="mt-4 text-sm font-semibold text-gray-700">
                         No messages yet
                       </p>
-
                       <p className="mt-1 text-xs text-gray-400">
                         Start the conversation with {customerName}.
                       </p>
@@ -1151,63 +1122,40 @@ export default function AdminChatPage() {
                   ) : (
                     <div className="mx-auto w-full max-w-3xl">
                       {messages.map((message, index) => {
-                        const previousMessage =
-                          messages[index - 1] || null;
-
-                        const nextMessage =
-                          messages[index + 1] || null;
-
-                        const currentDate =
-                          getMessageDate(message);
-
-                        const previousDate =
-                          getMessageDate(previousMessage);
-
+                        const previousMessage = messages[index - 1] || null;
+                        const nextMessage = messages[index + 1] || null;
+                        const currentDate = getMessageDate(message);
+                        const previousDate = getMessageDate(previousMessage);
                         const showDate =
                           currentDate &&
                           (!previousDate ||
-                            !isSameDay(
-                              currentDate,
-                              previousDate
-                            ));
+                            !isSameDay(currentDate, previousDate));
 
                         return (
                           <React.Fragment
                             key={
-                              getMessageId(message) ||
-                              `message-${index}`
+                              getMessageId(message) || `message-${index}`
                             }
                           >
                             {showDate && (
                               <div className="my-5 flex items-center gap-3">
                                 <div className="h-px flex-1 bg-gray-200" />
-
                                 <span className="rounded-full border border-gray-200 bg-white px-3 py-1 text-[9px] font-semibold text-gray-400">
-                                  {formatDateSeparator(
-                                    currentDate
-                                  )}
+                                  {formatDateSeparator(currentDate)}
                                 </span>
-
                                 <div className="h-px flex-1 bg-gray-200" />
                               </div>
                             )}
-
                             <MessageBubble
                               message={message}
                               customerName={customerName}
-                              previousMessage={
-                                previousMessage
-                              }
+                              previousMessage={previousMessage}
                               nextMessage={nextMessage}
                             />
                           </React.Fragment>
                         );
                       })}
-
-                      <div
-                        ref={messagesEndRef}
-                        className="h-3"
-                      />
+                      <div ref={messagesEndRef} className="h-2" />
                     </div>
                   )}
                 </div>
