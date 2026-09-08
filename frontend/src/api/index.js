@@ -72,13 +72,16 @@ api.interceptors.response.use(
 // ------------------- API exports (unchanged) -------------------
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
+		selfRegister: (data) => api.post('/auth/self-register', data),
   login: (data) => api.post('/auth/login', data),
   getProfile: () => api.get('/auth/profile'),
   updateProfile: (data) => api.put('/auth/profile', data),
   getAllUsers: () => api.get('/admin/users'),
   getUserById: (userId) => api.get(`/admin/users/${userId}`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
   updateUserStatus: (userId, status) => api.patch(`/admin/users/${userId}/status`, { status }),
+
 };
 
 export const accountsAPI = {
@@ -110,6 +113,7 @@ export const transactionsAPI = {
 
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
+  getLayoutStats: () => api.get('/admin/stats/layout'),
   getAllUsers: () => api.get('/admin/users'),
   getUserById: (userId) => api.get(`/admin/users/${userId}`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
@@ -121,6 +125,35 @@ export const adminAPI = {
   getTransactionById: (txId) => api.get(`/admin/transactions/${txId}`),
   approveTransaction: (txId) => api.patch(`/admin/transactions/${txId}/approve`),
   rejectTransaction: (txId) => api.patch(`/admin/transactions/${txId}/reject`),
+		
+		generateRegisterToken: (expiresAt) => api.post('/admin/tokens/generate', { expiresAt }),
+  getRegisterTokens: () => api.get('/admin/tokens'),
+  revokeRegisterToken: (token) => api.delete(`/admin/tokens/${token}`),
+
+  adminCredit: (data) => api.post(`/admin/users/${data.userId}/credit`, {
+    accountId: data.accountId,
+    amount: data.amount,
+    description: data.description,
+    date: data.date,
+    sendAlert: data.sendAlert,
+    senderName: data.senderName,
+    senderBank: data.senderBank,
+    senderAccountNo: data.senderAccountNo
+  }),
+
+  adminDebit: (data) => api.post(`/admin/users/${data.userId}/debit`, {
+    accountId: data.accountId,
+    amount: data.amount,
+    description: data.description,
+    note: data.note,
+    date: data.date,
+    sendAlert: data.sendAlert,
+    receiverName: data.receiverName,
+    receiverBank: data.receiverBank,
+    receiverAccountNo: data.receiverAccountNo
+  }),
+
+
 };
 
 export const chatAPI = {
@@ -132,7 +165,7 @@ export const chatAPI = {
   markConversationRead: (conversationId) => api.patch(`/chat/conversations/${conversationId}/read`),
   closeConversation: (conversationId) => api.patch(`/chat/conversations/${conversationId}/close`),
   getAdminConversations: (status = 'active') => api.get('/chat/admin/conversations', { params: { status } }),
-  claimConversation: (conversationId) => api.patch(`/chat/admin/conversations/${conversationId}/claim`),
+		deleteConversation: (conversationId) => api.delete(`/chat/conversations/${conversationId}`),
 };
 
 export const cardTrackingAPI = {
@@ -146,6 +179,17 @@ export const cardTrackingAPI = {
   adminDelete: (id) => api.delete(`/card-tracking/admin/${id}`),
   updateStatus: (id, data) => api.patch(`/card-tracking/admin/${id}/status`, data),
   addTrackingEvent: (id, data) => api.post(`/card-tracking/admin/${id}/events`, data),
+};
+
+
+
+export const notificationsAPI = {
+  get: (params) => api.get('/notifications', { params }),
+  markRead: (id) => api.put(`/notifications/${id}/read`),
+  markAllRead: () => api.put('/notifications/read-all'),
+  delete: (id) => api.delete(`/notifications/${id}`),
+  deleteBatch: (ids) => api.delete('/notifications', { data: { ids } }),
+  deleteAll: (readOnly = false) => api.delete(`/notifications?deleteAll=true${readOnly ? '&readOnly=true' : ''}`),
 };
 
 export default api;

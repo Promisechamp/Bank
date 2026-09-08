@@ -31,3 +31,22 @@
     @apply bg-white rounded-xl shadow-sm p-6 border border-gray-100;
   }
 }
+
+
+.chat-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgb(203 213 225);
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(148 163 184);
+}

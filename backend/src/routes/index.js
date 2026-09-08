@@ -5,6 +5,7 @@ const transactionRoutes = require('./transactionRoutes');
 const adminRoutes = require('./adminRoutes');
 const chatRoutes = require('./chatRoutes');
 const trackCardRoutes = require('./trackCardRoutes');
+const notificationRoutes = require('./notificationRoutes');
 const router = express.Router();
 
 // API routes
@@ -14,7 +15,7 @@ router.use('/transactions', transactionRoutes);
 router.use('/admin', adminRoutes);
 router.use('/chat', chatRoutes);
 router.use('/card-tracking', trackCardRoutes);
-
+router.use('/notifications', notificationRoutes);
 
 // Health check
 router.get('/health', (req, res) => {
@@ -26,7 +27,3 @@ router.get('/health', (req, res) => {
 });
 
 module.exports = router;
-
-
-
-

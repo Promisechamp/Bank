@@ -6,6 +6,7 @@ import {
   formatAccountNumber,
 } from '../utils/helpers';
 import Modal from './Modal';
+import Receipt from './Receipt'; // ✅ Import the standalone Receipt
 
 import {
   History,
@@ -32,24 +33,14 @@ import {
   RefreshCw,
   FileText,
   Download,
+  Share2,
   CalendarRange,
+  Info,
 } from 'lucide-react';
 
 /* ============================================================
    TRANSACTION TYPE HELPERS
 ============================================================ */
-
-/*
-  IMPORTANT:
-  The transaction_type determines whether money enters or
-  leaves the currently selected account.
-
-  credit  -> money IN  -> +
-  debit   -> money OUT -> -
-  transfer -> money OUT -> -
-
-  This keeps amount signs and colors consistent everywhere.
-*/
 
 const getTransactionDirection = (type) => {
   const normalizedType = String(type || '').toLowerCase();
@@ -58,7 +49,6 @@ const getTransactionDirection = (type) => {
     return 'credit';
   }
 
-  // A transfer from this account is treated as money leaving.
   if (
     normalizedType === 'debit' ||
     normalizedType === 'transfer'
@@ -128,42 +118,82 @@ const statusConfig = {
   completed: {
     label: 'Completed',
     icon: CheckCircle2,
-    classes:
-      'bg-emerald-50 text-emerald-700 border-emerald-100',
+    classes: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     iconClass: 'text-emerald-600',
   },
 
-  pending: {
-    label: 'Pending',
-    icon: Clock3,
-    classes:
-      'bg-amber-50 text-amber-700 border-amber-100',
-    iconClass: 'text-amber-600',
-  },
-
   pending_review: {
-    label: 'Pending',
+    label: 'Pending Review',
     icon: Clock3,
-    classes:
-      'bg-amber-50 text-amber-700 border-amber-100',
+    classes: 'bg-amber-50 text-amber-700 border-amber-100',
     iconClass: 'text-amber-600',
   },
 
   failed: {
     label: 'Failed',
     icon: XCircle,
-    classes:
-      'bg-red-50 text-red-700 border-red-100',
+    classes: 'bg-red-50 text-red-700 border-red-100',
     iconClass: 'text-red-600',
   },
 
   cancelled: {
     label: 'Cancelled',
     icon: XCircle,
-    classes:
-      'bg-gray-100 text-gray-600 border-gray-200',
+    classes: 'bg-gray-100 text-gray-600 border-gray-200',
     iconClass: 'text-gray-500',
   },
+};
+
+/* ============================================================
+   STATUS BADGE
+============================================================ */
+
+const StatusBadge = ({ status }) => {
+  const normalizedStatus = String(status || '').toLowerCase();
+
+  const config =
+    statusConfig[normalizedStatus] ||
+    statusConfig.pending_review;
+
+  const StatusIcon = config.icon;
+
+  // Only spin for pending_review
+  const isSpinning = normalizedStatus === 'pending_review';
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${config.classes}`}
+    >
+      <StatusIcon
+        className={`h-3.5 w-3.5 ${config.iconClass} ${
+          isSpinning ? 'animate-spin' : ''
+        }`}
+      />
+
+      {config.label}
+    </span>
+  );
+};
+
+/* ============================================================
+   TRANSACTION ICON
+============================================================ */
+
+const TransactionIcon = ({ type }) => {
+  const config = getTransactionConfig(type);
+
+  const Icon = config.icon;
+
+  return (
+    <div
+      className={`h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 ${config.iconContainer}`}
+    >
+      <Icon
+        className="h-5 w-5"
+        strokeWidth={2}
+      />
+    </div>
+  );
 };
 
 /* ============================================================
@@ -311,383 +341,6 @@ const AccountSelector = ({
           </div>
         </div>
       )}
-    </div>
-  );
-};
-
-/* ============================================================
-   STATUS BADGE
-============================================================ */
-
-const StatusBadge = ({ status }) => {
-  const normalizedStatus = String(
-    status || ''
-  ).toLowerCase();
-
-  const config =
-    statusConfig[normalizedStatus] ||
-    statusConfig.pending;
-
-  const StatusIcon = config.icon;
-
-  return (
-    <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold ${config.classes}`}
-    >
-      <StatusIcon
-        className={`h-3.5 w-3.5 ${config.iconClass} ${
-          normalizedStatus === 'pending' ||
-          normalizedStatus === 'pending_review'
-            ? 'animate-spin'
-            : ''
-        }`}
-      />
-
-      {config.label}
-    </span>
-  );
-};
-
-/* ============================================================
-   TRANSACTION ICON
-============================================================ */
-
-const TransactionIcon = ({ type }) => {
-  const config = getTransactionConfig(type);
-
-  const Icon = config.icon;
-
-  return (
-    <div
-      className={`h-11 w-11 rounded-xl flex items-center justify-center flex-shrink-0 ${config.iconContainer}`}
-    >
-      <Icon
-        className="h-5 w-5"
-        strokeWidth={2}
-      />
-    </div>
-  );
-};
-
-/* ============================================================
-   RECEIPT
-============================================================ */
-
-const Receipt = ({ transaction, onClose }) => {
-  const [copied, setCopied] = useState(false);
-
-  if (!transaction) return null;
-
-  const config = getTransactionConfig(
-    transaction.transaction_type
-  );
-
-  const amount = Math.abs(
-    Number(transaction.amount || 0)
-  );
-
-  const amountClass =
-    getTransactionAmountClass(transaction);
-
-  const prefix =
-    getTransactionAmountPrefix(transaction);
-
-  const handleCopyReference = async () => {
-    if (!transaction.reference_id) return;
-
-    try {
-      await navigator.clipboard.writeText(
-        transaction.reference_id
-      );
-
-      setCopied(true);
-
-      setTimeout(() => {
-        setCopied(false);
-      }, 1800);
-    } catch (error) {
-      console.error(
-        'Unable to copy reference:',
-        error
-      );
-    }
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
-  const status =
-    String(transaction.status || '').toLowerCase();
-
-  return (
-    <>
-      <style>{`
-        @media print {
-          body * {
-            visibility: hidden !important;
-          }
-
-          .transaction-receipt,
-          .transaction-receipt * {
-            visibility: visible !important;
-          }
-
-          .transaction-receipt {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-          }
-
-          .receipt-no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
-
-      <div className="transaction-receipt bg-white max-w-xl mx-auto">
-        {/* Header */}
-        <div className="px-6 sm:px-8 pt-7 pb-6 border-b border-dashed border-gray-200">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-11 w-11 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
-                <ReceiptText className="h-5 w-5" />
-              </div>
-
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  Transaction Receipt
-                </h2>
-
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Electronic transaction record
-                </p>
-              </div>
-            </div>
-
-            <div className="receipt-no-print">
-              <button
-                type="button"
-                onClick={onClose}
-                className="h-9 w-9 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
-                aria-label="Close receipt"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <div
-              className={`mx-auto h-14 w-14 rounded-full flex items-center justify-center ${
-                status === 'completed'
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : status === 'pending' ||
-                      status === 'pending_review'
-                    ? 'bg-amber-50 text-amber-600'
-                    : 'bg-red-50 text-red-600'
-              }`}
-            >
-              {status === 'completed' ? (
-                <CheckCircle2 className="h-7 w-7" />
-              ) : status === 'pending' ||
-                status === 'pending_review' ? (
-                <Clock3 className="h-7 w-7" />
-              ) : (
-                <XCircle className="h-7 w-7" />
-              )}
-            </div>
-
-            <p className="text-xs text-gray-500 mt-4">
-              {config.label}
-            </p>
-
-            <p
-              className={`text-3xl font-bold tracking-tight mt-1 ${amountClass}`}
-            >
-              {prefix}
-              {formatCurrency(amount)}
-            </p>
-
-            <div className="mt-3">
-              <StatusBadge
-                status={transaction.status}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Details */}
-        <div className="px-6 sm:px-8 py-6">
-          <div className="rounded-xl border border-gray-100 overflow-hidden">
-            <ReceiptRow
-              icon={CalendarDays}
-              label="Date & Time"
-              value={formatDate(
-                transaction.created_at
-              )}
-            />
-
-            <ReceiptRow
-              icon={Hash}
-              label="Reference"
-              value={
-                <div className="flex items-center gap-2 max-w-[65%]">
-                  <span className="font-mono text-xs truncate">
-                    {transaction.reference_id ||
-                      'N/A'}
-                  </span>
-
-                  {transaction.reference_id && (
-                    <button
-                      type="button"
-                      onClick={
-                        handleCopyReference
-                      }
-                      className="h-7 w-7 rounded-md flex items-center justify-center text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors flex-shrink-0 receipt-no-print"
-                      title="Copy reference"
-                    >
-                      {copied ? (
-                        <Check className="h-3.5 w-3.5 text-emerald-600" />
-                      ) : (
-                        <Copy className="h-3.5 w-3.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              }
-            />
-
-            <ReceiptRow
-              icon={Wallet}
-              label="Account"
-              value={
-                transaction.accounts
-                  ?.account_number
-                  ? formatAccountNumber(
-                      transaction.accounts
-                        .account_number
-                    )
-                  : transaction.account_id ||
-                    'N/A'
-              }
-            />
-
-            <ReceiptRow
-              icon={ArrowLeftRight}
-              label="Transaction type"
-              value={
-                <span className="capitalize">
-                  {transaction.transaction_type}
-                </span>
-              }
-            />
-
-            <ReceiptRow
-              icon={ReceiptText}
-              label="Description"
-              value={
-                <span className="text-right max-w-[60%]">
-                  {transaction.description ||
-                    'Transaction'}
-                </span>
-              }
-            />
-
-            {transaction.counterparty_account && (
-              <ReceiptRow
-                icon={ArrowRight}
-                label="Counterparty"
-                value={
-                  <span className="font-mono text-xs">
-                    {formatAccountNumber(
-                      transaction.counterparty_account
-                    )}
-                  </span>
-                }
-              />
-            )}
-          </div>
-
-          {/* Amount Summary */}
-          <div className="mt-5 rounded-xl bg-gray-50 border border-gray-100 p-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-gray-500">
-                Transaction amount
-              </span>
-
-              <span
-                className={`text-base font-bold ${amountClass}`}
-              >
-                {prefix}
-                {formatCurrency(amount)}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-6 text-center">
-            <p className="text-xs text-gray-400">
-              This is a computer-generated
-              transaction receipt.
-            </p>
-
-            <p className="text-xs text-gray-400 mt-1">
-              No signature is required.
-            </p>
-          </div>
-
-          <div className="receipt-no-print mt-6 flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 h-11 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
-            >
-              <X className="h-4 w-4" />
-              Close
-            </button>
-
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="flex-1 h-11 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 transition-colors flex items-center justify-center gap-2 shadow-sm"
-            >
-              <Printer className="h-4 w-4" />
-              Print Receipt
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
-/* ============================================================
-   RECEIPT ROW
-============================================================ */
-
-const ReceiptRow = ({
-  icon: Icon,
-  label,
-  value,
-}) => {
-  return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3.5 border-b border-gray-100 last:border-b-0">
-      <div className="flex items-center gap-2.5 min-w-0">
-        <Icon className="h-4 w-4 text-gray-400 flex-shrink-0" />
-
-        <span className="text-xs text-gray-500">
-          {label}
-        </span>
-      </div>
-
-      <div className="text-sm font-medium text-gray-800 text-right">
-        {value}
-      </div>
     </div>
   );
 };
@@ -913,43 +566,24 @@ const StatementRequest = ({
 
   useEffect(() => {
     const end = new Date();
-
     let start = new Date();
 
     if (period === '7d') {
-      start.setDate(
-        start.getDate() - 7
-      );
+      start.setDate(start.getDate() - 7);
     }
-
     if (period === '30d') {
-      start.setDate(
-        start.getDate() - 30
-      );
+      start.setDate(start.getDate() - 30);
     }
-
     if (period === '90d') {
-      start.setDate(
-        start.getDate() - 90
-      );
+      start.setDate(start.getDate() - 90);
     }
-
     if (period === 'year') {
-      start = new Date(
-        today.getFullYear(),
-        0,
-        1
-      );
+      start = new Date(today.getFullYear(), 0, 1);
     }
 
     if (period !== 'custom') {
-      setFromDate(
-        formatInputDate(start)
-      );
-
-      setToDate(
-        formatInputDate(end)
-      );
+      setFromDate(formatInputDate(start));
+      setToDate(formatInputDate(end));
     }
   }, [period]);
 
@@ -1005,9 +639,7 @@ const StatementRequest = ({
             <button
               key={value}
               type="button"
-              onClick={() =>
-                setPeriod(value)
-              }
+              onClick={() => setPeriod(value)}
               className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
                 period === value
                   ? 'border-primary-500 bg-primary-50 text-primary-700'
@@ -1021,9 +653,7 @@ const StatementRequest = ({
 
         <button
           type="button"
-          onClick={() =>
-            setPeriod('custom')
-          }
+          onClick={() => setPeriod('custom')}
           className={`mt-2 w-full rounded-xl border px-4 py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-colors ${
             period === 'custom'
               ? 'border-primary-500 bg-primary-50 text-primary-700'
@@ -1046,9 +676,7 @@ const StatementRequest = ({
               max={toDate || formatInputDate(today)}
               onChange={(event) => {
                 setPeriod('custom');
-                setFromDate(
-                  event.target.value
-                );
+                setFromDate(event.target.value);
               }}
               className="w-full h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
             />
@@ -1066,9 +694,7 @@ const StatementRequest = ({
               max={formatInputDate(today)}
               onChange={(event) => {
                 setPeriod('custom');
-                setToDate(
-                  event.target.value
-                );
+                setToDate(event.target.value);
               }}
               className="w-full h-11 rounded-xl border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-100"
             />
@@ -1111,7 +737,7 @@ const StatementRequest = ({
             className="flex-1 h-11 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             <FileText className="h-4 w-4" />
-            Generate 
+            Generate
           </button>
         </div>
       </div>
@@ -1131,27 +757,15 @@ const Statement = ({
   onClose,
 }) => {
   const statementTransactions = useMemo(() => {
-    const start = new Date(
-      `${from}T00:00:00`
-    );
-
-    const end = new Date(
-      `${to}T23:59:59`
-    );
+    const start = new Date(`${from}T00:00:00`);
+    const end = new Date(`${to}T23:59:59`);
 
     return transactions
       .filter((transaction) => {
-        const date = new Date(
-          transaction.created_at
-        );
-
+        const date = new Date(transaction.created_at);
         return date >= start && date <= end;
       })
-      .sort(
-        (a, b) =>
-          new Date(b.created_at) -
-          new Date(a.created_at)
-      );
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   }, [transactions, from, to]);
 
   const credits = statementTransactions
@@ -1229,7 +843,6 @@ const Statement = ({
       `}</style>
 
       <div className="account-statement bg-white max-w-4xl mx-auto">
-        {/* Statement Header */}
         <div className="px-6 sm:px-8 py-6 border-b border-gray-200">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -1311,7 +924,6 @@ const Statement = ({
           </div>
         </div>
 
-        {/* Summary */}
         <div className="px-6 sm:px-8 py-5">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
@@ -1359,7 +971,6 @@ const Statement = ({
           </div>
         </div>
 
-        {/* Transactions */}
         <div className="px-6 sm:px-8 pb-6">
           <div className="border border-gray-200 rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
@@ -1506,55 +1117,28 @@ const Statement = ({
 
 const Transactions = () => {
   const [accounts, setAccounts] = useState([]);
-  const [selectedAccount, setSelectedAccount] =
-    useState('');
+  const [selectedAccount, setSelectedAccount] = useState('');
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  const [transactions, setTransactions] =
-    useState([]);
+  const [pagination, setPagination] = useState({
+    total: 0,
+    limit: 100,
+    offset: 0,
+  });
 
-  const [loading, setLoading] =
-    useState(true);
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
 
-  const [refreshing, setRefreshing] =
-    useState(false);
-
-  const [error, setError] =
-    useState('');
-
-  const [pagination, setPagination] =
-    useState({
-      total: 0,
-      limit: 100,
-      offset: 0,
-    });
-
-  const [receiptModalOpen, setReceiptModalOpen] =
-    useState(false);
-
-  const [selectedTransaction, setSelectedTransaction] =
-    useState(null);
-
-  /* Statement state */
-  const [statementRequestOpen, setStatementRequestOpen] =
-    useState(false);
-
-  const [statementOpen, setStatementOpen] =
-    useState(false);
-
-  const [statementPeriod, setStatementPeriod] =
-    useState(null);
-
-  /* ----------------------------------------------------------
-     INITIAL ACCOUNT LOAD
-  ---------------------------------------------------------- */
+  const [statementRequestOpen, setStatementRequestOpen] = useState(false);
+  const [statementOpen, setStatementOpen] = useState(false);
+  const [statementPeriod, setStatementPeriod] = useState(null);
 
   useEffect(() => {
     fetchAccounts();
   }, []);
-
-  /* ----------------------------------------------------------
-     FETCH TRANSACTIONS WHEN ACCOUNT/PAGE CHANGES
-  ---------------------------------------------------------- */
 
   useEffect(() => {
     if (selectedAccount) {
@@ -1565,42 +1149,31 @@ const Transactions = () => {
     pagination.offset,
   ]);
 
-  /* ----------------------------------------------------------
-     FETCH ACCOUNTS
-  ---------------------------------------------------------- */
-
   const fetchAccounts = async () => {
-  try {
-    setLoading(true);
-    setError('');
+    try {
+      setLoading(true);
+      setError('');
 
-    const data = await accountsAPI.getAll();
-    const accountList = data.accounts || [];
+      const data = await accountsAPI.getAll();
+      const accountList = data.accounts || [];
 
-    setAccounts(accountList);
+      setAccounts(accountList);
 
-    if (accountList.length > 0) {
-      // Sort by created_at (oldest first) to pick the primary account
-      const sorted = [...accountList].sort(
-        (a, b) => new Date(a.created_at) - new Date(b.created_at)
-      );
-      setSelectedAccount(sorted[0].id);
+      if (accountList.length > 0) {
+        const sorted = [...accountList].sort(
+          (a, b) => new Date(a.created_at) - new Date(b.created_at)
+        );
+        setSelectedAccount(sorted[0].id);
+      }
+    } catch (error) {
+      console.error('Error fetching accounts:', error);
+      setError('Failed to load your accounts.');
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error('Error fetching accounts:', error);
-    setError('Failed to load your accounts.');
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
-  /* ----------------------------------------------------------
-     FETCH TRANSACTIONS
-  ---------------------------------------------------------- */
-
-  const fetchTransactions = async (
-    isRefresh = false
-  ) => {
+  const fetchTransactions = async (isRefresh = false) => {
     try {
       if (isRefresh) {
         setRefreshing(true);
@@ -1610,100 +1183,61 @@ const Transactions = () => {
 
       setError('');
 
-      const data =
-        await transactionsAPI.getHistory(
-          selectedAccount,
-          {
-            limit: pagination.limit,
-            offset: pagination.offset,
-          }
-        );
-
-      setTransactions(
-        data.transactions || []
+      const data = await transactionsAPI.getHistory(
+        selectedAccount,
+        {
+          limit: pagination.limit,
+          offset: pagination.offset,
+        }
       );
 
+      setTransactions(data.transactions || []);
       setPagination(
         data.pagination || {
-          total: 0,
-          limit: 10,
+          total: (data.transactions || []).length,
+          limit: 100,
           offset: 0,
         }
       );
     } catch (error) {
-      console.error(
-        'Error fetching transactions:',
-        error
-      );
-
-      setError(
-        error.error ||
-          'Failed to load transactions.'
-      );
+      console.error('Error fetching transactions:', error);
+      setError(error.error || 'Failed to load transactions.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  /* ----------------------------------------------------------
-     ACCOUNT CHANGE
-  ---------------------------------------------------------- */
-
-  const handleAccountChange = (
-    accountId
-  ) => {
+  const handleAccountChange = (accountId) => {
     setSelectedAccount(accountId);
-
     setPagination((prev) => ({
       ...prev,
       offset: 0,
     }));
   };
 
-  /* ----------------------------------------------------------
-     PAGINATION
-  ---------------------------------------------------------- */
-
   const handlePrevPage = () => {
     if (pagination.offset === 0) return;
 
     setPagination((prev) => ({
       ...prev,
-      offset: Math.max(
-        0,
-        prev.offset - prev.limit
-      ),
+      offset: Math.max(0, prev.offset - prev.limit),
     }));
   };
 
   const handleNextPage = () => {
-    if (
-      pagination.offset +
-        pagination.limit >=
-      pagination.total
-    ) {
+    if (pagination.offset + pagination.limit >= pagination.total) {
       return;
     }
 
     setPagination((prev) => ({
       ...prev,
-      offset:
-        prev.offset + prev.limit,
+      offset: prev.offset + prev.limit,
     }));
   };
 
-  /* ----------------------------------------------------------
-     RECEIPT
-  ---------------------------------------------------------- */
-
-  const openReceipt = (
-    transaction
-  ) => {
-    setSelectedTransaction(
-      transaction
-    );
-
+  const openReceipt = (transaction) => {
+    setSelectedTransaction(transaction);
     setReceiptModalOpen(true);
   };
 
@@ -1711,10 +1245,6 @@ const Transactions = () => {
     setReceiptModalOpen(false);
     setSelectedTransaction(null);
   };
-
-  /* ----------------------------------------------------------
-     STATEMENT
-  ---------------------------------------------------------- */
 
   const openStatementRequest = () => {
     setStatementRequestOpen(true);
@@ -1724,15 +1254,8 @@ const Transactions = () => {
     setStatementRequestOpen(false);
   };
 
-  const generateStatement = ({
-    from,
-    to,
-  }) => {
-    setStatementPeriod({
-      from,
-      to,
-    });
-
+  const generateStatement = ({ from, to }) => {
+    setStatementPeriod({ from, to });
     setStatementRequestOpen(false);
     setStatementOpen(true);
   };
@@ -1742,24 +1265,11 @@ const Transactions = () => {
     setStatementPeriod(null);
   };
 
-  /* ----------------------------------------------------------
-     SELECTED ACCOUNT
-  ---------------------------------------------------------- */
+  const selectedAccountData = accounts.find(
+    (account) => account.id === selectedAccount
+  );
 
-  const selectedAccountData =
-    accounts.find(
-      (account) =>
-        account.id === selectedAccount
-    );
-
-  /* ----------------------------------------------------------
-     LOADING SCREEN
-  ---------------------------------------------------------- */
-
-  if (
-    loading &&
-    accounts.length === 0
-  ) {
+  if (loading && accounts.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[420px]">
         <div className="flex flex-col items-center">
@@ -1775,14 +1285,7 @@ const Transactions = () => {
     );
   }
 
-  /* ----------------------------------------------------------
-     NO ACCOUNTS
-  ---------------------------------------------------------- */
-
-  if (
-    !loading &&
-    accounts.length === 0
-  ) {
+  if (!loading && accounts.length === 0) {
     return (
       <div className="max-w-3xl mx-auto">
         <div className="rounded-2xl border border-gray-200 bg-white p-8 sm:p-12 text-center shadow-sm">
@@ -1795,32 +1298,18 @@ const Transactions = () => {
           </h1>
 
           <p className="text-sm text-gray-500 mt-2 max-w-md mx-auto">
-            You need an active account before
-            transaction history can be
-            displayed.
+            You need an active account before transaction history can be displayed.
           </p>
         </div>
       </div>
     );
   }
 
-  const showingFrom =
-    pagination.total === 0
-      ? 0
-      : pagination.offset + 1;
-
-  const showingTo = Math.min(
-    pagination.offset +
-      pagination.limit,
-    pagination.total
-  );
+  const showingFrom = pagination.total === 0 ? 0 : pagination.offset + 1;
+  const showingTo = Math.min(pagination.offset + pagination.limit, pagination.total);
 
   return (
     <div className="space-y-6">
-      {/* ======================================================
-          PAGE HEADER
-      ====================================================== */}
-
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-medium text-primary-600 mb-2">
@@ -1833,60 +1322,33 @@ const Transactions = () => {
           </h1>
 
           <p className="text-sm text-gray-500 mt-1">
-            Review and manage your transaction
-            history.
+            Review and manage your transaction history.
           </p>
         </div>
 
         <div className="flex items-center gap-2 self-start sm:self-auto">
-          {/* Request Statement */}
           <button
             type="button"
-            onClick={
-              openStatementRequest
-            }
+            onClick={openStatementRequest}
             disabled={!selectedAccount}
             className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl bg-primary-600 text-white text-sm font-semibold hover:bg-primary-700 disabled:opacity-50 transition-colors shadow-sm"
           >
             <FileText className="h-4 w-4" />
-            <span className="hidden sm:inline">
-              Request Statement
-            </span>
-            <span className="sm:hidden">
-              Statement
-            </span>
+            <span className="hidden sm:inline">Request Statement</span>
+            <span className="sm:hidden">Statement</span>
           </button>
 
-          {/* Refresh */}
           <button
             type="button"
-            onClick={() =>
-              fetchTransactions(true)
-            }
-            disabled={
-              refreshing ||
-              !selectedAccount
-            }
+            onClick={() => fetchTransactions(true)}
+            disabled={refreshing || !selectedAccount}
             className="inline-flex items-center justify-center gap-2 h-10 px-4 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
-            <RefreshCw
-              className={`h-4 w-4 ${
-                refreshing
-                  ? 'animate-spin'
-                  : ''
-              }`}
-            />
-
-            <span className="hidden sm:inline">
-              Refresh
-            </span>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
-
-      {/* ======================================================
-          ACCOUNT CONTROL
-      ====================================================== */}
 
       <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
         <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
@@ -1896,46 +1358,29 @@ const Transactions = () => {
             </p>
 
             <p className="text-xs text-gray-500 mt-1">
-              Select an account to view its
-              activity.
+              Select an account to view its activity.
             </p>
           </div>
 
           <AccountSelector
             accounts={accounts}
-            selectedAccount={
-              selectedAccount
-            }
-            onChange={
-              handleAccountChange
-            }
+            selectedAccount={selectedAccount}
+            onChange={handleAccountChange}
           />
         </div>
       </div>
 
-      {/* ======================================================
-          ERROR
-      ====================================================== */}
-
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-
           <div className="min-w-0">
             <p className="text-sm font-semibold text-red-800">
               Unable to load transactions
             </p>
-
-            <p className="text-sm text-red-700 mt-0.5">
-              {error}
-            </p>
+            <p className="text-sm text-red-700 mt-0.5">{error}</p>
           </div>
         </div>
       )}
-
-      {/* ======================================================
-          TRANSACTION PANEL
-      ====================================================== */}
 
       <section className="rounded-2xl border border-gray-200 bg-white shadow-sm overflow-hidden">
         <div className="px-4 sm:px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-4">
@@ -1943,15 +1388,10 @@ const Transactions = () => {
             <h2 className="text-base font-bold text-gray-900">
               Recent activity
             </h2>
-
             <p className="text-xs text-gray-500 mt-0.5">
               {pagination.total === 0
                 ? 'No activity recorded'
-                : `${pagination.total} transaction${
-                    pagination.total === 1
-                      ? ''
-                      : 's'
-                  }`}
+                : `${pagination.total} transaction${pagination.total === 1 ? '' : 's'}`}
             </p>
           </div>
 
@@ -1966,16 +1406,12 @@ const Transactions = () => {
         {loading ? (
           <div className="py-16 flex flex-col items-center">
             <Loader2 className="h-7 w-7 animate-spin text-primary-600" />
-
-            <p className="text-sm text-gray-500 mt-3">
-              Loading activity...
-            </p>
+            <p className="text-sm text-gray-500 mt-3">Loading activity...</p>
           </div>
         ) : transactions.length === 0 ? (
           <EmptyTransactions />
         ) : (
           <>
-            {/* Desktop Table */}
             <div className="hidden md:block overflow-x-auto">
               <table className="w-full">
                 <thead>
@@ -1983,93 +1419,59 @@ const Transactions = () => {
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Transaction
                     </th>
-
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Description
                     </th>
-
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Amount
                     </th>
-
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Status
                     </th>
-
                     <th className="text-left py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Date
                     </th>
-
                     <th className="text-right py-3 px-4 text-[11px] uppercase tracking-wider font-semibold text-gray-400">
                       Receipt
                     </th>
                   </tr>
                 </thead>
-
                 <tbody>
-                  {transactions.map(
-                    (transaction) => (
-                      <TransactionRow
-                        key={transaction.id}
-                        transaction={
-                          transaction
-                        }
-                        onReceipt={
-                          openReceipt
-                        }
-                      />
-                    )
-                  )}
+                  {transactions.map((transaction) => (
+                    <TransactionRow
+                      key={transaction.id}
+                      transaction={transaction}
+                      onReceipt={openReceipt}
+                    />
+                  ))}
                 </tbody>
               </table>
             </div>
 
-            {/* Mobile Cards */}
             <div className="md:hidden divide-y divide-gray-100">
-              {transactions.map(
-                (transaction) => (
-                  <TransactionCard
-                    key={transaction.id}
-                    transaction={
-                      transaction
-                    }
-                    onReceipt={
-                      openReceipt
-                    }
-                  />
-                )
-              )}
+              {transactions.map((transaction) => (
+                <TransactionCard
+                  key={transaction.id}
+                  transaction={transaction}
+                  onReceipt={openReceipt}
+                />
+              ))}
             </div>
 
-            {/* Pagination */}
-            {pagination.total >
-              pagination.limit && (
+            {pagination.total > pagination.limit && (
               <div className="px-4 sm:px-5 py-4 border-t border-gray-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <p className="text-xs sm:text-sm text-gray-500">
                   Showing{' '}
-                  <span className="font-semibold text-gray-700">
-                    {showingFrom}
-                  </span>{' '}
-                  to{' '}
-                  <span className="font-semibold text-gray-700">
-                    {showingTo}
-                  </span>{' '}
-                  of{' '}
-                  <span className="font-semibold text-gray-700">
-                    {pagination.total}
-                  </span>
+                  <span className="font-semibold text-gray-700">{showingFrom}</span> to{' '}
+                  <span className="font-semibold text-gray-700">{showingTo}</span> of{' '}
+                  <span className="font-semibold text-gray-700">{pagination.total}</span>
                 </p>
 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={
-                      handlePrevPage
-                    }
-                    disabled={
-                      pagination.offset ===
-                      0
-                    }
+                    onClick={handlePrevPage}
+                    disabled={pagination.offset === 0}
                     className="h-9 w-9 rounded-lg border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     aria-label="Previous page"
                   >
@@ -2077,22 +1479,13 @@ const Transactions = () => {
                   </button>
 
                   <div className="h-9 min-w-9 px-2 rounded-lg bg-primary-50 text-primary-700 flex items-center justify-center text-xs font-semibold">
-                    {Math.floor(
-                      pagination.offset /
-                        pagination.limit
-                    ) + 1}
+                    {Math.floor(pagination.offset / pagination.limit) + 1}
                   </div>
 
                   <button
                     type="button"
-                    onClick={
-                      handleNextPage
-                    }
-                    disabled={
-                      pagination.offset +
-                        pagination.limit >=
-                      pagination.total
-                    }
+                    onClick={handleNextPage}
+                    disabled={pagination.offset + pagination.limit >= pagination.total}
                     className="h-9 w-9 rounded-lg border border-gray-200 bg-white flex items-center justify-center text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                     aria-label="Next page"
                   >
@@ -2105,55 +1498,30 @@ const Transactions = () => {
         )}
       </section>
 
-      {/* ======================================================
-          RECEIPT MODAL
-      ====================================================== */}
-
+      {/* Receipt Modal */}
       <Modal
         isOpen={receiptModalOpen}
         onClose={closeReceipt}
-        title=""
-        size="lg"
-        position="center"
-        showCloseButton={false}
-        closeOnOutsideClick={false}
-      >
-        <Receipt
-          transaction={
-            selectedTransaction
-          }
-          onClose={closeReceipt}
-        />
-      </Modal>
-
-      {/* ======================================================
-          REQUEST STATEMENT MODAL
-      ====================================================== */}
-
-      <Modal
-        isOpen={statementRequestOpen}
-        onClose={
-          closeStatementRequest
-        }
         title=""
         size="md"
         position="center"
         showCloseButton={false}
         closeOnOutsideClick={false}
       >
-        <StatementRequest
-          onClose={
-            closeStatementRequest
-          }
-          onGenerate={
-            generateStatement
-          }
-        />
+        <Receipt transaction={selectedTransaction} onClose={closeReceipt} />
       </Modal>
 
-      {/* ======================================================
-          GENERATED STATEMENT MODAL
-      ====================================================== */}
+      <Modal
+        isOpen={statementRequestOpen}
+        onClose={closeStatementRequest}
+        title=""
+        size="md"
+        position="center"
+        showCloseButton={false}
+        closeOnOutsideClick={false}
+      >
+        <StatementRequest onClose={closeStatementRequest} onGenerate={generateStatement} />
+      </Modal>
 
       <Modal
         isOpen={statementOpen}
@@ -2166,21 +1534,11 @@ const Transactions = () => {
       >
         {statementPeriod && (
           <Statement
-            account={
-              selectedAccountData
-            }
-            transactions={
-              transactions
-            }
-            from={
-              statementPeriod.from
-            }
-            to={
-              statementPeriod.to
-            }
-            onClose={
-              closeStatement
-            }
+            account={selectedAccountData}
+            transactions={transactions}
+            from={statementPeriod.from}
+            to={statementPeriod.to}
+            onClose={closeStatement}
           />
         )}
       </Modal>

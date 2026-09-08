@@ -6,10 +6,10 @@ const {
   getUserConversations,
   getConversationById,
   getAdminConversations,
-  claimConversation,
   sendMessage,
   markConversationRead,
   closeConversation,
+		deleteConversation,
 } = require('../controllers/chatController');
 
 const router = express.Router();
@@ -29,7 +29,8 @@ router.patch('/conversations/:conversationId/close', closeConversation);
 // ============================================================
 // ADMIN CHAT
 // ============================================================
+router.delete( '/conversations/:conversationId', deleteConversation);
 router.get('/admin/conversations', getAdminConversations);
-router.patch('/admin/conversations/:conversationId/claim', claimConversation);
+
 
 module.exports = router;

@@ -1,9 +1,7 @@
 const { supabase } = require('../db/supabase');
 const { formatCurrency } = require('../utils/helpers');
-const { sendEmail } = require('../email/email');
-const { creditEmail, debitEmail } = require('../email/templates');
-const { sendNotification } = require('../socket');
-
+const { createAndSendNotification } = require('../utils/notifications');
+const crypto = require('crypto');
 
 // ============================================
 // USER MANAGEMENT
@@ -19,7 +17,6 @@ const getAllUsers = async (req, res, next) => {
 
     if (error) throw error;
 
-    // For each user, get their auth user info
     const usersWithAuth = await Promise.all(
       users.map(async (user) => {
         try {
@@ -104,7 +101,9 @@ const getUserById = async (req, res, next) => {
   }
 };
 
-// Admin: Update user (atomic update - both succeed or both fail)
+// ============================================
+// ADMIN: UPDATE USER (atomic update - both succeed or both fail)
+// ============================================
 const updateUser = async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -128,15 +127,39 @@ const updateUser = async (req, res, next) => {
     let hasProfileUpdate = false;
     let hasAuthUpdate = false;
 
-    if (full_name !== undefined) { profileUpdates.full_name = full_name; hasProfileUpdate = true; }
-    if (phone !== undefined) { profileUpdates.phone = phone; hasProfileUpdate = true; }
+    // Profile-only fields
     if (address !== undefined) { profileUpdates.address = address; hasProfileUpdate = true; }
     if (role !== undefined) { profileUpdates.role = role; hasProfileUpdate = true; }
     if (status !== undefined) { profileUpdates.status = status; hasProfileUpdate = true; }
-    if (profile_image !== undefined) { profileUpdates.profile_image = profile_image; hasProfileUpdate = true; }
-    if (date_of_birth !== undefined) { profileUpdates.date_of_birth = date_of_birth; hasProfileUpdate = true; }
     if (country !== undefined) { profileUpdates.country = country; hasProfileUpdate = true; }
+    if (profile_image !== undefined) { 
+      profileUpdates.profile_image = profile_image; 
+      hasProfileUpdate = true; 
+    }
     
+    // ✅ Convert empty date_of_birth to null
+    if (date_of_birth !== undefined) {
+      profileUpdates.date_of_birth = date_of_birth === '' ? null : date_of_birth;
+      hasProfileUpdate = true;
+    }
+
+    // Fields that need to be synced with auth metadata
+    let metadataUpdates = {};
+    if (full_name !== undefined) {
+      profileUpdates.full_name = full_name;
+      metadataUpdates.full_name = full_name;
+      hasProfileUpdate = true;
+    }
+    if (phone !== undefined) {
+      profileUpdates.phone = phone;
+      metadataUpdates.phone = phone;
+      hasProfileUpdate = true;
+    }
+    if (profile_image !== undefined) {
+      metadataUpdates.profile_image = profile_image;
+    }
+
+    // Password: update both auth and profile
     if (password !== undefined && password !== null && password.length > 0) {
       profileUpdates.password = password;
       authUpdates.password = password;
@@ -144,8 +167,27 @@ const updateUser = async (req, res, next) => {
       hasAuthUpdate = true;
     }
 
+    // Email: update both auth and profile
     if (email !== undefined && email !== null && email.length > 0) {
       authUpdates.email = email;
+      profileUpdates.email = email;
+      hasAuthUpdate = true;
+      hasProfileUpdate = true;
+    }
+
+    // If we have metadata updates
+    if (Object.keys(metadataUpdates).length > 0) {
+      const { data: currentAuth, error: fetchAuthError } = await supabase.auth.admin.getUserById(userId);
+      if (fetchAuthError) {
+        console.error('❌ Failed to fetch current auth user:', fetchAuthError);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to fetch current user metadata'
+        });
+      }
+      const currentMetadata = currentAuth?.user?.raw_user_meta_data || {};
+      const mergedMetadata = { ...currentMetadata, ...metadataUpdates };
+      authUpdates.user_metadata = mergedMetadata;
       hasAuthUpdate = true;
     }
 
@@ -187,10 +229,22 @@ const updateUser = async (req, res, next) => {
       }
     }
 
-    // STEP 2: If Auth succeeded, Update Profile
+    // STEP 2: Update Profile (with rollback if fails)
     if (hasProfileUpdate) {
       try {
         console.log('📝 Updating profile...');
+        
+        // ✅ Fetch current user profile to get old avatar URL
+        const { data: currentProfile, error: fetchError } = await supabase
+          .from('profiles')
+          .select('profile_image')
+          .eq('id', userId)
+          .single();
+
+        if (fetchError) {
+          console.error('Fetch current profile error:', fetchError);
+        }
+        
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .update(profileUpdates)
@@ -211,7 +265,7 @@ const updateUser = async (req, res, next) => {
                   .select('email')
                   .eq('id', userId)
                   .single();
-                if (originalProfile) {
+                if (originalProfile && originalProfile.email) {
                   revertData.email = originalProfile.email;
                 }
               }
@@ -242,6 +296,35 @@ const updateUser = async (req, res, next) => {
 
         profileResult = profile;
         console.log('✅ Profile updated successfully');
+
+        // ✅ Delete old avatar from storage if profile_image was updated
+        // Inside the updateUser function, after fetching currentProfile:
+
+// ✅ Delete old avatar FIRST before updating
+if (profile_image !== undefined && currentProfile?.profile_image) {
+  try {
+    const oldUrl = currentProfile.profile_image;
+    // Extract the path after "avatars/" in the URL
+    const match = oldUrl.match(/\/object\/public\/avatars\/(.+)$/);
+    if (match) {
+      const oldFilePath = match[1];
+      console.log('🗑️ Deleting old avatar:', oldFilePath);
+      const { error: deleteError } = await supabase.storage
+        .from('avatars')
+        .remove([oldFilePath]);
+      if (deleteError) {
+        console.warn('⚠️ Failed to delete old avatar:', deleteError);
+      } else {
+        console.log('✅ Old avatar deleted successfully');
+      }
+    } else {
+      console.warn('⚠️ Could not extract path from URL:', oldUrl);
+    }
+  } catch (deleteErr) {
+    console.warn('⚠️ Error deleting old avatar:', deleteErr);
+  }
+}
+
       } catch (error) {
         console.error('❌ Profile Update Exception:', error);
         
@@ -255,7 +338,7 @@ const updateUser = async (req, res, next) => {
                 .select('email')
                 .eq('id', userId)
                 .single();
-              if (originalProfile) {
+              if (originalProfile && originalProfile.email) {
                 revertData.email = originalProfile.email;
               }
             }
@@ -311,7 +394,8 @@ const updateUser = async (req, res, next) => {
       email: authUserInfo?.user?.email || finalUser.email,
       password: finalUser.password || '••••••••',
       email_confirmed: authUserInfo?.user?.email_confirmed_at ? true : false,
-      last_sign_in: authUserInfo?.user?.last_sign_in_at || null
+      last_sign_in: authUserInfo?.user?.last_sign_in_at || null,
+      raw_user_meta_data: authUserInfo?.user?.raw_user_meta_data || {}
     };
 
     console.log('✅ User updated successfully!');
@@ -360,22 +444,114 @@ const updateUserStatus = async (req, res, next) => {
   }
 };
 
-// Delete user
+// ============================================
+// ADMIN: DELETE USER (with avatar cleanup)
+// ============================================
+// ============================================
+// ADMIN: DELETE USER (with avatar cleanup)
+// ============================================
 const deleteUser = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { error } = await supabase.auth.admin.deleteUser(userId);
-    if (error) throw error;
+
+    // ✅ 1. Fetch user's profile to get avatar URL
+    const { data: profile, error: fetchError } = await supabase
+      .from('profiles')
+      .select('profile_image')
+      .eq('id', userId)
+      .single();
+
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('Fetch profile error:', fetchError);
+    }
+
+    // ✅ 2. Delete avatar from storage if it exists
+    if (profile?.profile_image) {
+      try {
+        const oldUrl = profile.profile_image;
+        const match = oldUrl.match(/\/object\/public\/avatars\/(.+)$/);
+        const filePath = match ? match[1] : null;
+        if (filePath) {
+          console.log('🗑️ Deleting avatar for user:', filePath);
+          const { error: deleteError } = await supabase.storage
+            .from('avatars')
+            .remove([filePath]);
+          if (deleteError) {
+            console.warn('⚠️ Failed to delete avatar:', deleteError);
+          } else {
+            console.log('✅ Avatar deleted successfully');
+          }
+        }
+      } catch (deleteErr) {
+        console.warn('⚠️ Error deleting avatar:', deleteErr);
+      }
+    }
+
+    // ✅ 3. Delete all user's notifications
+    const { error: notifError } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', userId);
+    if (notifError) {
+      console.warn('⚠️ Failed to delete notifications:', notifError);
+    }
+
+    // ✅ 4. Get all account IDs for this user
+    const { data: accounts, error: accountsError } = await supabase
+      .from('accounts')
+      .select('id')
+      .eq('user_id', userId);
+    if (accountsError) {
+      console.warn('⚠️ Failed to fetch accounts:', accountsError);
+    }
+
+    if (accounts && accounts.length > 0) {
+      const accountIds = accounts.map(a => a.id);
+      
+      // ✅ 5. Delete all transactions for these accounts
+      const { error: txError } = await supabase
+        .from('transactions')
+        .delete()
+        .in('account_id', accountIds);
+      if (txError) {
+        console.warn('⚠️ Failed to delete transactions:', txError);
+      }
+
+      // ✅ 6. Delete all user's accounts
+      const { error: accDeleteError } = await supabase
+        .from('accounts')
+        .delete()
+        .eq('user_id', userId);
+      if (accDeleteError) {
+        console.warn('⚠️ Failed to delete accounts:', accDeleteError);
+      }
+    }
+
+    // ✅ 7. Delete the user's profile
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .delete()
+      .eq('id', userId);
+    if (profileError) {
+      console.warn('⚠️ Failed to delete profile:', profileError);
+    }
+
+    // ✅ 8. Finally, delete the auth user
+    const { error: authError } = await supabase.auth.admin.deleteUser(userId);
+    if (authError) throw authError;
 
     res.json({
       success: true,
-      message: 'User deleted successfully'
+      message: 'User and all associated data deleted successfully'
     });
+
   } catch (error) {
     console.error('Delete User Error:', error);
     next(error);
   }
 };
+
+
 
 // ============================================
 // ACCOUNT MANAGEMENT
@@ -405,7 +581,6 @@ const getAllAccounts = async (req, res, next) => {
     next(error);
   }
 };
-
 
 // ============================================
 // GET SINGLE ACCOUNT (ADMIN)
@@ -489,14 +664,10 @@ const updateAccountStatus = async (req, res, next) => {
 // TRANSACTION MANAGEMENT
 // ============================================
 
-// ============================================
-// GET ALL TRANSACTIONS (ADMIN) – with account filter
-// ============================================
 const getAllTransactions = async (req, res, next) => {
   try {
     const { limit = 100, offset = 0, status, accountId } = req.query;
 
-    // Build the base query
     let query = supabase
       .from('transactions')
       .select(`
@@ -512,7 +683,6 @@ const getAllTransactions = async (req, res, next) => {
       .order('created_at', { ascending: false })
       .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-    // Apply filters
     if (status && status !== 'all') {
       query = query.eq('status', status);
     }
@@ -523,7 +693,6 @@ const getAllTransactions = async (req, res, next) => {
     const { data: transactions, error } = await query;
     if (error) throw error;
 
-    // Count total matching records (without pagination)
     let countQuery = supabase
       .from('transactions')
       .select('*', { count: 'exact', head: true });
@@ -553,10 +722,6 @@ const getAllTransactions = async (req, res, next) => {
   }
 };
 
-
-
-
-// ✅ UPDATED: Get transaction by ID with account number
 const getTransactionById = async (req, res, next) => {
   try {
     const { txId } = req.params;
@@ -598,23 +763,14 @@ const getTransactionById = async (req, res, next) => {
   }
 };
 
-
-
-
 // ============================================
 // UPDATE TRANSACTION (with balance adjustment)
 // ============================================
-
-// ============================================
-// UPDATE TRANSACTION (with balance adjustment)
-// ============================================
-
 const updateTransaction = async (req, res, next) => {
   try {
     const { txId } = req.params;
     const { amount, description, date, status } = req.body;
 
-    // 1. Fetch the original transaction with account info
     const { data: existing, error: fetchError } = await supabase
       .from('transactions')
       .select(`
@@ -645,7 +801,6 @@ const updateTransaction = async (req, res, next) => {
     let newBalance = account.balance;
     let balanceUpdated = false;
 
-    // 2. Handle amount change
     if (amount !== undefined && amount !== null) {
       const newAmount = parseFloat(amount);
       if (isNaN(newAmount) || newAmount <= 0) {
@@ -656,10 +811,8 @@ const updateTransaction = async (req, res, next) => {
       const diff = newAmount - old;
 
       if (transaction_type === 'credit') {
-        // Credit increases balance
         newBalance = account.balance + diff;
       } else if (transaction_type === 'debit') {
-        // Debit decreases balance
         newBalance = account.balance + old - newAmount;
         if (newBalance < 0) {
           return res.status(400).json({
@@ -668,7 +821,6 @@ const updateTransaction = async (req, res, next) => {
           });
         }
       } else {
-        // Transfers involve two accounts – handle separately or reject
         return res.status(400).json({
           success: false,
           error: 'Editing amount for transfer transactions is not supported'
@@ -679,7 +831,6 @@ const updateTransaction = async (req, res, next) => {
       balanceUpdated = true;
     }
 
-    // 3. Apply other updates
     if (description !== undefined) updates.description = description;
     if (date !== undefined) updates.created_at = date;
     if (status !== undefined) updates.status = status;
@@ -688,7 +839,6 @@ const updateTransaction = async (req, res, next) => {
       return res.status(400).json({ success: false, error: 'No fields to update' });
     }
 
-    // 4. Update account balance if amount changed
     if (balanceUpdated) {
       const { error: balanceError } = await supabase
         .from('accounts')
@@ -704,7 +854,6 @@ const updateTransaction = async (req, res, next) => {
       }
     }
 
-    // 5. Update the transaction itself
     const { data: updated, error: updateError } = await supabase
       .from('transactions')
       .update(updates)
@@ -731,7 +880,6 @@ const updateTransaction = async (req, res, next) => {
       });
     }
 
-    // 6. Return the updated transaction and new balance
     res.json({
       success: true,
       message: 'Transaction updated and balance adjusted',
@@ -745,13 +893,12 @@ const updateTransaction = async (req, res, next) => {
   }
 };
 
-
-
-
 // ============================================
 // APPROVE TRANSACTION
 // ============================================
-
+// ============================================
+// APPROVE TRANSACTION (UPDATED)
+// ============================================
 const approveTransaction = async (req, res, next) => {
   try {
     const { txId } = req.params;
@@ -788,7 +935,6 @@ const approveTransaction = async (req, res, next) => {
           error: 'Transaction not found'
         });
       }
-
       throw txError;
     }
 
@@ -802,10 +948,6 @@ const approveTransaction = async (req, res, next) => {
         error: `Only transactions pending review can be approved. Current status: ${tx.status}`
       });
     }
-
-    // --------------------------------------------------------
-    // MAKE SURE THIS IS A SAME-BANK TRANSFER
-    // --------------------------------------------------------
 
     const metadata = tx.metadata || {};
 
@@ -821,25 +963,17 @@ const approveTransaction = async (req, res, next) => {
 
     // --------------------------------------------------------
     // GET DESTINATION ACCOUNT
-    //
-    // IMPORTANT:
-    // The recipient account ID is stored in metadata.toAccountId
-    // during transfer initiation.
-    // Do NOT use tx.counterparty_account here.
     // --------------------------------------------------------
 
-    const destinationAccountId =
-  tx.counterparty_account ||
-  metadata.toAccountId;
+    const destinationAccountId = tx.counterparty_account || metadata.toAccountId;
 
-if (!destinationAccountId) {
-  return res.status(400).json({
-    success: false,
-    error: 'Recipient account information is missing from this transaction.'
-  });
-}
+    if (!destinationAccountId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Recipient account information is missing from this transaction.'
+      });
+    }
 
-    // Prevent sending money to the same account
     if (destinationAccountId === tx.account_id) {
       return res.status(400).json({
         success: false,
@@ -851,10 +985,7 @@ if (!destinationAccountId) {
     // GET DESTINATION
     // --------------------------------------------------------
 
-    const {
-      data: destination,
-      error: destinationError
-    } = await supabase
+    const { data: destination, error: destinationError } = await supabase
       .from('accounts')
       .select(`
         id,
@@ -878,13 +1009,8 @@ if (!destinationAccountId) {
           error: 'Recipient account not found.'
         });
       }
-
       throw destinationError;
     }
-
-    // --------------------------------------------------------
-    // RECIPIENT MUST STILL BE ACTIVE
-    // --------------------------------------------------------
 
     if (destination.status !== 'active') {
       return res.status(400).json({
@@ -906,13 +1032,6 @@ if (!destinationAccountId) {
       });
     }
 
-    // --------------------------------------------------------
-    // APPROVAL DOES NOT MEAN IGNORE CURRENT BALANCE
-    //
-    // The account may have changed since the transfer was
-    // initiated/reviewed.
-    // --------------------------------------------------------
-
     const sourceBalance = Number(source.balance);
     const amount = Number(tx.amount);
 
@@ -931,38 +1050,25 @@ if (!destinationAccountId) {
     }
 
     // --------------------------------------------------------
-    // SOURCE ACCOUNT MUST STILL BE RESTRICTED
-    //
-    // This is specifically the admin-review flow.
-    // If the account has become active again, the transaction
-    // should not be approved through this restricted flow.
+    // ✅ CHECK: Source account is restricted OR active
     // --------------------------------------------------------
+    const sourceAccountStatus = String(source.status || '').toLowerCase();
+    const sourceProfileStatus = String(source.profiles?.status || '').toLowerCase();
 
-    const sourceAccountStatus =
-      String(source.status || '').toLowerCase();
-
-    const sourceProfileStatus =
-      String(source.profiles?.status || '').toLowerCase();
-
-    const stillRestricted =
+    const isRestricted =
       ['frozen', 'banned'].includes(sourceAccountStatus) ||
       ['frozen', 'banned'].includes(sourceProfileStatus);
 
-    if (!stillRestricted) {
-      return res.status(400).json({
-        success: false,
-        error:
-          'The sender account is no longer restricted. This transaction cannot be approved as a restricted transfer.'
-      });
-    }
+    // ✅ If NOT restricted, we still allow approval (account was unfrozen)
+    // ✅ If restricted, we proceed with the restricted transfer flow
+    // ✅ Either way, we approve
 
     // --------------------------------------------------------
     // CALCULATE NEW BALANCES
     // --------------------------------------------------------
 
     const newSourceBalance = sourceBalance - amount;
-    const newDestinationBalance =
-      Number(destination.balance) + amount;
+    const newDestinationBalance = Number(destination.balance) + amount;
 
     // --------------------------------------------------------
     // DEBIT SOURCE
@@ -995,7 +1101,6 @@ if (!destinationAccountId) {
       .eq('balance', destination.balance);
 
     if (creditError) {
-      // Roll back source debit
       await supabase
         .from('accounts')
         .update({
@@ -1011,26 +1116,25 @@ if (!destinationAccountId) {
     // MARK ORIGINAL TRANSACTION COMPLETED
     // --------------------------------------------------------
 
-    const { data: completedTransaction, error: completeError } =
-      await supabase
-        .from('transactions')
-        .update({
-          status: 'completed',
-          metadata: {
-            ...metadata,
-            adminApproved: true,
-            approvedBy: req.user.id,
-            approvedAt: new Date().toISOString(),
-            balanceMoved: true
-          }
-        })
-        .eq('id', tx.id)
-        .eq('status', 'pending_review')
-        .select()
-        .single();
+    const { data: completedTransaction, error: completeError } = await supabase
+      .from('transactions')
+      .update({
+        status: 'completed',
+        metadata: {
+          ...metadata,
+          adminApproved: true,
+          approvedBy: req.user.id,
+          approvedAt: new Date().toISOString(),
+          balanceMoved: true,
+          wasRestricted: isRestricted // ✅ Track if this was a restricted transfer
+        }
+      })
+      .eq('id', tx.id)
+      .eq('status', 'pending_review')
+      .select()
+      .single();
 
     if (completeError) {
-      // Attempt to restore balances if transaction status update fails
       await supabase
         .from('accounts')
         .update({
@@ -1052,25 +1156,17 @@ if (!destinationAccountId) {
 
     // --------------------------------------------------------
     // CREATE RECIPIENT TRANSACTION
-    //
-    // reference_id MUST be unique.
-    // Therefore do NOT reuse tx.reference_id.
     // --------------------------------------------------------
 
-    const recipientReference =
-      `${tx.reference_id}-CR`;
+    const recipientReference = `${tx.reference_id}-CR`;
 
-    const {
-      data: recipientTransaction,
-      error: recipientTransactionError
-    } = await supabase
+    const { data: recipientTransaction, error: recipientTransactionError } = await supabase
       .from('transactions')
       .insert([{
         account_id: destination.id,
         transaction_type: 'transfer',
         amount,
-        description:
-          tx.description || 'Same bank transfer',
+        description: tx.description || 'Same bank transfer',
         reference_id: recipientReference,
         counterparty_account: source.id,
         status: 'completed',
@@ -1080,8 +1176,7 @@ if (!destinationAccountId) {
           originalTransactionId: tx.id,
           fromAccountId: source.id,
           toAccountId: destination.id,
-          senderName:
-            source.profiles?.full_name || null,
+          senderName: source.profiles?.full_name || null,
           approvedBy: req.user.id,
           approvedAt: new Date().toISOString()
         }
@@ -1090,43 +1185,63 @@ if (!destinationAccountId) {
       .single();
 
     if (recipientTransactionError) {
-      console.error(
-        'Recipient transaction creation failed:',
-        recipientTransactionError
-      );
-
-      // At this point money has already moved and the sender
-      // transaction is completed. Do NOT throw a fake rollback
-      // unless you implement a proper database transaction/RPC.
-      //
-      // Log it so the issue can be investigated.
+      console.error('Recipient transaction creation failed:', recipientTransactionError);
     }
 
     // --------------------------------------------------------
-    // NOTIFY SENDER
+    // NOTIFICATIONS & EMAILS
     // --------------------------------------------------------
 
-    try {
-      const notification = await createNotification({
-        userId: source.user_id,
-        title: 'Transfer Approved',
-        message: `Your transfer of ${formatCurrency(amount)} has been approved and completed.`,
-        type: 'transfer',
-        reference: tx.reference_id
-      });
+    const io = req.app.get('io');
 
-      if (notification) {
-        sendNotification(
-          req.app.get('io'),
-          source.user_id,
-          notification
-        );
-      }
-    } catch (notificationError) {
-      console.error(
-        'Approval notification error:',
-        notificationError
+    try {
+      const senderName = source.profiles?.full_name || 'User';
+      const recipientName = destination.profiles?.full_name || 'recipient';
+
+      await createAndSendNotification(
+        io,
+        source.user_id,
+        'transfer',
+        'Transfer Approved',
+        `Your transfer of ${formatCurrency(amount)} has been approved and completed.`,
+        tx.reference_id,
+        {
+          userName: senderName,
+          fromAccount: source.account_number,
+          toAccount: destination.account_number,
+          amount: formatCurrency(amount),
+          newBalance: formatCurrency(newSourceBalance),
+          description: tx.description || 'Same bank transfer',
+          reference: tx.reference_id
+        }
       );
+    } catch (notifError) {
+      console.error('Sender notification error:', notifError);
+    }
+
+    try {
+      const senderName = source.profiles?.full_name || 'User';
+      const recipientName = destination.profiles?.full_name || 'User';
+
+      await createAndSendNotification(
+        io,
+        destination.user_id,
+        'transfer',
+        'Transfer Received',
+        `You received ${formatCurrency(amount)} from ${senderName}.`,
+        tx.reference_id,
+        {
+          userName: recipientName,
+          fromAccount: source.account_number,
+          toAccount: destination.account_number,
+          amount: formatCurrency(amount),
+          newBalance: formatCurrency(newDestinationBalance),
+          description: `Transfer from ${senderName}`,
+          reference: tx.reference_id
+        }
+      );
+    } catch (notifError) {
+      console.error('Recipient notification error:', notifError);
     }
 
     // --------------------------------------------------------
@@ -1135,7 +1250,9 @@ if (!destinationAccountId) {
 
     return res.json({
       success: true,
-      message: 'Transaction approved and completed successfully.',
+      message: isRestricted 
+        ? 'Transaction approved and completed successfully (restricted transfer).'
+        : 'Transaction approved and completed successfully.',
       transaction: completedTransaction,
       from_account: {
         id: source.id,
@@ -1156,22 +1273,15 @@ if (!destinationAccountId) {
 };
 
 
+
 // ============================================
 // REJECT TRANSACTION
 // ============================================
-
 const rejectTransaction = async (req, res, next) => {
   try {
     const { txId } = req.params;
 
-    // --------------------------------------------------------
-    // GET TRANSACTION
-    // --------------------------------------------------------
-
-    const {
-      data: transaction,
-      error: getError
-    } = await supabase
+    const { data: transaction, error: getError } = await supabase
       .from('transactions')
       .select(`
         *,
@@ -1195,33 +1305,17 @@ const rejectTransaction = async (req, res, next) => {
           error: 'Transaction not found'
         });
       }
-
       throw getError;
     }
-
-    // --------------------------------------------------------
-    // ONLY PENDING REVIEW CAN BE REJECTED
-    // --------------------------------------------------------
 
     if (transaction.status !== 'pending_review') {
       return res.status(400).json({
         success: false,
-        error:
-          `Only transactions pending review can be rejected. Current status: ${transaction.status}`
+        error: `Only transactions pending review can be rejected. Current status: ${transaction.status}`
       });
     }
 
-    // --------------------------------------------------------
-    // REJECT
-    //
-    // No balance adjustment.
-    // The money was never moved.
-    // --------------------------------------------------------
-
-    const {
-      data: updated,
-      error: updateError
-    } = await supabase
+    const { data: updated, error: updateError } = await supabase
       .from('transactions')
       .update({
         status: 'failed',
@@ -1242,46 +1336,34 @@ const rejectTransaction = async (req, res, next) => {
       throw updateError;
     }
 
-    // --------------------------------------------------------
-    // NOTIFY USER
-    // --------------------------------------------------------
+    const userId = transaction.accounts?.user_id;
+    if (userId) {
+      const io = req.app.get('io');
+      const userName = transaction.accounts?.profiles?.full_name || 'User';
 
-    try {
-      const userId = transaction.accounts?.user_id;
-
-      if (userId) {
-        const notification = await createNotification({
+      try {
+        await createAndSendNotification(
+          io,
           userId,
-          title: 'Transfer Rejected',
-          message:
-            `Your transfer of ${formatCurrency(transaction.amount)} was rejected. No money was moved from your account.`,
-          type: 'transfer',
-          reference: transaction.reference_id
-        });
-
-        if (notification) {
-          sendNotification(
-            req.app.get('io'),
-            userId,
-            notification
-          );
-        }
+          'system',
+          'Transfer Rejected',
+          `Your transfer of ${formatCurrency(transaction.amount)} was rejected. No money was moved from your account.`,
+          transaction.reference_id,
+          {
+            template: 'transfer_rejected',
+            userName,
+            amount: formatCurrency(transaction.amount),
+            reference: transaction.reference_id
+          }
+        );
+      } catch (notifError) {
+        console.error('Rejection notification error:', notifError);
       }
-    } catch (notificationError) {
-      console.error(
-        'Rejection notification error:',
-        notificationError
-      );
     }
-
-    // --------------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------------
 
     return res.json({
       success: true,
-      message:
-        'Transaction rejected successfully. No money was moved.',
+      message: 'Transaction rejected successfully. No money was moved.',
       transaction: updated
     });
 
@@ -1291,14 +1373,9 @@ const rejectTransaction = async (req, res, next) => {
   }
 };
 
-
-
-
-
 // ============================================
 // SYSTEM STATS
 // ============================================
-
 const getSystemStats = async (req, res, next) => {
   try {
     const { count: totalUsers, error: userError } = await supabase
@@ -1322,7 +1399,7 @@ const getSystemStats = async (req, res, next) => {
     const { count: pendingTransactions, error: pendingError } = await supabase
       .from('transactions')
       .select('*', { count: 'exact', head: true })
-      .eq('status', 'pending');
+      .eq('status', 'pending_review');
 
     if (pendingError) throw pendingError;
 
@@ -1351,38 +1428,64 @@ const getSystemStats = async (req, res, next) => {
   }
 };
 
-// ============================================
-// HELPERS
-// ============================================
 
-// Create in-app notification
-const createNotification = async ({ userId, title, message, type, reference }) => {
+// ============================================
+// LAYOUT STATS (for admin sidebar badges)
+// ============================================
+const layoutStats = async (req, res, next) => {
   try {
-    const { data, error } = await supabase
-      .from('notifications')
-      .insert({
-        user_id: userId,
-        title,
-        message,
-        type,
-        reference_id: reference,
-        read: false,
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-    if (error) {
-      console.error('Notification insert error:', error);
-      return null;
+    const adminId = req.user.id;
+
+    // 1. Get unread chat messages count for admin
+    const { count: unreadChats, error: chatError } = await supabase
+      .from('chat_conversations')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'active')
+      .gt('admin_unread_count', 0);
+
+    if (chatError) {
+      console.error('Chat unread count error:', chatError);
     }
-    return data;
-  } catch (e) {
-    console.error('Notification error:', e);
-    return null;
+
+    // 2. Get card order counts (all orders)
+    const { count: cardOrders, error: cardError } = await supabase
+      .from('track_card')
+      .select('id', { count: 'exact', head: true });
+
+    if (cardError) {
+      console.error('Card order count error:', cardError);
+    }
+
+    // 3. Get pending review transactions count
+    const { count: pendingTransactions, error: txError } = await supabase
+      .from('transactions')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pending_review');
+
+    if (txError) {
+      console.error('Pending transactions count error:', txError);
+    }
+
+    res.json({
+      success: true,
+      stats: {
+        unreadChats: unreadChats || 0,
+        cardOrders: cardOrders || 0,
+        pendingTransactions: pendingTransactions || 0,
+      }
+    });
+
+  } catch (error) {
+    console.error('Layout Stats Error:', error);
+    next(error);
   }
 };
 
-// Generate reference
+
+
+// ============================================
+// HELPERS
+// ============================================
 const generateReference = () => {
   return 'ADM-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2, 6).toUpperCase();
 };
@@ -1390,11 +1493,10 @@ const generateReference = () => {
 // ============================================
 // ADMIN CREDIT / DEBIT
 // ============================================
-
 const adminCredit = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { accountId, amount, description, date, sendAlert } = req.body;
+    const { accountId, senderName, senderBank, senderAccountNo, amount, description, date, sendAlert } = req.body;
 
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
@@ -1423,7 +1525,6 @@ const adminCredit = async (req, res, next) => {
       });
     }
 
-    const userEmail = account.profiles?.email;
     const userName = account.profiles?.full_name || 'User';
 
     if (account.status !== 'active') {
@@ -1454,11 +1555,12 @@ const adminCredit = async (req, res, next) => {
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
+      metadata: { 
+        senderName: senderName || null,
+        senderBank: senderBank || null,
+        senderAccountNo: senderAccountNo || null
+      }
     };
-
-    try {
-      transactionData.metadata = { admin_id: req.user.id, admin_note: 'Admin credit' };
-    } catch (e) { /* ignore */ }
 
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
@@ -1470,34 +1572,23 @@ const adminCredit = async (req, res, next) => {
 
     if (sendAlert) {
       try {
-        const notification = await createNotification({
-          userId: userId,
-          title: 'Account Credited',
-          message: `Your account ${account.account_number} has been credited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.`,
-          type: 'credit',
-          reference: reference
-        });
-
-        if (notification) {
-          sendNotification(req.app.get('io'), userId, notification);
-        }
-
-        if (userEmail) {
-          const html = creditEmail({
+        const io = req.app.get('io');
+        await createAndSendNotification(
+          io,
+          userId,
+          'credit',
+          'Account Credited',
+          `Your account ${account.account_number} has been credited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.`,
+          reference,
+          {
             userName,
             accountNumber: account.account_number,
             amount: formatCurrency(amountNum),
             newBalance: formatCurrency(newBalance),
-            description,
-            reference,
-          });
-
-          await sendEmail({
-            to: userEmail,
-            subject: 'Account Credited',
-            html,
-          });
-        }
+            description: description || 'Credit transaction',
+            reference
+          }
+        );
       } catch (notifError) {
         console.error('Notification/Email error (non‑critical):', notifError);
       }
@@ -1516,15 +1607,26 @@ const adminCredit = async (req, res, next) => {
   }
 };
 
+
+
 const adminDebit = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { accountId, amount, description, note, date, sendAlert } = req.body;
+    // Added receiverBank to destructuring
+    const { accountId, receiverAccountNo, receiverName, receiverBank, amount, description, note, date, sendAlert } = req.body;
 
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
         success: false,
         error: 'Missing required fields: accountId, amount (positive), description'
+      });
+    }
+
+    // Added validation for receiver information
+    if (!receiverName || !receiverAccountNo || !receiverBank) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing receiver information: receiverName, receiverAccountNo, and receiverBank are required'
       });
     }
 
@@ -1548,7 +1650,6 @@ const adminDebit = async (req, res, next) => {
       });
     }
 
-    const userEmail = account.profiles?.email;
     const userName = account.profiles?.full_name || 'User';
 
     if (account.status !== 'active') {
@@ -1582,15 +1683,17 @@ const adminDebit = async (req, res, next) => {
       account_id: accountId,
       transaction_type: 'debit',
       amount: amountNum,
-      description: description || 'Admin debit',
+      description: description || 'Debit transaction',
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
+      metadata: { 
+        receiverAccountNo: receiverAccountNo,
+        receiverName: receiverName,
+        receiverBank: receiverBank,
+        admin_note: note || ''
+      }
     };
-
-    try {
-      transactionData.metadata = { admin_id: req.user.id, admin_note: note || '' };
-    } catch (e) { /* ignore */ }
 
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
@@ -1602,35 +1705,24 @@ const adminDebit = async (req, res, next) => {
 
     if (sendAlert) {
       try {
-        const notification = await createNotification({
-          userId: userId,
-          title: 'Account Debited',
-          message: `Your account ${account.account_number} has been debited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}. ${note ? `Note: ${note}` : ''}`,
-          type: 'debit',
-          reference: reference
-        });
-
-        if (notification) {
-          sendNotification(req.app.get('io'), userId, notification);
-        }
-
-        if (userEmail) {
-          const html = debitEmail({
+        const io = req.app.get('io');
+        await createAndSendNotification(
+          io,
+          userId,
+          'debit',
+          'Account Debited',
+          `Your account ${account.account_number} has been debited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.${note ? ` Note: ${note}` : ''}`,
+          reference,
+          {
             userName,
             accountNumber: account.account_number,
             amount: formatCurrency(amountNum),
             newBalance: formatCurrency(newBalance),
-            description,
+            description: description || 'Debit transaction',
             note: note || '',
-            reference,
-          });
-
-          await sendEmail({
-            to: userEmail,
-            subject: 'Account Debited',
-            html,
-          });
-        }
+            reference
+          }
+        );
       } catch (notifError) {
         console.error('Notification/Email error (non‑critical):', notifError);
       }
@@ -1649,29 +1741,91 @@ const adminDebit = async (req, res, next) => {
   }
 };
 
+
+
+// ============================================
+// REGISTRATION TOKEN MANAGEMENT
+// ============================================
+const generateRegisterToken = async (req, res) => {
+  try {
+    const { expiresAt } = req.body;
+    let expiryDate;
+    if (expiresAt) {
+      expiryDate = new Date(expiresAt);
+      if (isNaN(expiryDate.getTime())) {
+        return res.status(400).json({ success: false, error: 'Invalid expiry date' });
+      }
+    } else {
+      expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    }
+
+    const token = crypto.randomUUID();
+    await supabase.from('register_token').insert({
+      token,
+      expires_at: expiryDate.toISOString(),
+      created_by: req.user.id,
+    });
+
+    res.json({ success: true, token, expiresAt: expiryDate.toISOString() });
+  } catch (error) {
+    console.error('Generate Token Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+const getRegisterTokens = async (req, res) => {
+  try {
+    const { data: tokens, error } = await supabase
+      .from('register_token')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    res.json({ success: true, tokens });
+  } catch (error) {
+    console.error('Get Tokens Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+const revokeRegisterToken = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { error } = await supabase
+      .from('register_token')
+      .delete()
+      .eq('token', token);
+
+    if (error) throw error;
+    res.json({ success: true, message: 'Token permanently deleted' });
+  } catch (error) {
+    console.error('Delete Token Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 // ============================================
 // EXPORTS
 // ============================================
-
 module.exports = {
-  // User management
   getAllUsers,
   getUserById,
   updateUser,
   updateUserStatus,
   deleteUser,
-  // Account management
   getAllAccounts,
-		getAccountById,
+  getAccountById,
   updateAccountStatus,
-  // Transaction management
   getAllTransactions,
   getTransactionById,
   updateTransaction,
   approveTransaction,
   rejectTransaction,
-  // System stats
   getSystemStats,
+		layoutStats,
   adminCredit,
   adminDebit,
+  generateRegisterToken,
+  getRegisterTokens,
+  revokeRegisterToken
 };

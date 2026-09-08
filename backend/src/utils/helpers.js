@@ -9,7 +9,7 @@ const generateReference = () => {
 const generateAccountNumber = () => {
   const timestamp = Date.now().toString().slice(-6);
   const random = Math.floor(Math.random() * 10000).toString().padStart(4, '0');
-  return `ACC-${timestamp}-${random}`;
+  return `${timestamp}${random}`;
 };
 
 // Validate email format
@@ -41,7 +41,7 @@ const formatCurrency = (amount) => {
 const constants = {
   ACCOUNT_TYPES: ['savings', 'checking'],
   TRANSACTION_TYPES: ['credit', 'debit', 'transfer'],
-  TRANSACTION_STATUS: ['pending', 'completed', 'failed', 'cancelled'],
+  TRANSACTION_STATUS: ['pending_review', 'completed', 'failed', 'cancelled'],
   CURRENCY: 'USD'
 };
 

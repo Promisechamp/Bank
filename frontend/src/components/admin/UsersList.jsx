@@ -1,85 +1,171 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { authAPI, accountsAPI, transactionsAPI } from '../../api';
+import { authAPI, accountsAPI } from '../../api';
 import { toast } from 'sonner';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import Modal from '../Modal';
-import { 
-  Users, 
-  Search, 
-  Eye, 
-  Edit2, 
+import UpdateUserModal from './UpdateUserModal';
+import CreditModal from './CreditModal';
+import DebitModal from './DebitModal';
+
+import {
+  Users,
+  Search,
+  Eye,
+  Edit2,
   Loader2,
   UserPlus,
-  MoreVertical,
+  MoreHorizontal,
   ChevronLeft,
   ChevronRight,
   AlertCircle,
-  CheckCircle,
-  XCircle,
   Mail,
   Lock,
   User,
   Phone,
   TrendingUp,
   TrendingDown,
-  Calendar,
-  Bell,
   Wallet,
-  Lock as LockIcon,
-  Unlock as UnlockIcon
+  LockKeyhole,
+  UnlockKeyhole,
+  Building2,
+  UserCheck,
+  Trash2,
+  CheckCircle2,
+  XCircle,
+  UserRound,
+  Plus,
+  SlidersHorizontal,
+  ArrowUpRight,
 } from 'lucide-react';
-import { formatDate, getStatusColor, formatCurrency } from '../../utils/helpers.js';
 
-// ============================================
-// ACTION MENU COMPONENT
-// ============================================
-const ActionMenu = ({ actions }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
+import {
+  formatDate,
+  getStatusColor,
+  formatCurrency,
+} from '../../utils/helpers.js';
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+/* ============================================================
+   SHARED VISUAL CONSTANTS
+============================================================ */
 
-  const handleAction = (action) => {
-    setIsOpen(false);
-    if (action.onClick) action.onClick();
+const pageMotion = {
+  initial: { opacity: 0, y: 12 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.3, ease: 'easeOut' },
+};
+
+const cardClass =
+  'bg-white border border-slate-200/80 rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.03)]';
+
+const iconBox =
+  'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0';
+
+/* ============================================================
+   AVATAR
+============================================================ */
+
+const UserAvatar = ({ user, size = 'md' }) => {
+  const sizes = {
+    sm: 'w-9 h-9 text-xs',
+    md: 'w-11 h-11 text-sm',
+    lg: 'w-14 h-14 text-lg',
   };
 
   return (
-    <div className="relative" ref={menuRef}>
+    <div
+      className={`${sizes[size]} rounded-xl overflow-hidden bg-primary-50 border border-primary-100 flex items-center justify-center flex-shrink-0`}
+    >
+      {user?.profile_image ? (
+        <img
+          src={user.profile_image}
+          alt={user.full_name || 'User'}
+          className="w-full h-full object-cover"
+        />
+      ) : (
+        <span className="font-bold text-primary-600">
+          {user?.full_name?.charAt(0)?.toUpperCase() || 'U'}
+        </span>
+      )}
+    </div>
+  );
+};
+
+/* ============================================================
+   STATUS PILL
+============================================================ */
+
+const StatusPill = ({ status, icon: Icon, label }) => (
+  <span
+    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap ${
+      getStatusColor(status) ||
+      'bg-slate-100 text-slate-600'
+    }`}
+  >
+    {Icon && <Icon className="w-3 h-3" />}
+    {label || status || 'Active'}
+  </span>
+);
+
+/* ============================================================
+   ACTION MENU
+============================================================ */
+
+const ActionMenu = ({ actions }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handleOutside = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+    };
+  }, []);
+
+  return (
+    <div ref={ref} className="relative">
       <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
-        aria-label="Actions"
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-all"
+        aria-label="Open actions"
       >
-        <MoreVertical className="h-4 w-4" />
+        <MoreHorizontal className="w-4 h-4" />
       </button>
+
       <AnimatePresence>
-        {isOpen && (
+        {open && (
           <motion.div
-            initial={{ opacity: 0, scale: 0.95, y: -5 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.95, y: -5 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 mt-1 w-48 bg-white rounded-xl shadow-lg border border-gray-100 py-1 z-10"
+            initial={{ opacity: 0, y: -5, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -5, scale: 0.97 }}
+            transition={{ duration: 0.14 }}
+            className="absolute right-0 top-11 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-200/50 overflow-hidden z-50 p-1.5"
           >
             {actions.map((action, index) => (
               <button
                 key={index}
-                onClick={() => handleAction(action)}
-                className={`w-full px-4 py-2 text-sm text-left flex items-center space-x-2 transition-colors ${
-                  action.danger ? 'text-red-600 hover:bg-red-50' : 'text-gray-700 hover:bg-gray-50'
+                type="button"
+                onClick={() => {
+                  setOpen(false);
+                  action.onClick?.();
+                }}
+                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-left transition-colors ${
+                  action.danger
+                    ? 'text-red-600 hover:bg-red-50'
+                    : 'text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                {action.icon && <action.icon className="h-4 w-4" />}
+                {action.icon && (
+                  <action.icon className="w-4 h-4 flex-shrink-0" />
+                )}
                 <span>{action.label}</span>
               </button>
             ))}
@@ -90,9 +176,47 @@ const ActionMenu = ({ actions }) => {
   );
 };
 
-// ============================================
-// ADD USER MODAL CONTENT
-// ============================================
+/* ============================================================
+   STAT ITEM
+============================================================ */
+
+const SummaryStat = ({ icon: Icon, label, value, helper, tone }) => {
+  const tones = {
+    blue: 'bg-primary-50 text-primary-600',
+    green: 'bg-emerald-50 text-emerald-600',
+    amber: 'bg-amber-50 text-amber-600',
+    red: 'bg-red-50 text-red-600',
+  };
+
+  return (
+    <div className={`${cardClass} p-5`}>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">
+            {label}
+          </p>
+          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+            {value}
+          </p>
+          {helper && (
+            <p className="mt-1 text-xs text-slate-500">
+              {helper}
+            </p>
+          )}
+        </div>
+
+        <div className={`${iconBox} ${tones[tone] || tones.blue}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ============================================================
+   ADD USER
+============================================================ */
+
 const AddUserContent = ({ onClose, onSuccess }) => {
   const [formData, setFormData] = useState({
     full_name: '',
@@ -100,899 +224,1374 @@ const AddUserContent = ({ onClose, onSuccess }) => {
     password: '',
     confirmPassword: '',
     phone: '',
+    createAccount: false,
+    account_type: 'checking',
   });
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  const handleChange = (event) => {
+    const {
+      name,
+      value,
+      type,
+      checked,
+    } = event.target;
+
+    setFormData((prev) => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value,
+    }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+
     setError('');
-    if (!formData.full_name || !formData.email || !formData.password) {
-      setError('Please fill in all required fields');
+
+    if (
+      !formData.full_name ||
+      !formData.email ||
+      !formData.password
+    ) {
+      setError('Please complete all required fields.');
       return;
     }
+
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError('Passwords do not match.');
       return;
     }
+
     if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError('Password must be at least 6 characters.');
       return;
     }
+
     setLoading(true);
+
     try {
-      const response = await authAPI.register({
+      const payload = {
         email: formData.email,
         password: formData.password,
         full_name: formData.full_name,
         phone: formData.phone,
-      });
-      if (response.success) {
-        toast.success(`User ${formData.full_name} created successfully!`);
-        onSuccess();
-        onClose();
-      } else {
-        setError(response.error || 'Failed to create user');
+        create_account: formData.createAccount,
+        account_type: formData.createAccount
+          ? formData.account_type
+          : undefined,
+      };
+
+      const response = await authAPI.register(payload);
+
+      if (!response.success) {
+        throw new Error(
+          response.error || 'Failed to create user'
+        );
       }
+
+      toast.success(
+        formData.createAccount
+          ? `${formData.full_name} was created with a ${formData.account_type} account.`
+          : `${formData.full_name} was created successfully.`
+      );
+
+      await onSuccess?.();
+      onClose();
     } catch (error) {
-      setError(error.message || 'Failed to create user');
+      setError(
+        error?.error ||
+          error?.message ||
+          'Failed to create user'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
       {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start space-x-2">
-          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-          <span className="text-sm">{error}</span>
+        <div className="flex items-start gap-3 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-red-700">
+          <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+          <p className="text-sm leading-5">{error}</p>
         </div>
       )}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name *</label>
-        <div className="relative">
-          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            name="full_name"
-            value={formData.full_name}
-            onChange={handleChange}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            placeholder="John Doe"
-            required
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Email *</label>
-        <div className="relative">
-          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="email"
-            name="email"
-            value={formData.email}
-            onChange={handleChange}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            placeholder="john.doe@email.com"
-            required
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-        <div className="relative">
-          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="tel"
-            name="phone"
-            value={formData.phone}
-            onChange={handleChange}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            placeholder="+1-555-0101"
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Password *</label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="password"
-            name="password"
-            value={formData.password}
-            onChange={handleChange}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            placeholder="••••••••"
-            required
-          />
-        </div>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password *</label>
-        <div className="relative">
-          <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="password"
-            name="confirmPassword"
-            value={formData.confirmPassword}
-            onChange={handleChange}
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            placeholder="••••••••"
-            required
-          />
-        </div>
-      </div>
-      <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-        <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserPlus className="h-4 w-4" />}
-          <span>{loading ? 'Creating...' : 'Create User'}</span>
-        </button>
-      </div>
-    </form>
-  );
-};
 
-// ============================================
-// CREDIT MODAL CONTENT
-// ============================================
-const CreditModalContent = ({ user, accounts, onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
-    account_id: '',
-    amount: '',
-    description: '',
-    date: new Date().toISOString().split('T')[0],
-    sendAlert: false,
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+      <div className="rounded-2xl bg-slate-50 border border-slate-100 p-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white border border-slate-200 flex items-center justify-center">
+            <UserRound className="w-5 h-5 text-primary-600" />
+          </div>
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!formData.account_id) {
-      setError('Please select an account');
-      return;
-    }
-    const amountNum = parseFloat(formData.amount);
-    if (!amountNum || amountNum <= 0) {
-      setError('Please enter a valid positive amount');
-      return;
-    }
-    if (!formData.description.trim()) {
-      setError('Please enter a description');
-      return;
-    }
-    setLoading(true);
-    try {
-      await transactionsAPI.adminCredit({
-        userId: user.id,
-        accountId: formData.account_id,
-        amount: amountNum,
-        description: formData.description,
-        date: formData.date,
-        sendAlert: formData.sendAlert,
-      });
-      toast.success(`Credited ${formatCurrency(amountNum)} to ${user.full_name}`);
-      onSuccess();
-      onClose();
-    } catch (err) {
-      setError(err.error || err.message || 'Failed to credit account');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start space-x-2">
-          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-          <span className="text-sm">{error}</span>
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              Customer information
+            </p>
+            <p className="text-xs text-slate-500">
+              Create the customer's basic banking profile.
+            </p>
+          </div>
         </div>
-      )}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Select Account *</label>
-        <select
-          name="account_id"
-          value={formData.account_id}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <Field
+          label="Full name"
           required
+          icon={User}
+          name="full_name"
+          value={formData.full_name}
+          onChange={handleChange}
+          placeholder="John Doe"
+        />
+
+        <Field
+          label="Email address"
+          required
+          icon={Mail}
+          type="email"
+          name="email"
+          value={formData.email}
+          onChange={handleChange}
+          placeholder="john@example.com"
+        />
+
+        <Field
+          label="Phone number"
+          icon={Phone}
+          name="phone"
+          value={formData.phone}
+          onChange={handleChange}
+          placeholder="+234..."
+        />
+
+        <Field
+          label="Password"
+          required
+          icon={Lock}
+          type="password"
+          name="password"
+          value={formData.password}
+          onChange={handleChange}
+          placeholder="••••••••"
+        />
+
+        <Field
+          label="Confirm password"
+          required
+          icon={Lock}
+          type="password"
+          name="confirmPassword"
+          value={formData.confirmPassword}
+          onChange={handleChange}
+          placeholder="••••••••"
+        />
+      </div>
+
+      <div className="border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="p-4">
+          <p className="text-sm font-semibold text-slate-900">
+            Initial account
+          </p>
+
+          <p className="text-xs text-slate-500 mt-1">
+            You can create the customer's first bank account now or do it later.
+          </p>
+        </div>
+
+        <div className="border-t border-slate-100 p-4">
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setFormData((prev) => ({
+                  ...prev,
+                  createAccount: true,
+                }))
+              }
+              className={`p-3 rounded-xl border text-left transition-all ${
+                formData.createAccount
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                    formData.createAccount
+                      ? 'border-primary-600'
+                      : 'border-slate-300'
+                  }`}
+                >
+                  {formData.createAccount && (
+                    <div className="w-2 h-2 rounded-full bg-primary-600" />
+                  )}
+                </div>
+
+                <span className="text-sm font-medium text-slate-800">
+                  Create now
+                </span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setFormData((prev) => ({
+                  ...prev,
+                  createAccount: false,
+                }))
+              }
+              className={`p-3 rounded-xl border text-left transition-all ${
+                !formData.createAccount
+                  ? 'border-primary-300 bg-primary-50'
+                  : 'border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                    !formData.createAccount
+                      ? 'border-primary-600'
+                      : 'border-slate-300'
+                  }`}
+                >
+                  {!formData.createAccount && (
+                    <div className="w-2 h-2 rounded-full bg-primary-600" />
+                  )}
+                </div>
+
+                <span className="text-sm font-medium text-slate-800">
+                  Later
+                </span>
+              </div>
+            </button>
+          </div>
+
+          {formData.createAccount && (
+            <div className="mt-4">
+              <label className="block text-xs font-semibold text-slate-600 mb-2">
+                Account type
+              </label>
+
+              <select
+                name="account_type"
+                value={formData.account_type}
+                onChange={handleChange}
+                className="w-full h-11 px-3 border border-slate-200 rounded-xl bg-white text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400"
+              >
+                <option value="checking">Checking</option>
+                <option value="savings">Savings</option>
+              </select>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex justify-end gap-3 pt-2">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading}
+          className="h-11 px-5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
         >
-          <option value="">Choose an account...</option>
-          {accounts.map(acc => (
-            <option key={acc.id} value={acc.id}>
-              {acc.account_type} - {acc.account_number} (Balance: {formatCurrency(acc.balance)})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Amount (USD) *</label>
-        <input
-          type="number"
-          name="amount"
-          value={formData.amount}
-          onChange={handleChange}
-          step="0.01"
-          min="0.01"
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          placeholder="0.00"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-        <input
-          type="text"
-          name="description"
-          value={formData.description}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          placeholder="e.g., Salary bonus"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Date</label>
-        <input
-          type="date"
-          name="date"
-          value={formData.date}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
-      </div>
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          name="sendAlert"
-          id="sendAlert"
-          checked={formData.sendAlert}
-          onChange={handleChange}
-          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-        />
-        <label htmlFor="sendAlert" className="text-sm text-gray-700 flex items-center">
-          <Bell className="h-4 w-4 mr-1" />
-          Send notification to user
-        </label>
-      </div>
-      <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-        <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingUp className="h-4 w-4" />}
-          <span>{loading ? 'Processing...' : 'Credit Account'}</span>
+          Cancel
         </button>
-      </div>
-    </form>
-  );
-};
 
-// ============================================
-// DEBIT MODAL CONTENT
-// ============================================
-const DebitModalContent = ({ user, accounts, onClose, onSuccess }) => {
-  const [formData, setFormData] = useState({
-    account_id: '',
-    amount: '',
-    description: '',
-    note: '',
-    date: new Date().toISOString().split('T')[0],
-    sendAlert: false,
-  });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData(prev => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    if (!formData.account_id) {
-      setError('Please select an account');
-      return;
-    }
-    const amountNum = parseFloat(formData.amount);
-    if (!amountNum || amountNum <= 0) {
-      setError('Please enter a valid positive amount');
-      return;
-    }
-    if (!formData.description.trim()) {
-      setError('Please enter a description');
-      return;
-    }
-    setLoading(true);
-    try {
-      await transactionsAPI.adminDebit({
-        userId: user.id,
-        accountId: formData.account_id,
-        amount: amountNum,
-        description: formData.description,
-        note: formData.note,
-        date: formData.date,
-        sendAlert: formData.sendAlert,
-      });
-      toast.success(`Debited ${formatCurrency(amountNum)} from ${user.full_name}`);
-      onSuccess();
-      onClose();
-    } catch (err) {
-      setError(err.error || err.message || 'Failed to debit account');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-start space-x-2">
-          <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-          <span className="text-sm">{error}</span>
-        </div>
-      )}
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Select Account *</label>
-        <select
-          name="account_id"
-          value={formData.account_id}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          required
+        <button
+          type="submit"
+          disabled={loading}
+          className="h-11 px-5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold flex items-center gap-2 transition-colors disabled:opacity-50"
         >
-          <option value="">Choose an account...</option>
-          {accounts.map(acc => (
-            <option key={acc.id} value={acc.id}>
-              {acc.account_type} - {acc.account_number} (Balance: {formatCurrency(acc.balance)})
-            </option>
-          ))}
-        </select>
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Amount (USD) *</label>
-        <input
-          type="number"
-          name="amount"
-          value={formData.amount}
-          onChange={handleChange}
-          step="0.01"
-          min="0.01"
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          placeholder="0.00"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Description *</label>
-        <input
-          type="text"
-          name="description"
-          value={formData.description}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-          placeholder="e.g., ATM withdrawal"
-          required
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Note (Store address / Purchase invoice ID)</label>
-        <textarea
-          name="note"
-          value={formData.note}
-          onChange={handleChange}
-          rows="2"
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-          placeholder="e.g., Store #123, Invoice INV-001"
-        />
-      </div>
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">Transaction Date</label>
-        <input
-          type="date"
-          name="date"
-          value={formData.date}
-          onChange={handleChange}
-          className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
-      </div>
-      <div className="flex items-center space-x-2">
-        <input
-          type="checkbox"
-          name="sendAlert"
-          id="sendAlert"
-          checked={formData.sendAlert}
-          onChange={handleChange}
-          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-        />
-        <label htmlFor="sendAlert" className="text-sm text-gray-700 flex items-center">
-          <Bell className="h-4 w-4 mr-1" />
-          Send notification to user
-        </label>
-      </div>
-      <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-        <button type="button" onClick={onClose} disabled={loading} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
-        <button type="submit" disabled={loading} className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50 flex items-center space-x-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingDown className="h-4 w-4" />}
-          <span>{loading ? 'Processing...' : 'Debit Account'}</span>
+          {loading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <UserPlus className="w-4 h-4" />
+          )}
+
+          {loading ? 'Creating...' : 'Create customer'}
         </button>
       </div>
     </form>
   );
 };
 
-// ============================================
-// MAIN USERS LIST COMPONENT
-// ============================================
+/* ============================================================
+   FIELD
+============================================================ */
+
+const Field = ({
+  label,
+  required,
+  icon: Icon,
+  ...props
+}) => (
+  <div>
+    <label className="block text-xs font-semibold text-slate-600 mb-2">
+      {label}
+      {required && (
+        <span className="text-primary-600 ml-1">*</span>
+      )}
+    </label>
+
+    <div className="relative">
+      {Icon && (
+        <Icon className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+      )}
+
+      <input
+        {...props}
+        className="w-full h-11 pl-10 pr-3 border border-slate-200 rounded-xl bg-white text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-400 transition-all"
+      />
+    </div>
+  </div>
+);
+
+/* ============================================================
+   MAIN
+============================================================ */
+
 const UsersList = () => {
+  const navigate = useNavigate();
+
   const [users, setUsers] = useState([]);
   const [allAccounts, setAllAccounts] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [usersPerPage] = useState(10);
-  
-  // Modal States
+
+  const usersPerPage = 10;
+
   const [modalOpen, setModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
   const [modalContent, setModalContent] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+
   const [selectedUser, setSelectedUser] = useState(null);
   const [userAccounts, setUserAccounts] = useState([]);
 
-  const navigate = useNavigate();
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [selectedUserForEdit, setSelectedUserForEdit] =
+    useState(null);
+
+  const [creditModalOpen, setCreditModalOpen] = useState(false);
+  const [debitModalOpen, setDebitModalOpen] = useState(false);
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
+
   const fetchData = async () => {
     try {
       setLoading(true);
+
       const [usersRes, accountsRes] = await Promise.all([
         authAPI.getAllUsers(),
-        accountsAPI.adminGetAll()
+        accountsAPI.adminGetAll(),
       ]);
-      setUsers(usersRes.users || []);
-      setAllAccounts(accountsRes.accounts || []);
+
+      setUsers(usersRes?.users || []);
+      setAllAccounts(accountsRes?.accounts || []);
     } catch (error) {
-      toast.error('Failed to load data');
+      console.error(error);
+      toast.error('Unable to load customers.');
     } finally {
       setLoading(false);
     }
   };
 
+  const getUserAccounts = (userId) =>
+    allAccounts.filter(
+      (account) => account.user_id === userId
+    );
+
+  const getAccountStatus = (userId) => {
+    const accounts = getUserAccounts(userId);
+
+    if (!accounts.length) {
+      return {
+        label: 'No accounts',
+        className: 'bg-slate-100 text-slate-500',
+        icon: Building2,
+      };
+    }
+
+    if (
+      accounts.some(
+        (account) => account.status === 'banned'
+      )
+    ) {
+      return {
+        label: 'Banned',
+        className: 'bg-red-50 text-red-600',
+        icon: XCircle,
+      };
+    }
+
+    if (
+      accounts.some(
+        (account) => account.status === 'frozen'
+      )
+    ) {
+      return {
+        label: 'Frozen',
+        className: 'bg-blue-50 text-blue-600',
+        icon: LockKeyhole,
+      };
+    }
+
+    if (
+      accounts.every(
+        (account) => account.status === 'active'
+      )
+    ) {
+      return {
+        label: 'Active',
+        className: 'bg-emerald-50 text-emerald-600',
+        icon: CheckCircle2,
+      };
+    }
+
+    return {
+      label: 'Mixed',
+      className: 'bg-amber-50 text-amber-600',
+      icon: AlertCircle,
+    };
+  };
+
+  const getFreezeAction = (userId) => {
+    const accounts = getUserAccounts(userId);
+
+    const frozen = accounts.some(
+      (account) =>
+        account.status === 'frozen' ||
+        account.status === 'banned'
+    );
+
+    return frozen
+      ? {
+          label: 'Unfreeze all accounts',
+          icon: UnlockKeyhole,
+          status: 'active',
+        }
+      : {
+          label: 'Freeze all accounts',
+          icon: LockKeyhole,
+          status: 'frozen',
+        };
+  };
+
   const fetchUserAccounts = async (userId) => {
     try {
       const response = await accountsAPI.adminGetAll();
-      const accounts = (response.accounts || []).filter(acc => acc.user_id === userId);
+
+      const accounts = (response?.accounts || []).filter(
+        (account) => account.user_id === userId
+      );
+
       setUserAccounts(accounts);
-    } catch (error) {
-      toast.error('Failed to load user accounts');
+    } catch {
       setUserAccounts([]);
+      toast.error('Unable to load user accounts.');
     }
   };
 
-  const getUserAccountStatus = (userId) => {
-    const userAccs = allAccounts.filter(acc => acc.user_id === userId);
-    if (userAccs.length === 0) return { status: 'No accounts', color: 'bg-gray-100 text-gray-800' };
-    if (userAccs.some(acc => acc.status === 'banned')) {
-      return { status: 'Banned', color: 'bg-red-100 text-red-800' };
-    }
-    if (userAccs.some(acc => acc.status === 'frozen')) {
-      return { status: 'Frozen', color: 'bg-blue-100 text-blue-800' };
-    }
-    if (userAccs.some(acc => acc.status === 'closed')) {
-      return { status: 'Closed', color: 'bg-gray-100 text-gray-800' };
-    }
-    if (userAccs.every(acc => acc.status === 'active')) {
-      return { status: 'Active', color: 'bg-green-100 text-green-800' };
-    }
-    return { status: 'Mixed', color: 'bg-yellow-100 text-yellow-800' };
-  };
+  const handleFreeze = (user) => {
+    const accounts = getUserAccounts(user.id);
+    const action = getFreezeAction(user.id);
 
-  const getFreezeActionLabel = (userId) => {
-    const userAccs = allAccounts.filter(acc => acc.user_id === userId);
-    if (userAccs.some(acc => acc.status === 'frozen' || acc.status === 'banned')) {
-      return { label: 'Unfreeze All Accounts', icon: UnlockIcon, action: 'unfreeze' };
+    if (!accounts.length) {
+      toast.info('This user has no accounts to update.');
+      return;
     }
-    return { label: 'Freeze All Accounts', icon: LockIcon, action: 'freeze' };
-  };
 
-  const handleFreezeUnfreezeAll = async (user) => {
-    const userAccs = allAccounts.filter(acc => acc.user_id === user.id);
-    const isFrozen = userAccs.some(acc => acc.status === 'frozen' || acc.status === 'banned');
-    const newStatus = isFrozen ? 'active' : 'frozen';
-    
+    const frozen = action.status === 'active';
+
     setModalType('confirm');
+
     setModalContent({
-      title: `${isFrozen ? 'Unfreeze' : 'Freeze'} All Accounts`,
-      message: `Are you sure you want to ${isFrozen ? 'unfreeze' : 'freeze'} all accounts of ${user.full_name}?`,
-      type: isFrozen ? 'info' : 'warning',
+      title: action.label,
+      message: `This will ${frozen ? 'unfreeze' : 'freeze'} all ${accounts.length} account${accounts.length > 1 ? 's' : ''} belonging to ${user.full_name}.`,
+      type: frozen ? 'info' : 'warning',
       onConfirm: async () => {
         try {
-          setModalLoading(true);
           await Promise.all(
-            userAccs.map(acc => accountsAPI.adminUpdateStatus(acc.id, newStatus))
+            accounts.map((account) =>
+              accountsAPI.adminUpdateStatus(
+                account.id,
+                action.status
+              )
+            )
           );
-          toast.success(`All accounts ${isFrozen ? 'unfrozen' : 'frozen'} successfully!`);
-          fetchData();
+
+          toast.success(
+            frozen
+              ? 'All accounts have been unfrozen.'
+              : 'All accounts have been frozen.'
+          );
+
+          await fetchData();
           setModalOpen(false);
         } catch (error) {
-          toast.error(error.error || 'Failed to update accounts');
-        } finally {
-          setModalLoading(false);
+          toast.error(
+            error?.error ||
+              'Unable to update the accounts.'
+          );
         }
-      }
+      },
     });
+
     setModalOpen(true);
   };
 
-  const showConfirmModal = (title, message, onConfirm, type = 'danger') => {
+  const handleDelete = (user) => {
     setModalType('confirm');
-    setModalContent({ title, message, type, onConfirm });
+
+    setModalContent({
+      title: 'Delete customer',
+      message: `Delete ${user.full_name}? This action cannot be undone.`,
+      type: 'danger',
+      onConfirm: async () => {
+        try {
+          await authAPI.deleteUser(user.id);
+
+          toast.success('Customer deleted successfully.');
+
+          setUsers((prev) =>
+            prev.filter((item) => item.id !== user.id)
+          );
+
+          setModalOpen(false);
+
+          await fetchData();
+        } catch (error) {
+          toast.error(
+            error?.error ||
+              'Unable to delete customer.'
+          );
+        }
+      },
+    });
+
     setModalOpen(true);
   };
 
-  const showAddUserModal = () => {
+  const showEdit = (user) => {
+    setSelectedUserForEdit(user);
+    setEditModalOpen(true);
+  };
+
+  const showCredit = async (user) => {
+    setSelectedUser(user);
+    await fetchUserAccounts(user.id);
+    setCreditModalOpen(true);
+  };
+
+  const showDebit = async (user) => {
+    setSelectedUser(user);
+    await fetchUserAccounts(user.id);
+    setDebitModalOpen(true);
+  };
+
+  const filteredUsers = useMemo(() => {
+    const term = search.trim().toLowerCase();
+
+    if (!term) return users;
+
+    return users.filter((user) => {
+      return (
+        user.full_name
+          ?.toLowerCase()
+          .includes(term) ||
+        user.email
+          ?.toLowerCase()
+          .includes(term) ||
+        user.phone
+          ?.toLowerCase()
+          .includes(term)
+      );
+    });
+  }, [users, search]);
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredUsers.length / usersPerPage)
+  );
+
+  const currentUsers = filteredUsers.slice(
+    (currentPage - 1) * usersPerPage,
+    currentPage * usersPerPage
+  );
+
+  const activeUsers = users.filter(
+    (user) => user.status === 'active'
+  ).length;
+
+  const suspendedUsers = users.filter(
+    (user) => user.status === 'suspended'
+  ).length;
+
+  const usersWithAccounts = users.filter(
+    (user) => getUserAccounts(user.id).length > 0
+  ).length;
+
+  const openAddUser = () => {
     setModalType('add');
     setModalContent(null);
     setModalOpen(true);
   };
 
-  const showCreditModal = (user) => {
-    setSelectedUser(user);
-    fetchUserAccounts(user.id);
-    setModalType('credit');
-    setModalOpen(true);
-  };
-
-  const showDebitModal = (user) => {
-    setSelectedUser(user);
-    fetchUserAccounts(user.id);
-    setModalType('debit');
-    setModalOpen(true);
-  };
-
-  const handleConfirm = async () => {
-    if (!modalContent) return;
-    setModalLoading(true);
-    try {
-      await modalContent.onConfirm();
-    } catch (error) {
-      toast.error(error.message || 'Action failed');
-    } finally {
-      setModalLoading(false);
-    }
-  };
-
-  const handleUserAction = (userId, action) => {
-    const user = users.find(u => u.id === userId);
-    const actionMap = {
-      delete: {
-        title: 'Delete User',
-        message: `Are you sure you want to delete ${user?.full_name}? This action cannot be undone.`,
-        action: async () => {
-          await authAPI.deleteUser(userId);
-          setUsers(users.filter(u => u.id !== userId));
-        }
-      }
-    };
-    const config = actionMap[action];
-    if (config) {
-      showConfirmModal(
-        config.title,
-        config.message,
-        config.action,
-        'danger'
-      );
-    }
-  };
-
-  // Filter & pagination
-  const filteredUsers = users.filter(user =>
-    user.full_name?.toLowerCase().includes(search.toLowerCase()) ||
-    user.email?.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const indexOfLastUser = currentPage * usersPerPage;
-  const indexOfFirstUser = indexOfLastUser - usersPerPage;
-  const currentUsers = filteredUsers.slice(indexOfFirstUser, indexOfLastUser);
-  const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
-
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
-  if (loading && users.length === 0) {
+  if (loading && !users.length) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 rounded-2xl bg-primary-50 flex items-center justify-center mx-auto mb-4">
+            <Loader2 className="w-5 h-5 text-primary-600 animate-spin" />
+          </div>
+
+          <p className="text-sm font-medium text-slate-700">
+            Loading customers
+          </p>
+
+          <p className="text-xs text-slate-400 mt-1">
+            Preparing your customer directory...
+          </p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Users</h1>
-          <p className="text-gray-600 text-sm">Manage all banking users</p>
-        </div>
-        <button 
-          onClick={showAddUserModal}
-          className="btn-primary flex items-center justify-center space-x-2 px-4 py-2 text-sm"
-        >
-          <UserPlus className="h-4 w-4" />
-          <span>Add User</span>
-        </button>
-      </div>
+    <>
+      <motion.div
+        {...pageMotion}
+        className="space-y-6 pb-8"
+      >
+        {/* HEADER */}
 
-      {/* Search Bar */}
-      <div className="card">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Search users by name or email..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-semibold text-primary-600 mb-2">
+              <Users className="w-4 h-4" />
+              CUSTOMER MANAGEMENT
+            </div>
+
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              Customers
+            </h1>
+
+            <p className="text-sm text-slate-500 mt-1.5">
+              Manage customer profiles, accounts and banking activity.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={openAddUser}
+            className="h-11 px-4 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm shadow-primary-200"
+          >
+            <Plus className="w-4 h-4" />
+            Add customer
+          </button>
+        </div>
+
+        {/* SUMMARY */}
+
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
+          <SummaryStat
+            icon={Users}
+            label="Total customers"
+            value={users.length}
+            helper="Registered customers"
+            tone="blue"
+          />
+
+          <SummaryStat
+            icon={UserCheck}
+            label="Active"
+            value={activeUsers}
+            helper="Currently active"
+            tone="green"
+          />
+
+          <SummaryStat
+            icon={Wallet}
+            label="With accounts"
+            value={usersWithAccounts}
+            helper="At least one account"
+            tone="blue"
+          />
+
+          <SummaryStat
+            icon={AlertCircle}
+            label="Suspended"
+            value={suspendedUsers}
+            helper="Require attention"
+            tone="amber"
           />
         </div>
-      </div>
 
-      {/* Mobile Cards */}
-      <div className="block md:hidden space-y-3">
-        {currentUsers.length === 0 ? (
-          <div className="card text-center py-12">
-            <Users className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No users found</p>
-          </div>
-        ) : (
-          currentUsers.map((user) => {
-            const accountStatus = getUserAccountStatus(user.id);
-            const freezeAction = getFreezeActionLabel(user.id);
-            return (
-              <div key={user.id} className="card hover:shadow-md transition-shadow">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                      <span className="text-sm font-bold text-primary-600">{user.full_name?.charAt(0) || 'U'}</span>
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-900 text-sm">{user.full_name}</p>
-                      <p className="text-xs text-gray-500">{user.email}</p>
-                    </div>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${accountStatus.color}`}>
-                    <Wallet className="h-3 w-3 inline mr-1" />
-                    {accountStatus.status}
-                  </span>
-                </div>
-                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                  <span className="text-xs text-gray-500">Joined {formatDate(user.created_at)}</span>
-                  <ActionMenu
-                    actions={[
-                      { label: 'View Details', icon: Eye, onClick: () => navigate(`/admin/users/${user.id}`) },
-                      { label: 'Edit User', icon: Edit2, onClick: () => navigate(`/admin/users/${user.id}/edit`) },
-                      { label: 'Credit Account', icon: TrendingUp, onClick: () => showCreditModal(user) },
-                      { label: 'Debit Account', icon: TrendingDown, onClick: () => showDebitModal(user) },
-                      { label: freezeAction.label, icon: freezeAction.icon, onClick: () => handleFreezeUnfreezeAll(user) },
-                      { label: 'Delete', icon: AlertCircle, danger: true, onClick: () => handleUserAction(user.id, 'delete') }
-                    ]}
-                  />
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+        {/* SEARCH */}
 
-      {/* Desktop Table */}
-      <div className="hidden md:block card overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-200">
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Account Status</th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
-              <th className="text-right py-3 px-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {currentUsers.map((user) => {
-              const accountStatus = getUserAccountStatus(user.id);
-              const freezeAction = getFreezeActionLabel(user.id);
-              return (
-                <tr key={user.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-8 bg-primary-100 rounded-full flex items-center justify-center flex-shrink-0">
-                        <span className="text-xs font-bold text-primary-600">{user.full_name?.charAt(0) || 'U'}</span>
-                      </div>
-                      <span className="text-sm font-medium text-gray-900">{user.full_name}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-600">{user.email}</td>
-                  <td className="py-3 px-4">
-                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${accountStatus.color}`}>
-                      <Wallet className="h-3 w-3 inline mr-1" />
-                      {accountStatus.status}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-sm text-gray-500">{formatDate(user.created_at)}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center justify-end">
-                      <ActionMenu
-                        actions={[
-                          { label: 'View Details', icon: Eye, onClick: () => navigate(`/admin/users/${user.id}`) },
-                          { label: 'Edit User', icon: Edit2, onClick: () => navigate(`/admin/users/${user.id}/edit`) },
-                          { label: 'Credit Account', icon: TrendingUp, onClick: () => showCreditModal(user) },
-                          { label: 'Debit Account', icon: TrendingDown, onClick: () => showDebitModal(user) },
-                          { label: freezeAction.label, icon: freezeAction.icon, onClick: () => handleFreezeUnfreezeAll(user) },
-                          { label: 'Delete', icon: AlertCircle, danger: true, onClick: () => handleUserAction(user.id, 'delete') }
-                        ]}
-                      />
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+        <div className={`${cardClass} p-3 sm:p-4`}>
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
 
-      {/* Pagination */}
-      {filteredUsers.length > usersPerPage && (
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <span className="text-sm text-gray-600">
-            Showing {indexOfFirstUser + 1} to {Math.min(indexOfLastUser, filteredUsers.length)} of {filteredUsers.length} users
-          </span>
-          <div className="flex space-x-1">
+              <input
+                value={search}
+                onChange={(event) =>
+                  setSearch(event.target.value)
+                }
+                placeholder="Search by name, email or phone..."
+                className="w-full h-11 pl-10 pr-10 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-100 focus:border-primary-300 transition-all"
+              />
+
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
             <button
-              onClick={() => paginate(currentPage - 1)}
-              disabled={currentPage === 1}
-              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              type="button"
+              className="h-11 px-4 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 flex items-center justify-center gap-2"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <SlidersHorizontal className="w-4 h-4" />
+              Filters
             </button>
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((number) => (
+          </div>
+
+          {search && (
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-500 px-1">
+              <span>
+                {filteredUsers.length} result
+                {filteredUsers.length !== 1 ? 's' : ''}
+              </span>
+
               <button
-                key={number}
-                onClick={() => paginate(number)}
-                className={`px-3 py-1 rounded-lg text-sm transition-colors ${
-                  currentPage === number
-                    ? 'bg-primary-600 text-white'
-                    : 'border border-gray-200 text-gray-600 hover:bg-gray-50'
-                }`}
+                type="button"
+                onClick={() => setSearch('')}
+                className="font-semibold text-primary-600 hover:text-primary-700"
               >
-                {number}
+                Clear search
               </button>
-            ))}
-            <button
-              onClick={() => paginate(currentPage + 1)}
-              disabled={currentPage === totalPages}
-              className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronRight className="h-4 w-4" />
-            </button>
+            </div>
+          )}
+        </div>
+
+        {/* MOBILE LIST */}
+
+        <div className="md:hidden space-y-3">
+          {currentUsers.length === 0 ? (
+            <EmptyState search={search} />
+          ) : (
+            currentUsers.map((user, index) => {
+              const accountStatus = getAccountStatus(user.id);
+              const freezeAction = getFreezeAction(user.id);
+
+              return (
+                <motion.div
+                  key={user.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    delay: index * 0.04,
+                  }}
+                  className={`${cardClass} p-4`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <UserAvatar user={user} />
+
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm text-slate-900 truncate">
+                          {user.full_name}
+                        </p>
+
+                        <p className="text-xs text-slate-500 truncate mt-0.5">
+                          {user.email}
+                        </p>
+                      </div>
+                    </div>
+
+                    <ActionMenu
+                      actions={[
+                        {
+                          label: 'View customer',
+                          icon: Eye,
+                          onClick: () =>
+                            navigate(
+                              `/admin/users/${user.id}`
+                            ),
+                        },
+                        {
+                          label: 'Edit customer',
+                          icon: Edit2,
+                          onClick: () =>
+                            showEdit(user),
+                        },
+                        {
+                          label: 'Credit account',
+                          icon: TrendingUp,
+                          onClick: () =>
+                            showCredit(user),
+                        },
+                        {
+                          label: 'Debit account',
+                          icon: TrendingDown,
+                          onClick: () =>
+                            showDebit(user),
+                        },
+                        {
+                          label: freezeAction.label,
+                          icon: freezeAction.icon,
+                          onClick: () =>
+                            handleFreeze(user),
+                        },
+                        {
+                          label: 'Delete customer',
+                          icon: Trash2,
+                          danger: true,
+                          onClick: () =>
+                            handleDelete(user),
+                        },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                    <StatusPill
+                      status={
+                        accountStatus.label === 'Active'
+                          ? 'active'
+                          : accountStatus.label === 'Frozen'
+                          ? 'frozen'
+                          : accountStatus.label === 'Banned'
+                          ? 'banned'
+                          : 'pending'
+                      }
+                      icon={accountStatus.icon}
+                      label={accountStatus.label}
+                    />
+
+                    <span className="text-[11px] text-slate-400">
+                      Joined {formatDate(user.created_at)}
+                    </span>
+                  </div>
+                </motion.div>
+              );
+            })
+          )}
+        </div>
+
+        {/* DESKTOP TABLE */}
+
+        <div className={`hidden md:block ${cardClass} overflow-visible`}>
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900">
+                Customer directory
+              </h2>
+
+              <p className="text-xs text-slate-400 mt-0.5">
+                {filteredUsers.length} customer
+                {filteredUsers.length !== 1 ? 's' : ''}
+              </p>
+            </div>
+
+            {search && (
+              <span className="text-xs text-slate-500">
+                Searching for{' '}
+                <span className="font-semibold text-slate-700">
+                  “{search}”
+                </span>
+              </span>
+            )}
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-slate-50/70 border-b border-slate-100">
+                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Customer
+                  </th>
+
+                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Contact
+                  </th>
+
+                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Accounts
+                  </th>
+
+                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Status
+                  </th>
+
+                  <th className="text-left px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Joined
+                  </th>
+
+                  <th className="text-right px-5 py-3 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+
+              <tbody>
+                {currentUsers.map((user, index) => {
+                  const accounts = getUserAccounts(user.id);
+                  const accountStatus = getAccountStatus(
+                    user.id
+                  );
+                  const freezeAction = getFreezeAction(
+                    user.id
+                  );
+
+                  return (
+                    <motion.tr
+                      key={user.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{
+                        delay: index * 0.025,
+                      }}
+                      className="group border-b border-slate-100 last:border-b-0 hover:bg-slate-50/60 transition-colors"
+                    >
+                      <td className="px-5 py-4">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            navigate(
+                              `/admin/users/${user.id}`
+                            )
+                          }
+                          className="flex items-center gap-3 text-left"
+                        >
+                          <UserAvatar
+                            user={user}
+                            size="sm"
+                          />
+
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 group-hover:text-primary-600 transition-colors">
+                              {user.full_name}
+                            </p>
+
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                              Customer
+                            </p>
+                          </div>
+                        </button>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <p className="text-sm text-slate-700">
+                          {user.email}
+                        </p>
+
+                        {user.phone && (
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            {user.phone}
+                          </p>
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center">
+                            <Building2 className="w-4 h-4 text-slate-500" />
+                          </div>
+
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">
+                              {accounts.length}
+                            </p>
+
+                            <p className="text-[10px] text-slate-400">
+                              account
+                              {accounts.length !== 1
+                                ? 's'
+                                : ''}
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <StatusPill
+                          status={
+                            accountStatus.label === 'Active'
+                              ? 'active'
+                              : accountStatus.label === 'Frozen'
+                              ? 'frozen'
+                              : accountStatus.label ===
+                                'Banned'
+                              ? 'banned'
+                              : 'pending'
+                          }
+                          icon={accountStatus.icon}
+                          label={accountStatus.label}
+                        />
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <p className="text-sm text-slate-600">
+                          {formatDate(user.created_at)}
+                        </p>
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <div className="flex justify-end">
+                          <ActionMenu
+                            actions={[
+                              {
+                                label: 'View customer',
+                                icon: Eye,
+                                onClick: () =>
+                                  navigate(
+                                    `/admin/users/${user.id}`
+                                  ),
+                              },
+                              {
+                                label: 'Edit customer',
+                                icon: Edit2,
+                                onClick: () =>
+                                  showEdit(user),
+                              },
+                              {
+                                label: 'Credit account',
+                                icon: TrendingUp,
+                                onClick: () =>
+                                  showCredit(user),
+                              },
+                              {
+                                label: 'Debit account',
+                                icon: TrendingDown,
+                                onClick: () =>
+                                  showDebit(user),
+                              },
+                              {
+                                label: freezeAction.label,
+                                icon: freezeAction.icon,
+                                onClick: () =>
+                                  handleFreeze(user),
+                              },
+                              {
+                                label: 'Delete customer',
+                                icon: Trash2,
+                                danger: true,
+                                onClick: () =>
+                                  handleDelete(user),
+                              },
+                            ]}
+                          />
+                        </div>
+                      </td>
+                    </motion.tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {currentUsers.length === 0 && (
+              <EmptyState search={search} />
+            )}
           </div>
         </div>
-      )}
 
-      {/* ============================================
-          MODALS
-          ============================================ */}
+        {/* PAGINATION */}
 
-      {/* Add User Modal */}
-      <Modal
-        isOpen={modalOpen && modalType === 'add'}
-        onClose={() => setModalOpen(false)}
-        title="Add New User"
-        subtitle="Create a new banking user"
-        size="md"
-        position="bottom"
-        showCloseButton={true}
-        closeOnOutsideClick={false}
-      >
-        <AddUserContent onClose={() => setModalOpen(false)} onSuccess={fetchData} />
-      </Modal>
+        {filteredUsers.length > 0 && (
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              Showing{' '}
+              <span className="font-semibold text-slate-700">
+                {(currentPage - 1) * usersPerPage + 1}
+              </span>{' '}
+              to{' '}
+              <span className="font-semibold text-slate-700">
+                {Math.min(
+                  currentPage * usersPerPage,
+                  filteredUsers.length
+                )}
+              </span>{' '}
+              of{' '}
+              <span className="font-semibold text-slate-700">
+                {filteredUsers.length}
+              </span>{' '}
+              customers
+            </p>
 
-      {/* Credit Modal */}
-      <Modal
-        isOpen={modalOpen && modalType === 'credit'}
-        onClose={() => setModalOpen(false)}
-        title="Credit Account"
-        subtitle={`Add funds to ${selectedUser?.full_name}'s account`}
-        size="md"
-        position="bottom"
-        showCloseButton={true}
-        closeOnOutsideClick={false}
-      >
-        {selectedUser && (
-          <CreditModalContent
-            user={selectedUser}
-            accounts={userAccounts}
-            onClose={() => setModalOpen(false)}
-            onSuccess={fetchData}
-          />
+            {totalPages > 1 && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((page) =>
+                      Math.max(1, page - 1)
+                    )
+                  }
+                  disabled={currentPage === 1}
+                  className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                {Array.from(
+                  { length: totalPages },
+                  (_, index) => index + 1
+                )
+                  .slice(
+                    Math.max(0, currentPage - 3),
+                    Math.min(totalPages, currentPage + 2)
+                  )
+                  .map((page) => (
+                    <button
+                      key={page}
+                      type="button"
+                      onClick={() =>
+                        setCurrentPage(page)
+                      }
+                      className={`w-9 h-9 rounded-xl text-xs font-semibold transition-all ${
+                        currentPage === page
+                          ? 'bg-primary-600 text-white shadow-sm'
+                          : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {page}
+                    </button>
+                  ))}
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCurrentPage((page) =>
+                      Math.min(totalPages, page + 1)
+                    )
+                  }
+                  disabled={currentPage === totalPages}
+                  className="w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
         )}
-      </Modal>
+      </motion.div>
 
-      {/* Debit Modal */}
+      {/* ADD */}
+
       <Modal
-        isOpen={modalOpen && modalType === 'debit'}
+        isOpen={
+          modalOpen && modalType === 'add'
+        }
         onClose={() => setModalOpen(false)}
-        title="Debit Account"
-        subtitle={`Withdraw funds from ${selectedUser?.full_name}'s account`}
+        title="Add customer"
+        subtitle="Create a new banking customer"
         size="md"
         position="bottom"
-        showCloseButton={true}
+        showCloseButton
         closeOnOutsideClick={false}
       >
-        {selectedUser && (
-          <DebitModalContent
-            user={selectedUser}
-            accounts={userAccounts}
-            onClose={() => setModalOpen(false)}
-            onSuccess={fetchData}
-          />
-        )}
+        <AddUserContent
+          onClose={() => setModalOpen(false)}
+          onSuccess={fetchData}
+        />
       </Modal>
 
-      {/* Confirm Modal */}
+      {/* EDIT */}
+
+      <UpdateUserModal
+        isOpen={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setSelectedUserForEdit(null);
+        }}
+        user={selectedUserForEdit}
+        onSuccess={fetchData}
+        isAdmin
+      />
+
+      {/* CREDIT */}
+
+      <CreditModal
+        isOpen={creditModalOpen}
+        onClose={() => {
+          setCreditModalOpen(false);
+          setSelectedUser(null);
+          setUserAccounts([]);
+        }}
+        user={selectedUser}
+        accounts={userAccounts}
+        selectedAccountId={
+          userAccounts.length === 1
+            ? userAccounts[0]?.id
+            : ''
+        }
+        onSuccess={fetchData}
+        title="Credit account"
+        subtitle={`Add funds to ${
+          selectedUser?.full_name || 'customer'
+        }'s account`}
+      />
+
+      {/* DEBIT */}
+
+      <DebitModal
+        isOpen={debitModalOpen}
+        onClose={() => {
+          setDebitModalOpen(false);
+          setSelectedUser(null);
+          setUserAccounts([]);
+        }}
+        user={selectedUser}
+        accounts={userAccounts}
+        selectedAccountId={
+          userAccounts.length === 1
+            ? userAccounts[0]?.id
+            : ''
+        }
+        onSuccess={fetchData}
+        title="Debit account"
+        subtitle={`Withdraw funds from ${
+          selectedUser?.full_name || 'customer'
+        }'s account`}
+      />
+
+      {/* CONFIRM */}
+
       <Modal
-        isOpen={modalOpen && modalType === 'confirm'}
-        onClose={() => setModalOpen(false)}
-        title={modalContent?.title || 'Confirm'}
+        isOpen={
+          modalOpen && modalType === 'confirm'
+        }
+        onClose={() => {
+          if (!modalLoading) {
+            setModalOpen(false);
+          }
+        }}
+        title={modalContent?.title || 'Confirm action'}
         size="sm"
         position="bottom"
-        showCloseButton={true}
+        showCloseButton
         closeOnOutsideClick={false}
       >
         {modalContent && (
-          <div className="space-y-4">
-            <div className="flex items-start space-x-4">
-              <div className={`p-3 rounded-full ${modalContent.type === 'danger' ? 'bg-red-50' : modalContent.type === 'warning' ? 'bg-yellow-50' : 'bg-blue-50'}`}>
-                <AlertCircle className={`h-6 w-6 ${modalContent.type === 'danger' ? 'text-red-600' : modalContent.type === 'warning' ? 'text-yellow-600' : 'text-blue-600'}`} />
+          <div className="space-y-5">
+            <div className="flex items-start gap-4">
+              <div
+                className={`w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  modalContent.type === 'danger'
+                    ? 'bg-red-50 text-red-600'
+                    : modalContent.type === 'warning'
+                    ? 'bg-amber-50 text-amber-600'
+                    : 'bg-primary-50 text-primary-600'
+                }`}
+              >
+                <AlertCircle className="w-5 h-5" />
               </div>
+
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">{modalContent.title}</h3>
-                <p className="text-sm text-gray-600 mt-1">{modalContent.message}</p>
+                <h3 className="text-base font-bold text-slate-900">
+                  {modalContent.title}
+                </h3>
+
+                <p className="text-sm text-slate-500 mt-1 leading-6">
+                  {modalContent.message}
+                </p>
               </div>
             </div>
-            <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
-              <button onClick={() => setModalOpen(false)} disabled={modalLoading} className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50">Cancel</button>
-              <button onClick={handleConfirm} disabled={modalLoading} className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${modalContent.type === 'danger' ? 'bg-red-600 hover:bg-red-700' : modalContent.type === 'warning' ? 'bg-yellow-600 hover:bg-yellow-700' : 'bg-blue-600 hover:bg-blue-700'} disabled:opacity-50 flex items-center space-x-2`}>
-                {modalLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                <span>{modalLoading ? 'Processing...' : 'Confirm'}</span>
+
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() =>
+                  setModalOpen(false)
+                }
+                disabled={modalLoading}
+                className="h-10 px-4 rounded-xl border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!modalContent?.onConfirm) return;
+
+                  try {
+                    setModalLoading(true);
+                    await modalContent.onConfirm();
+                  } finally {
+                    setModalLoading(false);
+                  }
+                }}
+                disabled={modalLoading}
+                className={`h-10 px-4 rounded-xl text-sm font-semibold text-white flex items-center gap-2 disabled:opacity-50 ${
+                  modalContent.type === 'danger'
+                    ? 'bg-red-600 hover:bg-red-700'
+                    : modalContent.type === 'warning'
+                    ? 'bg-amber-500 hover:bg-amber-600'
+                    : 'bg-primary-600 hover:bg-primary-700'
+                }`}
+              >
+                {modalLoading && (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                )}
+
+                {modalLoading
+                  ? 'Processing...'
+                  : 'Confirm'}
               </button>
             </div>
           </div>
         )}
       </Modal>
-    </div>
+    </>
   );
 };
+
+/* ============================================================
+   EMPTY
+============================================================ */
+
+const EmptyState = ({ search }) => (
+  <div className={`${cardClass} py-16 px-6 text-center`}>
+    <div className="w-14 h-14 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-center mx-auto mb-4">
+      {search ? (
+        <Search className="w-6 h-6 text-slate-400" />
+      ) : (
+        <Users className="w-6 h-6 text-slate-400" />
+      )}
+    </div>
+
+    <h3 className="text-sm font-bold text-slate-900">
+      {search
+        ? 'No customers found'
+        : 'No customers yet'}
+    </h3>
+
+    <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+      {search
+        ? 'Try a different name, email address or phone number.'
+        : 'Customers will appear here once they are created.'}
+    </p>
+  </div>
+);
 
 export default UsersList;

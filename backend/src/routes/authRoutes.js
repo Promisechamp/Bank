@@ -1,9 +1,10 @@
 const express = require('express');
 const { 
   register, 
+		selfRegister,
   login, 
   getProfile, 
-  updateProfile 
+  updateProfile
 } = require('../controllers/authController');
 const { authenticate } = require('../middleware/auth');
 
@@ -11,10 +12,12 @@ const router = express.Router();
 
 // Public routes
 router.post('/register', register);
+router.post('/self-register', selfRegister);
 router.post('/login', login);
 
 // Protected routes
 router.get('/profile', authenticate, getProfile);
 router.put('/profile', authenticate, updateProfile);
+
 
 module.exports = router;

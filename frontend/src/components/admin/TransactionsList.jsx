@@ -4,13 +4,14 @@ import { transactionsAPI } from '../../api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../Modal';
+import Receipt from '../Receipt';
 
 import {
   History,
   Search,
   Filter,
   Eye,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
   Loader2,
   AlertCircle,
@@ -18,17 +19,29 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
-  Clock,
-  MoreVertical,
-  ShieldAlert,
+  Clock3,
+  MoreHorizontal,
+  ShieldCheck,
   ArrowUpRight,
   ArrowDownLeft,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  Edit3,
+  Save,
+  X,
+  ArrowUpDown,
+  CalendarDays,
+  CircleDollarSign,
+  Activity,
+  Sparkles,
+  UserRound,
+  Copy,
+  Check,
 } from 'lucide-react';
 
 import {
   formatCurrency,
-  formatDate
+  formatDate,
 } from '../../utils/helpers';
 
 // ============================================================
@@ -44,27 +57,32 @@ const TRANSACTIONS_PER_PAGE = 10;
 const getDisplayStatus = (status) => {
   switch (status) {
     case 'pending_review':
-      return 'Pending Review';
-
-    case 'pending':
-      return 'Pending';
-
+      return 'Pending review';
     case 'completed':
       return 'Completed';
-
     case 'failed':
       return 'Failed';
-
     case 'cancelled':
       return 'Cancelled';
-
     default:
       return status || 'Unknown';
   }
 };
 
-const isReviewable = (transaction) => {
-  return transaction?.status === 'pending_review';
+const isReviewable = (transaction) =>
+  transaction?.status === 'pending_review';
+
+const getTransactionTypeLabel = (type) => {
+  switch (type) {
+    case 'credit':
+      return 'Credit';
+    case 'debit':
+      return 'Debit';
+    case 'transfer':
+      return 'Transfer';
+    default:
+      return type || 'Transaction';
+  }
 };
 
 const getAmountClass = (transaction) => {
@@ -75,50 +93,25 @@ const getAmountClass = (transaction) => {
   switch (transaction?.transaction_type) {
     case 'credit':
       return 'text-emerald-600';
-
     case 'debit':
-      return 'text-red-600';
-
+      return 'text-rose-600';
     default:
-      return 'text-blue-600';
+      return 'text-primary-600';
   }
 };
 
 const getStatusClasses = (status) => {
   switch (status) {
     case 'pending_review':
-      return 'bg-amber-50 text-amber-700 border-amber-200';
-
-    case 'pending':
-      return 'bg-yellow-50 text-yellow-700 border-yellow-200';
-
+      return 'border-amber-200 bg-amber-50 text-amber-700';
     case 'completed':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-
+      return 'border-emerald-200 bg-emerald-50 text-emerald-700';
     case 'failed':
-      return 'bg-red-50 text-red-700 border-red-200';
-
+      return 'border-rose-200 bg-rose-50 text-rose-700';
     case 'cancelled':
-      return 'bg-gray-100 text-gray-600 border-gray-200';
-
+      return 'border-slate-200 bg-slate-50 text-slate-600';
     default:
-      return 'bg-gray-100 text-gray-600 border-gray-200';
-  }
-};
-
-const getTransactionTypeLabel = (type) => {
-  switch (type) {
-    case 'credit':
-      return 'Credit';
-
-    case 'debit':
-      return 'Debit';
-
-    case 'transfer':
-      return 'Transfer';
-
-    default:
-      return type || 'Transaction';
+      return 'border-slate-200 bg-slate-50 text-slate-600';
   }
 };
 
@@ -130,208 +123,37 @@ const getTransactionSearchText = (transaction) => {
     transaction?.description,
     transaction?.reference_id,
     transaction?.transaction_type,
+    transaction?.status,
     account?.account_number,
     profile?.full_name,
-    profile?.email
+    profile?.email,
   ]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
 };
 
-// ============================================================
-// ACTION MENU
-// ============================================================
+const getInitials = (name = '') => {
+  const words = name.trim().split(/\s+/).filter(Boolean);
 
-const ActionMenu = ({ actions = [] }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const menuRef = useRef(null);
+  if (!words.length) return 'TX';
 
-  useEffect(() => {
-    if (!isOpen) {
-      return undefined;
-    }
-
-    const handleOutsideClick = (event) => {
-      if (
-        menuRef.current &&
-        !menuRef.current.contains(event.target)
-      ) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [isOpen]);
-
-  if (!actions.length) {
-    return null;
-  }
-
-  return (
-    <div
-      ref={menuRef}
-      className="relative"
-    >
-      <button
-        type="button"
-        onClick={() => setIsOpen((value) => !value)}
-        className="
-          inline-flex h-9 w-9 items-center justify-center
-          rounded-lg border border-gray-200
-          text-gray-500
-          transition-colors
-          hover:bg-gray-50 hover:text-gray-900
-          focus:outline-none focus:ring-2 focus:ring-primary-500/20
-        "
-        aria-label="Transaction actions"
-        aria-expanded={isOpen}
-      >
-        <MoreVertical className="h-4 w-4" />
-      </button>
-
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{
-              opacity: 0,
-              y: -4,
-              scale: 0.98
-            }}
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1
-            }}
-            exit={{
-              opacity: 0,
-              y: -4,
-              scale: 0.98
-            }}
-            transition={{ duration: 0.12 }}
-            className="
-              absolute right-0 top-full mt-2
-              z-50 w-52 max-w-[calc(100vw-2rem)]
-              overflow-hidden rounded-xl
-              border border-gray-200
-              bg-white
-              shadow-xl
-            "
-          >
-            <div className="py-1">
-              {actions.map((action, index) => {
-                const Icon = action.icon;
-
-                return (
-                  <button
-                    key={`${action.label}-${index}`}
-                    type="button"
-                    onClick={() => {
-                      setIsOpen(false);
-                      action.onClick?.();
-                    }}
-                    className={`
-                      flex w-full min-w-0 items-center gap-3
-                      px-4 py-2.5
-                      text-left text-sm
-                      transition-colors
-                      ${
-                        action.danger
-                          ? 'text-red-600 hover:bg-red-50'
-                          : action.success
-                          ? 'text-emerald-600 hover:bg-emerald-50'
-                          : 'text-gray-700 hover:bg-gray-50'
-                      }
-                    `}
-                  >
-                    {Icon && (
-                      <Icon className="h-4 w-4 shrink-0" />
-                    )}
-
-                    <span className="truncate">
-                      {action.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+  return words
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join('')
+    .toUpperCase();
 };
 
-// ============================================================
-// TRANSACTION ICON
-// ============================================================
+const copyToClipboard = async (value) => {
+  if (!value) return false;
 
-const TransactionIcon = ({ transaction, compact = false }) => {
-  const size = compact
-    ? 'h-9 w-9'
-    : 'h-10 w-10';
-
-  const iconSize = compact
-    ? 'h-4 w-4'
-    : 'h-[18px] w-[18px]';
-
-  if (transaction?.status === 'pending_review') {
-    return (
-      <div
-        className={`${size} shrink-0 rounded-xl bg-amber-50 flex items-center justify-center`}
-      >
-        <ShieldAlert
-          className={`${iconSize} text-amber-600`}
-        />
-      </div>
-    );
+  try {
+    await navigator.clipboard.writeText(value);
+    return true;
+  } catch {
+    return false;
   }
-
-  if (transaction?.transaction_type === 'credit') {
-    return (
-      <div
-        className={`${size} shrink-0 rounded-xl bg-emerald-50 flex items-center justify-center`}
-      >
-        <ArrowDownLeft
-          className={`${iconSize} text-emerald-600`}
-        />
-      </div>
-    );
-  }
-
-  if (transaction?.transaction_type === 'debit') {
-    return (
-      <div
-        className={`${size} shrink-0 rounded-xl bg-red-50 flex items-center justify-center`}
-      >
-        <ArrowUpRight
-          className={`${iconSize} text-red-600`}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`${size} shrink-0 rounded-xl bg-blue-50 flex items-center justify-center`}
-    >
-      <ArrowRight
-        className={`${iconSize} text-blue-600`}
-      />
-    </div>
-  );
 };
 
 // ============================================================
@@ -344,78 +166,169 @@ const StatusBadge = ({ status }) => {
   return (
     <span
       className={`
-        inline-flex max-w-full items-center gap-1.5
-        rounded-full border
-        px-2.5 py-1
-        text-[11px] font-semibold
-        leading-none
+        inline-flex items-center gap-1.5
+        rounded-full border px-2.5 py-1
+        text-[10px] font-bold tracking-wide
         whitespace-nowrap
         ${getStatusClasses(status)}
       `}
     >
-      {reviewable && (
-        <Clock className="h-3 w-3 shrink-0" />
+      {reviewable ? (
+        <Clock3 className="h-3 w-3" />
+      ) : (
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            status === 'completed'
+              ? 'bg-emerald-500'
+              : status === 'failed'
+              ? 'bg-rose-500'
+              : 'bg-slate-400'
+          }`}
+        />
       )}
 
-      <span className="truncate">
-        {getDisplayStatus(status)}
-      </span>
+      {getDisplayStatus(status)}
     </span>
   );
 };
 
 // ============================================================
-// SKELETON
+// TRANSACTION ICON
 // ============================================================
 
-const TransactionSkeleton = () => {
+const TransactionIcon = ({ transaction, compact = false }) => {
+  const size = compact ? 'h-10 w-10' : 'h-12 w-12';
+  const iconSize = compact ? 'h-[17px] w-[17px]' : 'h-5 w-5';
+
+  let wrapper = 'bg-primary-50 text-primary-600';
+  let Icon = ArrowRight;
+
+  if (transaction?.status === 'pending_review') {
+    wrapper = 'bg-amber-50 text-amber-600';
+    Icon = Clock3;
+  } else if (transaction?.transaction_type === 'credit') {
+    wrapper = 'bg-emerald-50 text-emerald-600';
+    Icon = ArrowDownLeft;
+  } else if (transaction?.transaction_type === 'debit') {
+    wrapper = 'bg-rose-50 text-rose-600';
+    Icon = ArrowUpRight;
+  }
+
   return (
-    <div className="space-y-3">
-      {Array.from({ length: 6 }).map((_, index) => (
-        <div
-          key={index}
-          className="
-            animate-pulse rounded-2xl
-            border border-gray-200
-            bg-white p-4
-          "
-        >
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 shrink-0 rounded-xl bg-gray-100" />
-
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-3.5 w-32 max-w-full rounded bg-gray-100" />
-              <div className="h-3 w-24 max-w-full rounded bg-gray-100" />
-            </div>
-
-            <div className="h-8 w-20 shrink-0 rounded bg-gray-100" />
-          </div>
-        </div>
-      ))}
+    <div
+      className={`
+        ${size}
+        shrink-0 rounded-2xl
+        flex items-center justify-center
+        ${wrapper}
+      `}
+    >
+      <Icon className={iconSize} strokeWidth={2.2} />
     </div>
   );
 };
 
 // ============================================================
-// EMPTY STATE
+// ACTION MENU
 // ============================================================
 
-const EmptyState = ({ searchActive }) => {
+const ActionMenu = ({ actions = [] }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleOutside = (event) => {
+      if (!menuRef.current?.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  if (!actions.length) return null;
+
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white px-5 py-14 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-50">
-        <History className="h-7 w-7 text-gray-300" />
-      </div>
+    <div ref={menuRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setIsOpen((value) => !value)}
+        aria-label="More transaction actions"
+        aria-expanded={isOpen}
+        className="
+          flex h-9 w-9 items-center justify-center
+          rounded-xl border border-slate-200
+          bg-white text-slate-400
+          transition-all duration-200
+          hover:border-slate-300 hover:bg-slate-50 hover:text-slate-600
+          focus:outline-none focus:ring-2 focus:ring-primary-500/15
+        "
+      >
+        <MoreHorizontal className="h-4 w-4" />
+      </button>
 
-      <h3 className="mt-4 text-base font-semibold text-gray-900">
-        No transactions found
-      </h3>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -5, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -5, scale: 0.97 }}
+            transition={{ duration: 0.14 }}
+            className="
+              absolute right-0 top-full z-50 mt-2
+              w-56 overflow-hidden
+              rounded-2xl border border-slate-200
+              bg-white p-1.5
+              shadow-[0_18px_50px_rgba(15,23,42,0.12)]
+            "
+          >
+            {actions.map((action, index) => {
+              const Icon = action.icon;
 
-      <p className="mx-auto mt-1 max-w-sm text-sm leading-5 text-gray-500">
-        {searchActive
-          ? 'No transactions match your search on this page.'
-          : 'There are no transactions matching the selected filter.'}
-      </p>
+              return (
+                <button
+                  key={`${action.label}-${index}`}
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    action.onClick?.();
+                  }}
+                  className={`
+                    flex w-full items-center gap-3
+                    rounded-xl px-3 py-2.5
+                    text-left text-sm font-medium
+                    transition-colors
+                    ${
+                      action.danger
+                        ? 'text-rose-600 hover:bg-rose-50'
+                        : action.success
+                        ? 'text-emerald-600 hover:bg-emerald-50'
+                        : 'text-slate-600 hover:bg-slate-50'
+                    }
+                  `}
+                >
+                  {Icon && <Icon className="h-4 w-4 shrink-0" />}
+                  <span>{action.label}</span>
+                </button>
+              );
+            })}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -428,94 +341,113 @@ const StatCard = ({
   label,
   value,
   icon: Icon,
-  tone = 'gray'
+  tone = 'neutral',
+  helper,
 }) => {
   const tones = {
-    gray: {
-      card: 'border-gray-200 bg-white',
-      label: 'text-gray-400',
-      value: 'text-gray-900',
-      iconBg: 'bg-gray-50',
-      icon: 'text-gray-500'
+    neutral: {
+      icon: 'bg-slate-100 text-slate-600',
+      value: 'text-slate-900',
+      accent: 'bg-slate-200',
     },
-
     amber: {
-      card: 'border-amber-200 bg-amber-50/60',
-      label: 'text-amber-600',
+      icon: 'bg-amber-100 text-amber-600',
       value: 'text-amber-700',
-      iconBg: 'bg-amber-100',
-      icon: 'text-amber-600'
+      accent: 'bg-amber-200',
     },
-
     emerald: {
-      card: 'border-emerald-200 bg-emerald-50/60',
-      label: 'text-emerald-600',
+      icon: 'bg-emerald-100 text-emerald-600',
       value: 'text-emerald-700',
-      iconBg: 'bg-emerald-100',
-      icon: 'text-emerald-600'
+      accent: 'bg-emerald-200',
     },
-
     blue: {
-      card: 'border-blue-200 bg-blue-50/60',
-      label: 'text-blue-600',
-      value: 'text-blue-700',
-      iconBg: 'bg-blue-100',
-      icon: 'text-blue-600'
-    }
+      icon: 'bg-primary-100 text-primary-600',
+      value: 'text-primary-700',
+      accent: 'bg-primary-200',
+    },
   };
 
-  const currentTone = tones[tone] || tones.gray;
+  const current = tones[tone] || tones.neutral;
 
   return (
-    <div
-      className={`
-        min-w-0 overflow-hidden
-        rounded-2xl border p-4
-        ${currentTone.card}
-      `}
+    <motion.div
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.18 }}
+      className="
+        relative min-w-0 overflow-hidden
+        rounded-2xl border border-slate-200
+        bg-white p-4
+        shadow-[0_4px_18px_rgba(15,23,42,0.035)]
+      "
     >
-      <div className="flex min-w-0 items-center justify-between gap-3">
+      <div
+        className={`absolute left-0 top-0 h-1 w-14 rounded-br-full ${current.accent}`}
+      />
+
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p
-            className={`
-              truncate
-              text-[11px] font-semibold
-              uppercase tracking-wide
-              ${currentTone.label}
-            `}
-          >
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
             {label}
           </p>
 
           <p
-            className={`
-              mt-1 truncate
-              text-xl font-bold
-              sm:text-2xl
-              ${currentTone.value}
-            `}
+            className={`mt-2 truncate text-xl font-extrabold tracking-tight sm:text-2xl ${current.value}`}
             title={String(value)}
           >
             {value}
           </p>
+
+          {helper && (
+            <p className="mt-1 truncate text-[11px] text-slate-400">
+              {helper}
+            </p>
+          )}
         </div>
 
         <div
           className={`
-            flex h-10 w-10 shrink-0
-            items-center justify-center
-            rounded-xl
-            ${currentTone.iconBg}
+            flex h-10 w-10 shrink-0 items-center justify-center
+            rounded-xl ${current.icon}
           `}
         >
-          <Icon
-            className={`h-5 w-5 ${currentTone.icon}`}
-          />
+          <Icon className="h-[18px] w-[18px]" />
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
+
+// ============================================================
+// EMPTY STATE
+// ============================================================
+
+const EmptyState = ({ searchActive }) => (
+  <div className="px-5 py-16 text-center">
+    <div
+      className="
+        mx-auto flex h-16 w-16 items-center justify-center
+        rounded-[20px] bg-slate-50
+        ring-1 ring-slate-100
+      "
+    >
+      {searchActive ? (
+        <Search className="h-7 w-7 text-slate-300" />
+      ) : (
+        <History className="h-7 w-7 text-slate-300" />
+      )}
+    </div>
+
+    <h3 className="mt-5 text-base font-bold text-slate-900">
+      {searchActive ? 'No matching transactions' : 'No transactions yet'}
+    </h3>
+
+    <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-slate-500">
+      {searchActive
+        ? 'Try a different name, reference, account number or transaction type.'
+        : 'Transactions matching your current filter will appear here.'}
+    </p>
+  </div>
+);
 
 // ============================================================
 // MOBILE TRANSACTION CARD
@@ -525,124 +457,119 @@ const MobileTransactionCard = ({
   transaction,
   index,
   onView,
+  onViewReceipt,
+  onEdit,
   onApprove,
-  onReject
+  onReject,
 }) => {
   const reviewable = isReviewable(transaction);
-
-  const amount = Math.abs(
-    Number(transaction?.amount) || 0
-  );
-
+  const amount = Math.abs(Number(transaction?.amount) || 0);
   const type = transaction?.transaction_type;
+  const profile = transaction?.account?.profiles;
+
+  const personName = profile?.full_name || 'Account holder';
 
   return (
     <motion.article
-      initial={{
-        opacity: 0,
-        y: 8
-      }}
-      animate={{
-        opacity: 1,
-        y: 0
-      }}
-      transition={{
-        delay: index * 0.025
-      }}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: index * 0.035, duration: 0.25 }}
       className={`
-        min-w-0 max-w-full overflow-hidden
-        rounded-2xl border bg-white p-4
+        relative overflow-hidden
+        rounded-[22px] border bg-white
+        p-4
+        shadow-[0_5px_22px_rgba(15,23,42,0.04)]
         ${
           reviewable
-            ? 'border-amber-200 bg-amber-50/20'
-            : 'border-gray-200'
+            ? 'border-amber-200 ring-1 ring-amber-100'
+            : 'border-slate-200'
         }
       `}
     >
-      {/* Top */}
-      <div className="flex min-w-0 items-start gap-3">
-        <TransactionIcon
-          transaction={transaction}
-          compact
-        />
+      {reviewable && (
+        <div className="absolute inset-x-0 top-0 h-1 bg-amber-400" />
+      )}
+
+      <div className="flex items-start gap-3">
+        <TransactionIcon transaction={transaction} compact />
 
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-start justify-between gap-2">
+          <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-gray-900">
+              <p className="truncate text-sm font-bold text-slate-900">
                 {transaction?.description || 'Transaction'}
               </p>
 
-              <p className="mt-1 text-xs text-gray-400">
-                {getTransactionTypeLabel(type)}
-              </p>
+              <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+                <UserRound className="h-3 w-3 shrink-0 text-slate-300" />
+                <span className="truncate text-xs text-slate-400">
+                  {personName}
+                </span>
+              </div>
             </div>
 
-            <div className="shrink-0">
-              <ActionMenu
-                actions={[
-                  {
-                    label: 'View Details',
-                    icon: Eye,
-                    onClick: onView
-                  },
-
-                  ...(reviewable
-                    ? [
-                        {
-                          label: 'Approve Transfer',
-                          icon: CheckCircle,
-                          success: true,
-                          onClick: onApprove
-                        },
-                        {
-                          label: 'Decline Transfer',
-                          icon: XCircle,
-                          danger: true,
-                          onClick: onReject
-                        }
-                      ]
-                    : [])
-                ]}
-              />
-            </div>
+            <ActionMenu
+              actions={[
+                {
+                  label: 'View details',
+                  icon: Eye,
+                  onClick: onView,
+                },
+                {
+                  label: 'View receipt',
+                  icon: FileText,
+                  onClick: onViewReceipt,
+                },
+                {
+                  label: 'Edit transaction',
+                  icon: Edit3,
+                  onClick: onEdit,
+                },
+                ...(reviewable
+                  ? [
+                      {
+                        label: 'Approve transfer',
+                        icon: CheckCircle2,
+                        success: true,
+                        onClick: onApprove,
+                      },
+                      {
+                        label: 'Decline transfer',
+                        icon: XCircle,
+                        danger: true,
+                        onClick: onReject,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
           </div>
 
-          {/* Reference */}
-          <div className="mt-2 flex min-w-0 items-start gap-1.5">
-            <span className="mt-0.5 shrink-0 text-[10px] text-gray-400">
-              Ref
+          <div className="mt-3 flex items-center gap-2">
+            <span className="rounded-lg bg-slate-50 px-2 py-1 text-[10px] font-semibold text-slate-500">
+              {getTransactionTypeLabel(type)}
             </span>
 
-            <span
-              className="
-                min-w-0
-                break-all
-                font-mono text-[10px]
-                leading-4 text-gray-500
-              "
-            >
-              {transaction?.reference_id || '—'}
+            <span className="h-1 w-1 rounded-full bg-slate-200" />
+
+            <span className="truncate text-[10px] text-slate-400">
+              {formatDate(transaction?.created_at)}
             </span>
           </div>
         </div>
       </div>
 
-      {/* Bottom information */}
-      <div className="mt-4 border-t border-gray-100 pt-3">
-        <div className="flex min-w-0 items-end justify-between gap-4">
+      <div className="mt-4 border-t border-slate-100 pt-4">
+        <div className="flex items-end justify-between gap-4">
           <div className="min-w-0">
-            <p className="text-[11px] text-gray-400">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
               Amount
             </p>
 
             <p
-              className={`
-                mt-0.5
-                truncate
-                text-lg font-bold
-                ${getAmountClass(transaction)}
-              `}
+              className={`mt-1 truncate text-xl font-extrabold tracking-tight ${getAmountClass(
+                transaction
+              )}`}
             >
               {type === 'credit' && '+'}
               {type === 'debit' && '-'}
@@ -650,23 +577,29 @@ const MobileTransactionCard = ({
             </p>
           </div>
 
-          <div className="min-w-0 max-w-[52%] text-right">
-            <StatusBadge
-              status={transaction?.status}
-            />
+          <div className="flex shrink-0 flex-col items-end gap-1.5">
+            <StatusBadge status={transaction?.status} />
+          </div>
+        </div>
 
-            <p className="mt-1.5 truncate text-[11px] text-gray-400">
-              {formatDate(transaction?.created_at)}
-            </p>
+        <div className="mt-4 rounded-xl bg-slate-50 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Reference
+            </span>
+
+            <span className="min-w-0 truncate font-mono text-[10px] text-slate-500">
+              {transaction?.reference_id || '—'}
+            </span>
           </div>
         </div>
 
         {reviewable && (
-          <div className="mt-3 flex min-w-0 items-start gap-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
-            <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+          <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2.5">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
 
-            <p className="min-w-0 text-[11px] font-medium leading-4 text-amber-700">
-              No money has moved. This transfer requires admin review.
+            <p className="text-[11px] font-medium leading-4 text-amber-700">
+              No money has moved. This transfer is waiting for admin review.
             </p>
           </div>
         )}
@@ -683,79 +616,80 @@ const DesktopTransactionRow = ({
   transaction,
   index,
   onView,
+  onViewReceipt,
+  onEdit,
   onApprove,
-  onReject
+  onReject,
 }) => {
   const reviewable = isReviewable(transaction);
-
-  const amount = Math.abs(
-    Number(transaction?.amount) || 0
-  );
-
+  const amount = Math.abs(Number(transaction?.amount) || 0);
   const type = transaction?.transaction_type;
+  const profile = transaction?.account?.profiles;
 
   return (
     <motion.tr
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      transition={{
-        delay: index * 0.015
-      }}
+      transition={{ delay: index * 0.018 }}
       className={`
-        transition-colors
+        group border-b border-slate-100
+        transition-colors last:border-b-0
         ${
           reviewable
-            ? 'bg-amber-50/30 hover:bg-amber-50/60'
-            : 'hover:bg-gray-50'
+            ? 'bg-amber-50/35 hover:bg-amber-50/60'
+            : 'hover:bg-slate-50/70'
         }
       `}
     >
       {/* Transaction */}
       <td className="px-5 py-4">
         <div className="flex min-w-0 items-center gap-3">
-          <TransactionIcon
-            transaction={transaction}
-            compact
-          />
+          <TransactionIcon transaction={transaction} compact />
 
           <div className="min-w-0">
             <p
-              className="max-w-[220px] truncate text-sm font-semibold text-gray-900"
+              className="max-w-[230px] truncate text-sm font-bold text-slate-900"
               title={transaction?.description || 'Transaction'}
             >
               {transaction?.description || 'Transaction'}
             </p>
 
-            <p className="mt-0.5 text-xs capitalize text-gray-400">
-              {getTransactionTypeLabel(type)}
-            </p>
+            <div className="mt-1 flex items-center gap-1.5">
+              <span className="text-[11px] font-medium text-slate-400">
+                {getTransactionTypeLabel(type)}
+              </span>
+
+              {profile?.full_name && (
+                <>
+                  <span className="h-1 w-1 rounded-full bg-slate-200" />
+                  <span className="max-w-[130px] truncate text-[11px] text-slate-400">
+                    {profile.full_name}
+                  </span>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </td>
 
       {/* Reference */}
-      <td className="max-w-[190px] px-4 py-4">
-        <span
-          className="
-            block max-w-[180px]
-            break-all
-            font-mono text-[11px]
-            leading-4 text-gray-500
-          "
-          title={transaction?.reference_id}
-        >
-          {transaction?.reference_id || '—'}
-        </span>
+      <td className="px-4 py-4">
+        <div className="flex max-w-[185px] items-center gap-2">
+          <span
+            className="min-w-0 truncate rounded-lg bg-slate-50 px-2.5 py-1.5 font-mono text-[10px] text-slate-500"
+            title={transaction?.reference_id}
+          >
+            {transaction?.reference_id || '—'}
+          </span>
+        </div>
       </td>
 
       {/* Amount */}
       <td className="px-4 py-4 text-right">
         <p
-          className={`
-            whitespace-nowrap
-            text-sm font-bold
-            ${getAmountClass(transaction)}
-          `}
+          className={`whitespace-nowrap text-sm font-extrabold ${getAmountClass(
+            transaction
+          )}`}
         >
           {type === 'credit' && '+'}
           {type === 'debit' && '-'}
@@ -763,7 +697,7 @@ const DesktopTransactionRow = ({
         </p>
 
         {reviewable && (
-          <p className="mt-0.5 whitespace-nowrap text-[10px] font-medium text-amber-600">
+          <p className="mt-1 whitespace-nowrap text-[9px] font-bold uppercase tracking-wide text-amber-600">
             Awaiting approval
           </p>
         )}
@@ -775,32 +709,61 @@ const DesktopTransactionRow = ({
       </td>
 
       {/* Date */}
-      <td className="whitespace-nowrap px-4 py-4">
-        <span className="text-xs text-gray-600">
-          {formatDate(transaction?.created_at)}
-        </span>
+      <td className="px-4 py-4">
+        <div className="flex items-center gap-2 whitespace-nowrap">
+          <CalendarDays className="h-3.5 w-3.5 text-slate-300" />
+          <span className="text-xs font-medium text-slate-500">
+            {formatDate(transaction?.created_at)}
+          </span>
+        </div>
       </td>
 
       {/* Actions */}
       <td className="px-5 py-4">
-        <div className="flex items-center justify-end gap-1.5">
+        <div className="flex items-center justify-end gap-1">
           <button
             type="button"
             onClick={onView}
-            className="
-              inline-flex h-9 w-9
-              items-center justify-center
-              rounded-lg
-              text-gray-400
-              transition-colors
-              hover:bg-primary-50 hover:text-primary-600
-              focus:outline-none
-              focus:ring-2 focus:ring-primary-500/20
-            "
             title="View details"
-            aria-label="View transaction details"
+            className="
+              flex h-9 w-9 items-center justify-center
+              rounded-xl text-slate-300
+              transition-all
+              hover:bg-primary-50 hover:text-primary-600
+              focus:outline-none focus:ring-2 focus:ring-primary-500/15
+            "
           >
             <Eye className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onViewReceipt}
+            title="View receipt"
+            className="
+              flex h-9 w-9 items-center justify-center
+              rounded-xl text-slate-300
+              transition-all
+              hover:bg-emerald-50 hover:text-emerald-600
+              focus:outline-none focus:ring-2 focus:ring-emerald-500/15
+            "
+          >
+            <FileText className="h-4 w-4" />
+          </button>
+
+          <button
+            type="button"
+            onClick={onEdit}
+            title="Edit transaction"
+            className="
+              flex h-9 w-9 items-center justify-center
+              rounded-xl text-slate-300
+              transition-all
+              hover:bg-blue-50 hover:text-blue-600
+              focus:outline-none focus:ring-2 focus:ring-blue-500/15
+            "
+          >
+            <Edit3 className="h-4 w-4" />
           </button>
 
           {reviewable ? (
@@ -809,20 +772,16 @@ const DesktopTransactionRow = ({
                 type="button"
                 onClick={onApprove}
                 className="
-                  inline-flex items-center gap-1.5
-                  rounded-lg
-                  border border-emerald-200
-                  bg-emerald-50
-                  px-3 py-1.5
-                  text-xs font-semibold
-                  text-emerald-700
-                  transition-colors
-                  hover:bg-emerald-100
-                  focus:outline-none
-                  focus:ring-2 focus:ring-emerald-500/20
+                  ml-1 inline-flex items-center gap-1.5
+                  rounded-xl border border-emerald-200
+                  bg-emerald-50 px-3 py-2
+                  text-[11px] font-bold text-emerald-700
+                  transition-all
+                  hover:border-emerald-300 hover:bg-emerald-100
+                  focus:outline-none focus:ring-2 focus:ring-emerald-500/15
                 "
               >
-                <CheckCircle className="h-3.5 w-3.5" />
+                <CheckCircle2 className="h-3.5 w-3.5" />
                 Approve
               </button>
 
@@ -831,16 +790,12 @@ const DesktopTransactionRow = ({
                 onClick={onReject}
                 className="
                   inline-flex items-center gap-1.5
-                  rounded-lg
-                  border border-red-200
-                  bg-red-50
-                  px-3 py-1.5
-                  text-xs font-semibold
-                  text-red-700
-                  transition-colors
-                  hover:bg-red-100
-                  focus:outline-none
-                  focus:ring-2 focus:ring-red-500/20
+                  rounded-xl border border-rose-200
+                  bg-rose-50 px-3 py-2
+                  text-[11px] font-bold text-rose-700
+                  transition-all
+                  hover:border-rose-300 hover:bg-rose-100
+                  focus:outline-none focus:ring-2 focus:ring-rose-500/15
                 "
               >
                 <XCircle className="h-3.5 w-3.5" />
@@ -848,15 +803,27 @@ const DesktopTransactionRow = ({
               </button>
             </>
           ) : (
-            <ActionMenu
-              actions={[
-                {
-                  label: 'View Details',
-                  icon: Eye,
-                  onClick: onView
-                }
-              ]}
-            />
+            <div className="ml-1">
+              <ActionMenu
+                actions={[
+                  {
+                    label: 'View details',
+                    icon: Eye,
+                    onClick: onView,
+                  },
+                  {
+                    label: 'View receipt',
+                    icon: FileText,
+                    onClick: onViewReceipt,
+                  },
+                  {
+                    label: 'Edit transaction',
+                    icon: Edit3,
+                    onClick: onEdit,
+                  },
+                ]}
+              />
+            </div>
           )}
         </div>
       </td>
@@ -872,24 +839,16 @@ const Pagination = ({
   currentPage,
   totalPages,
   pagination,
-  onPageChange
+  onPageChange,
 }) => {
-  if (totalPages <= 1) {
-    return null;
-  }
+  if (totalPages <= 1) return null;
 
   const total = pagination?.total || 0;
   const offset = pagination?.offset || 0;
   const limit = pagination?.limit || TRANSACTIONS_PER_PAGE;
 
-  const start = total === 0
-    ? 0
-    : offset + 1;
-
-  const end = Math.min(
-    offset + limit,
-    total
-  );
+  const start = total === 0 ? 0 : offset + 1;
+  const end = Math.min(offset + limit, total);
 
   const pages = [];
 
@@ -919,39 +878,35 @@ const Pagination = ({
 
   pages.sort((a, b) => a - b);
 
-  const paginationItems = [];
+  const items = [];
 
   pages.forEach((page, index) => {
     const previous = pages[index - 1];
 
-    if (
-      previous &&
-      page - previous > 1
-    ) {
-      paginationItems.push(
+    if (previous && page - previous > 1) {
+      items.push(
         <span
           key={`ellipsis-${page}`}
-          className="flex h-8 min-w-8 items-center justify-center text-xs text-gray-400"
+          className="flex h-9 w-9 items-center justify-center text-xs text-slate-300"
         >
-          …
+          •••
         </span>
       );
     }
 
-    paginationItems.push(
+    items.push(
       <button
         key={page}
         type="button"
         onClick={() => onPageChange(page)}
         className={`
-          flex h-8 min-w-8 items-center justify-center
-          rounded-lg px-2
-          text-xs font-medium
-          transition-colors
+          flex h-9 min-w-9 items-center justify-center
+          rounded-xl px-2 text-xs font-bold
+          transition-all
           ${
             currentPage === page
-              ? 'bg-primary-600 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
+              ? 'bg-primary-600 text-white shadow-sm shadow-primary-600/20'
+              : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }
         `}
       >
@@ -964,77 +919,334 @@ const Pagination = ({
     <div
       className="
         flex min-w-0 flex-col gap-3
-        border-t border-gray-200
+        border-t border-slate-100
         px-4 py-4
         sm:flex-row sm:items-center sm:justify-between
         sm:px-5
       "
     >
-      <p className="min-w-0 text-xs text-gray-500">
+      <p className="text-xs text-slate-400">
         Showing{' '}
-        <span className="font-medium text-gray-700">
-          {start}
-        </span>{' '}
-        to{' '}
-        <span className="font-medium text-gray-700">
-          {end}
-        </span>{' '}
-        of{' '}
-        <span className="font-medium text-gray-700">
-          {total}
-        </span>
+        <span className="font-bold text-slate-600">{start}</span>
+        {' '}–{' '}
+        <span className="font-bold text-slate-600">{end}</span>
+        {' '}of{' '}
+        <span className="font-bold text-slate-600">{total}</span>
       </p>
 
-      <div className="flex min-w-0 items-center justify-between gap-1 sm:justify-end">
+      <div className="flex items-center justify-between gap-1 sm:justify-end">
         <button
           type="button"
-          onClick={() =>
-            onPageChange(currentPage - 1)
-          }
+          onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
           className="
-            flex h-8 w-8 shrink-0
-            items-center justify-center
-            rounded-lg
-            border border-gray-200
-            text-gray-500
-            transition-colors
-            hover:bg-gray-50
-            disabled:cursor-not-allowed
-            disabled:opacity-40
+            flex h-9 w-9 items-center justify-center
+            rounded-xl border border-slate-200
+            bg-white text-slate-400
+            transition-all
+            hover:bg-slate-50 hover:text-slate-600
+            disabled:cursor-not-allowed disabled:opacity-30
           "
-          aria-label="Previous page"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
 
-        <div className="flex min-w-0 items-center gap-1 overflow-hidden">
-          {paginationItems}
+        <div className="flex items-center gap-0.5 overflow-hidden">
+          {items}
         </div>
 
         <button
           type="button"
-          onClick={() =>
-            onPageChange(currentPage + 1)
-          }
+          onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
           className="
-            flex h-8 w-8 shrink-0
-            items-center justify-center
-            rounded-lg
-            border border-gray-200
-            text-gray-500
-            transition-colors
-            hover:bg-gray-50
-            disabled:cursor-not-allowed
-            disabled:opacity-40
+            flex h-9 w-9 items-center justify-center
+            rounded-xl border border-slate-200
+            bg-white text-slate-400
+            transition-all
+            hover:bg-slate-50 hover:text-slate-600
+            disabled:cursor-not-allowed disabled:opacity-30
           "
-          aria-label="Next page"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
     </div>
+  );
+};
+
+// ============================================================
+// EDIT TRANSACTION MODAL
+// ============================================================
+
+const EditTransactionModal = ({
+  isOpen,
+  onClose,
+  transaction,
+  onSuccess,
+}) => {
+  const [formData, setFormData] = useState({
+    amount: '',
+    description: '',
+    date: '',
+    status: '',
+  });
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (!transaction || !isOpen) return;
+
+    setFormData({
+      amount: transaction.amount || '',
+      description: transaction.description || '',
+      date: transaction.created_at
+        ? new Date(transaction.created_at)
+            .toISOString()
+            .split('T')[0]
+        : '',
+      status: transaction.status || '',
+    });
+
+    setError('');
+  }, [transaction, isOpen]);
+
+  const handleChange = (event) => {
+    const { name, value } = event.target;
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    const amountNum = parseFloat(formData.amount);
+
+    if (!amountNum || amountNum <= 0) {
+      setError('Please enter a valid positive amount.');
+      return;
+    }
+
+    if (!formData.description.trim()) {
+      setError('Please enter a description.');
+      return;
+    }
+
+    if (!formData.date) {
+      setError('Please select a date.');
+      return;
+    }
+
+    if (!formData.status) {
+      setError('Please select a status.');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      await transactionsAPI.updateTransaction(transaction.id, {
+        amount: amountNum,
+        description: formData.description.trim(),
+        date: formData.date,
+        status: formData.status,
+      });
+
+      toast.success('Transaction updated successfully.');
+
+      onSuccess?.();
+      onClose?.();
+    } catch (err) {
+      const message =
+        err?.error ||
+        err?.message ||
+        'Failed to update transaction.';
+
+      setError(message);
+      toast.error(message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title="Edit transaction"
+      subtitle="Update the transaction record"
+      size="md"
+      position="bottom"
+      showCloseButton={!loading}
+      closeOnOutsideClick={false}
+    >
+      <form onSubmit={handleSubmit} className="space-y-5">
+        {error && (
+          <div className="flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
+
+            <p className="text-sm font-medium leading-5 text-rose-700">
+              {error}
+            </p>
+          </div>
+        )}
+
+        <div className="rounded-2xl bg-slate-50 p-4">
+          <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+            Transaction
+          </p>
+
+          <p className="mt-1 truncate text-sm font-bold text-slate-800">
+            {transaction?.description || 'Transaction'}
+          </p>
+
+          <p className="mt-1 truncate font-mono text-[10px] text-slate-400">
+            {transaction?.reference_id || 'No reference'}
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-slate-600">
+            Amount
+          </label>
+
+          <input
+            type="number"
+            name="amount"
+            value={formData.amount}
+            onChange={handleChange}
+            step="0.01"
+            min="0.01"
+            className="
+              w-full rounded-xl border border-slate-200
+              bg-white px-4 py-3 text-sm text-slate-900
+              outline-none transition-all
+              placeholder:text-slate-300
+              focus:border-primary-400
+              focus:ring-4 focus:ring-primary-500/10
+            "
+            placeholder="0.00"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="mb-1.5 block text-xs font-bold text-slate-600">
+            Description
+          </label>
+
+          <input
+            type="text"
+            name="description"
+            value={formData.description}
+            onChange={handleChange}
+            className="
+              w-full rounded-xl border border-slate-200
+              bg-white px-4 py-3 text-sm text-slate-900
+              outline-none transition-all
+              placeholder:text-slate-300
+              focus:border-primary-400
+              focus:ring-4 focus:ring-primary-500/10
+            "
+            placeholder="Transaction description"
+            required
+          />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-slate-600">
+              Date
+            </label>
+
+            <input
+              type="date"
+              name="date"
+              value={formData.date}
+              onChange={handleChange}
+              className="
+                w-full rounded-xl border border-slate-200
+                bg-white px-4 py-3 text-sm text-slate-900
+                outline-none transition-all
+                focus:border-primary-400
+                focus:ring-4 focus:ring-primary-500/10
+              "
+              required
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-bold text-slate-600">
+              Status
+            </label>
+
+            <select
+              name="status"
+              value={formData.status}
+              onChange={handleChange}
+              className="
+                w-full rounded-xl border border-slate-200
+                bg-white px-4 py-3 text-sm text-slate-900
+                outline-none transition-all
+                focus:border-primary-400
+                focus:ring-4 focus:ring-primary-500/10
+              "
+              required
+            >
+              <option value="">Select status</option>
+              <option value="pending_review">Pending Review</option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-5 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="
+              rounded-xl px-4 py-2.5
+              text-sm font-bold text-slate-500
+              transition-colors
+              hover:bg-slate-100 hover:text-slate-700
+              disabled:opacity-40
+            "
+          >
+            Cancel
+          </button>
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="
+              inline-flex items-center justify-center gap-2
+              rounded-xl bg-primary-600 px-5 py-2.5
+              text-sm font-bold text-white
+              shadow-sm shadow-primary-600/20
+              transition-all
+              hover:bg-primary-700
+              disabled:cursor-not-allowed disabled:opacity-50
+            "
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+
+            {loading ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 
@@ -1045,10 +1257,6 @@ const Pagination = ({
 const TransactionsList = () => {
   const navigate = useNavigate();
 
-  // ----------------------------------------------------------
-  // DATA
-  // ----------------------------------------------------------
-
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -1056,31 +1264,28 @@ const TransactionsList = () => {
   const [pagination, setPagination] = useState({
     total: 0,
     limit: TRANSACTIONS_PER_PAGE,
-    offset: 0
+    offset: 0,
   });
-
-  // ----------------------------------------------------------
-  // FILTERS
-  // ----------------------------------------------------------
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ----------------------------------------------------------
-  // ERROR
-  // ----------------------------------------------------------
-
   const [error, setError] = useState('');
-
-  // ----------------------------------------------------------
-  // MODAL
-  // ----------------------------------------------------------
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalContent, setModalContent] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [selectedTx, setSelectedTx] = useState(null);
+
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [receiptTransaction, setReceiptTransaction] =
+    useState(null);
+
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editTransaction, setEditTransaction] = useState(null);
+
+  const [copiedReference, setCopiedReference] = useState(false);
 
   // ==========================================================
   // FETCH
@@ -1100,13 +1305,9 @@ const TransactionsList = () => {
         const params = {
           limit: TRANSACTIONS_PER_PAGE,
           offset:
-            (currentPage - 1) *
-            TRANSACTIONS_PER_PAGE,
-
+            (currentPage - 1) * TRANSACTIONS_PER_PAGE,
           status:
-            filter !== 'all'
-              ? filter
-              : undefined
+            filter !== 'all' ? filter : undefined,
         };
 
         const response =
@@ -1122,7 +1323,7 @@ const TransactionsList = () => {
           response?.pagination || {
             total: 0,
             limit: TRANSACTIONS_PER_PAGE,
-            offset: 0
+            offset: 0,
           }
         );
       } catch (err) {
@@ -1152,25 +1353,20 @@ const TransactionsList = () => {
   // SEARCH
   // ==========================================================
 
-  const normalizedSearch = search
-    .trim()
-    .toLowerCase();
+  const normalizedSearch = search.trim().toLowerCase();
 
   const filteredTransactions = useMemo(() => {
-    if (!normalizedSearch) {
-      return transactions;
-    }
+    if (!normalizedSearch) return transactions;
 
-    return transactions.filter(
-      (transaction) =>
-        getTransactionSearchText(transaction).includes(
-          normalizedSearch
-        )
+    return transactions.filter((transaction) =>
+      getTransactionSearchText(transaction).includes(
+        normalizedSearch
+      )
     );
   }, [transactions, normalizedSearch]);
 
   // ==========================================================
-  // PAGE STATS
+  // STATS
   // ==========================================================
 
   const pageStats = useMemo(() => {
@@ -1179,17 +1375,11 @@ const TransactionsList = () => {
     let volume = 0;
 
     transactions.forEach((transaction) => {
-      if (
-        transaction?.status ===
-        'pending_review'
-      ) {
+      if (transaction?.status === 'pending_review') {
         pendingReview += 1;
       }
 
-      if (
-        transaction?.status ===
-        'completed'
-      ) {
+      if (transaction?.status === 'completed') {
         completed += 1;
       }
 
@@ -1201,13 +1391,9 @@ const TransactionsList = () => {
     return {
       pendingReview,
       completed,
-      volume
+      volume,
     };
   }, [transactions]);
-
-  // ==========================================================
-  // PAGINATION
-  // ==========================================================
 
   const totalPages = Math.max(
     1,
@@ -1216,6 +1402,10 @@ const TransactionsList = () => {
         TRANSACTIONS_PER_PAGE
     )
   );
+
+  // ==========================================================
+  // HANDLERS
+  // ==========================================================
 
   const handlePageChange = (page) => {
     if (
@@ -1229,19 +1419,25 @@ const TransactionsList = () => {
     setCurrentPage(page);
   };
 
-  // ==========================================================
-  // VIEW
-  // ==========================================================
-
-  const handleView = (transaction) => {
-    navigate(
-      `/admin/transactions/${transaction.id}`
-    );
+  const handleFilterChange = (value) => {
+    setFilter(value);
+    setCurrentPage(1);
+    setSearch('');
   };
 
-  // ==========================================================
-  // APPROVE
-  // ==========================================================
+  const handleView = (transaction) => {
+    navigate(`/admin/transactions/${transaction.id}`);
+  };
+
+  const handleViewReceipt = (transaction) => {
+    setReceiptTransaction(transaction);
+    setReceiptModalOpen(true);
+  };
+
+  const handleEdit = (transaction) => {
+    setEditTransaction(transaction);
+    setEditModalOpen(true);
+  };
 
   const handleApprove = (transaction) => {
     setSelectedTx(transaction);
@@ -1249,17 +1445,13 @@ const TransactionsList = () => {
     setModalContent({
       title: 'Approve transfer',
       type: 'success',
-      confirmText: 'Approve Transfer',
+      confirmText: 'Approve transfer',
       message:
-        'Approving this transfer will allow the system to debit the sender and credit the recipient. The transaction will then be marked as completed.'
+        'Approving this transfer will allow the system to debit the sender and credit the recipient. The transaction will then be marked as completed.',
     });
 
     setModalOpen(true);
   };
-
-  // ==========================================================
-  // REJECT
-  // ==========================================================
 
   const handleReject = (transaction) => {
     setSelectedTx(transaction);
@@ -1267,33 +1459,21 @@ const TransactionsList = () => {
     setModalContent({
       title: 'Decline transfer',
       type: 'danger',
-      confirmText: 'Decline Transfer',
+      confirmText: 'Decline transfer',
       message:
-        'Declining this transfer will reject the request. No money will be moved from the sender to the recipient.'
+        'Declining this transfer will reject the request. No money will be moved from the sender to the recipient.',
     });
 
     setModalOpen(true);
   };
 
-  // ==========================================================
-  // CONFIRM MODAL ACTION
-  // ==========================================================
-
   const handleConfirm = async () => {
-    if (
-      !selectedTx ||
-      !modalContent
-    ) {
-      return;
-    }
+    if (!selectedTx || !modalContent) return;
 
     try {
       setModalLoading(true);
 
-      if (
-        modalContent.type ===
-        'success'
-      ) {
+      if (modalContent.type === 'success') {
         await transactionsAPI.adminApprove(
           selectedTx.id
         );
@@ -1313,9 +1493,10 @@ const TransactionsList = () => {
 
       setModalOpen(false);
       setSelectedTx(null);
+      setModalContent(null);
 
       await fetchAllTransactions({
-        silent: true
+        silent: true,
       });
     } catch (err) {
       const message =
@@ -1334,18 +1515,26 @@ const TransactionsList = () => {
     }
   };
 
-  // ==========================================================
-  // CLOSE MODAL
-  // ==========================================================
-
   const handleModalClose = () => {
-    if (modalLoading) {
-      return;
-    }
+    if (modalLoading) return;
 
     setModalOpen(false);
     setSelectedTx(null);
     setModalContent(null);
+  };
+
+  const handleCopyReference = async () => {
+    const success = await copyToClipboard(
+      selectedTx?.reference_id
+    );
+
+    if (success) {
+      setCopiedReference(true);
+
+      setTimeout(() => {
+        setCopiedReference(false);
+      }, 1600);
+    }
   };
 
   // ==========================================================
@@ -1354,24 +1543,38 @@ const TransactionsList = () => {
 
   if (loading) {
     return (
-      <div className="w-full min-w-0 max-w-full space-y-6 overflow-hidden">
-        <div className="space-y-2">
-          <div className="h-7 w-40 animate-pulse rounded-lg bg-gray-100" />
-          <div className="h-4 w-72 max-w-full animate-pulse rounded bg-gray-100" />
+      <div className="w-full min-w-0 space-y-6 p-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-3">
+            <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
+            <div className="h-8 w-44 animate-pulse rounded-xl bg-slate-100" />
+            <div className="h-4 w-72 max-w-full animate-pulse rounded bg-slate-100" />
+          </div>
+
+          <div className="hidden h-11 w-28 animate-pulse rounded-xl bg-slate-100 sm:block" />
         </div>
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map(
-            (_, index) => (
-              <div
-                key={index}
-                className="h-24 animate-pulse rounded-2xl bg-gray-100"
-              />
-            )
-          )}
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-28 animate-pulse rounded-2xl bg-slate-100"
+            />
+          ))}
         </div>
 
-        <TransactionSkeleton />
+        <div className="space-y-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div
+              key={index}
+              className="
+                h-24 animate-pulse
+                rounded-2xl border border-slate-100
+                bg-white
+              "
+            />
+          ))}
+        </div>
       </div>
     );
   }
@@ -1382,21 +1585,13 @@ const TransactionsList = () => {
 
   return (
     <motion.div
-      initial={{
-        opacity: 0,
-        y: 10
-      }}
-      animate={{
-        opacity: 1,
-        y: 0
-      }}
-      transition={{
-        duration: 0.25
-      }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28 }}
       className="
         w-full min-w-0 max-w-full
-        overflow-hidden
-        space-y-5
+        space-y-5 overflow-hidden
+								p-3
         sm:space-y-6
       "
     >
@@ -1404,67 +1599,78 @@ const TransactionsList = () => {
           HEADER
       ====================================================== */}
 
-      <header
-        className="
-          flex min-w-0 flex-col gap-4
-          sm:flex-row sm:items-end sm:justify-between
-        "
-      >
-        <div className="min-w-0">
-          <div className="mb-2 flex min-w-0 items-center gap-2">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary-50">
-              <History className="h-5 w-5 text-primary-600" />
+      <header className="relative overflow-hidden">
+        <div
+          className="
+            absolute -right-10 -top-16
+            h-40 w-40 rounded-full
+            bg-primary-50/70 blur-3xl
+            pointer-events-none
+          "
+        />
+
+        <div className="relative flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-3 flex items-center gap-2">
+              <div
+                className="
+                  flex h-9 w-9 shrink-0 items-center justify-center
+                  rounded-xl bg-primary-50
+                  text-primary-600
+                  ring-1 ring-primary-100
+                "
+              >
+                <Activity className="h-4.5 w-4.5" />
+              </div>
+
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">
+                Operations
+              </span>
             </div>
 
-            <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-              Operations
-            </span>
+            <div className="flex items-center gap-2">
+              <h1 className="truncate text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+                Transactions
+              </h1>
+
+              <Sparkles className="hidden h-5 w-5 text-primary-300 sm:block" />
+            </div>
+
+            <p className="mt-1.5 max-w-xl text-sm leading-6 text-slate-500">
+              Review activity, monitor transaction health,
+              and manage account transfers from one place.
+            </p>
           </div>
 
-          <h1 className="truncate text-xl font-bold text-gray-900 sm:text-2xl">
-            Transactions
-          </h1>
-
-          <p className="mt-1 max-w-xl text-sm leading-5 text-gray-500">
-            Review, monitor and manage account transactions.
-          </p>
+          <button
+            type="button"
+            onClick={() =>
+              fetchAllTransactions({ silent: true })
+            }
+            disabled={refreshing}
+            className="
+              inline-flex shrink-0 items-center
+              justify-center gap-2
+              self-start rounded-xl
+              border border-slate-200
+              bg-white px-4 py-2.5
+              text-sm font-bold text-slate-600
+              shadow-[0_3px_12px_rgba(15,23,42,0.04)]
+              transition-all
+              hover:border-slate-300 hover:bg-slate-50
+              hover:text-slate-800
+              disabled:cursor-not-allowed disabled:opacity-50
+              sm:self-auto
+            "
+          >
+            <RefreshCw
+              className={`h-4 w-4 ${
+                refreshing ? 'animate-spin' : ''
+              }`}
+            />
+            {refreshing ? 'Refreshing' : 'Refresh'}
+          </button>
         </div>
-
-        <button
-          type="button"
-          onClick={() =>
-            fetchAllTransactions({
-              silent: true
-            })
-          }
-          disabled={refreshing}
-          className="
-            inline-flex shrink-0
-            items-center justify-center gap-2
-            self-start
-            rounded-xl
-            border border-gray-200
-            bg-white
-            px-3.5 py-2.5
-            text-sm font-medium
-            text-gray-700
-            shadow-sm
-            transition-colors
-            hover:bg-gray-50
-            disabled:cursor-not-allowed
-            disabled:opacity-50
-            sm:self-auto
-          "
-        >
-          <RefreshCw
-            className={`
-              h-4 w-4
-              ${refreshing ? 'animate-spin' : ''}
-            `}
-          />
-
-          <span>Refresh</span>
-        </button>
       </header>
 
       {/* ======================================================
@@ -1472,86 +1678,97 @@ const TransactionsList = () => {
       ====================================================== */}
 
       {error && (
-        <div
+        <motion.div
+          initial={{ opacity: 0, y: -5 }}
+          animate={{ opacity: 1, y: 0 }}
           className="
             flex min-w-0 items-start gap-3
-            rounded-xl
-            border border-red-200
-            bg-red-50
-            px-4 py-3
+            rounded-2xl border border-rose-200
+            bg-rose-50 px-4 py-3
           "
         >
-          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600" />
 
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-red-800">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-rose-800">
               Something went wrong
             </p>
 
-            <p className="mt-0.5 break-words text-sm leading-5 text-red-700">
+            <p className="mt-0.5 break-words text-sm leading-5 text-rose-700">
               {error}
             </p>
           </div>
-        </div>
+
+          <button
+            type="button"
+            onClick={() => setError('')}
+            className="rounded-lg p-1 text-rose-400 hover:bg-rose-100 hover:text-rose-600"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </motion.div>
       )}
 
       {/* ======================================================
           STATS
       ====================================================== */}
 
-      <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid min-w-0 grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
-          label="Total"
+          label="All transactions"
           value={pagination?.total || 0}
           icon={History}
-          tone="gray"
+          tone="neutral"
+          helper="Across all pages"
         />
 
         <StatCard
-          label="Pending Review"
+          label="Pending review"
           value={pageStats.pendingReview}
-          icon={ShieldAlert}
+          icon={Clock3}
           tone="amber"
+          helper="On this page"
         />
 
         <StatCard
           label="Completed"
           value={pageStats.completed}
-          icon={CheckCircle}
+          icon={CheckCircle2}
           tone="emerald"
+          helper="On this page"
         />
 
         <StatCard
-          label="Page Volume"
+          label="Page volume"
           value={formatCurrency(pageStats.volume)}
-          icon={TrendingUp}
+          icon={CircleDollarSign}
           tone="blue"
+          helper="Current page"
         />
       </div>
 
       {/* ======================================================
-          FILTER BAR
+          SEARCH / FILTER
       ====================================================== */}
 
       <section
         className="
-          min-w-0 overflow-hidden
-          rounded-2xl
-          border border-gray-200
+          overflow-hidden rounded-[22px]
+          border border-slate-200
           bg-white
-          p-3 sm:p-4
+          p-3
+          shadow-[0_5px_24px_rgba(15,23,42,0.035)]
+          sm:p-4
         "
       >
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row">
-          {/* Search */}
           <div className="relative min-w-0 flex-1">
             <Search
               className="
                 pointer-events-none
                 absolute left-3.5 top-1/2
-                h-4 w-4
-                -translate-y-1/2
-                text-gray-400
+                h-4 w-4 -translate-y-1/2
+                text-slate-300
               "
             />
 
@@ -1561,118 +1778,133 @@ const TransactionsList = () => {
               onChange={(event) =>
                 setSearch(event.target.value)
               }
-              placeholder="Search transactions..."
+              placeholder="Search by description, reference, account or customer…"
               className="
                 block w-full min-w-0
-                rounded-xl
-                border border-gray-200
-                bg-gray-50
-                py-2.5 pl-10 pr-4
-                text-sm text-gray-900
-                placeholder:text-gray-400
-                transition-colors
-                focus:border-primary-500
+                rounded-xl border border-slate-200
+                bg-slate-50
+                py-3 pl-10 pr-4
+                text-sm text-slate-800
+                outline-none transition-all
+                placeholder:text-slate-400
+                focus:border-primary-400
                 focus:bg-white
-                focus:outline-none
-                focus:ring-2
-                focus:ring-primary-500/20
+                focus:ring-4 focus:ring-primary-500/10
               "
             />
           </div>
 
-          {/* Filter */}
           <div className="flex min-w-0 items-center gap-2">
-            <Filter className="h-4 w-4 shrink-0 text-gray-400" />
+            <div
+              className="
+                flex h-10 w-10 shrink-0
+                items-center justify-center
+                rounded-xl bg-slate-50
+                text-slate-400
+              "
+            >
+              <Filter className="h-4 w-4" />
+            </div>
 
             <select
               value={filter}
-              onChange={(event) => {
-                setFilter(event.target.value);
-                setCurrentPage(1);
-                setSearch('');
-              }}
+              onChange={(event) =>
+                handleFilterChange(event.target.value)
+              }
               className="
                 min-w-0 flex-1
-                rounded-xl
-                border border-gray-200
-                bg-gray-50
-                px-3.5 py-2.5
-                text-sm text-gray-700
-                transition-colors
-                focus:border-primary-500
+                rounded-xl border border-slate-200
+                bg-slate-50 px-3.5 py-3
+                text-sm font-semibold text-slate-600
+                outline-none transition-all
+                focus:border-primary-400
                 focus:bg-white
-                focus:outline-none
-                focus:ring-2
-                focus:ring-primary-500/20
-                sm:min-w-[190px]
-                sm:flex-none
+                focus:ring-4 focus:ring-primary-500/10
+                sm:min-w-[190px] sm:flex-none
               "
             >
-              <option value="all">
-                All Transactions
-              </option>
-
+              <option value="all">All transactions</option>
               <option value="pending_review">
-                Pending Review
+                Pending review
               </option>
-
-              <option value="pending">
-                Pending
-              </option>
-
-              <option value="completed">
-                Completed
-              </option>
-
-              <option value="failed">
-                Failed
-              </option>
-
-              <option value="cancelled">
-                Cancelled
-              </option>
+              <option value="completed">Completed</option>
+              <option value="failed">Failed</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
         </div>
 
-        {normalizedSearch && (
-          <p className="mt-2 px-1 text-[11px] text-gray-400">
-            Searching the transactions currently loaded on this page.
-          </p>
-        )}
+        <AnimatePresence>
+          {normalizedSearch && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="mt-3 flex items-center justify-between gap-3 px-1">
+                <p className="text-[11px] font-medium text-slate-400">
+                  Searching the transactions currently loaded
+                  on this page.
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => setSearch('')}
+                  className="shrink-0 text-[11px] font-bold text-primary-600 hover:text-primary-700"
+                >
+                  Clear
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       {/* ======================================================
-          REVIEW NOTICE
+          REVIEW BANNER
       ====================================================== */}
 
-      {transactions.some(
-        (transaction) =>
-          transaction?.status ===
-          'pending_review'
-      ) && (
-        <div
+      {transactions.some(isReviewable) && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.99 }}
+          animate={{ opacity: 1, scale: 1 }}
           className="
-            flex min-w-0 items-start gap-3
-            rounded-2xl
+            relative overflow-hidden
+            rounded-[22px]
             border border-amber-200
-            bg-amber-50
-            px-4 py-3
+            bg-gradient-to-r from-amber-50 to-white
+            px-4 py-4
+            sm:px-5
           "
         >
-          <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+          <div className="absolute right-0 top-0 h-full w-24 bg-amber-100/30 [clip-path:polygon(40%_0,100%_0,100%_100%,0_100%)]" />
 
-          <div className="min-w-0">
-            <p className="text-sm font-semibold text-amber-900">
-              Transfers require attention
-            </p>
+          <div className="relative flex items-start gap-3">
+            <div
+              className="
+                flex h-10 w-10 shrink-0
+                items-center justify-center
+                rounded-xl bg-amber-100
+                text-amber-600
+              "
+            >
+              <ShieldCheck className="h-5 w-5" />
+            </div>
 
-            <p className="mt-0.5 text-xs leading-5 text-amber-700 sm:text-sm">
-              Pending Review transfers have not moved any money.
-              Approve or decline them after reviewing the transfer.
-            </p>
+            <div className="min-w-0">
+              <p className="text-sm font-extrabold text-amber-900">
+                Transfers need your attention
+              </p>
+
+              <p className="mt-1 max-w-2xl text-xs leading-5 text-amber-700 sm:text-sm">
+                Pending Review transfers have not moved
+                any money. Review the details before
+                approving or declining them.
+              </p>
+            </div>
           </div>
-        </div>
+        </motion.div>
       )}
 
       {/* ======================================================
@@ -1681,9 +1913,11 @@ const TransactionsList = () => {
 
       <div className="min-w-0 space-y-3 md:hidden">
         {filteredTransactions.length === 0 ? (
-          <EmptyState
-            searchActive={Boolean(normalizedSearch)}
-          />
+          <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white">
+            <EmptyState
+              searchActive={Boolean(normalizedSearch)}
+            />
+          </div>
         ) : (
           filteredTransactions.map(
             (transaction, index) => (
@@ -1691,8 +1925,12 @@ const TransactionsList = () => {
                 key={transaction.id}
                 transaction={transaction}
                 index={index}
-                onView={() =>
-                  handleView(transaction)
+                onView={() => handleView(transaction)}
+                onViewReceipt={() =>
+                  handleViewReceipt(transaction)
+                }
+                onEdit={() =>
+                  handleEdit(transaction)
                 }
                 onApprove={() =>
                   handleApprove(transaction)
@@ -1705,28 +1943,31 @@ const TransactionsList = () => {
           )
         )}
 
-        {pagination.total > TRANSACTIONS_PER_PAGE && (
-          <Pagination
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pagination={pagination}
-            onPageChange={handlePageChange}
-          />
+        {pagination.total >
+          TRANSACTIONS_PER_PAGE && (
+          <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white">
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pagination={pagination}
+              onPageChange={handlePageChange}
+            />
+          </div>
         )}
       </div>
 
       {/* ======================================================
-          DESKTOP / TABLET
+          DESKTOP
       ====================================================== */}
 
       <section
         className="
           hidden min-w-0 max-w-full
           overflow-hidden
-          rounded-2xl
-          border border-gray-200
+          rounded-[24px]
+          border border-slate-200
           bg-white
-          shadow-sm
+          shadow-[0_7px_30px_rgba(15,23,42,0.045)]
           md:block
         "
       >
@@ -1736,55 +1977,49 @@ const TransactionsList = () => {
           />
         ) : (
           <>
-            {/* Important:
-                The horizontal scroll belongs to the table container,
-                not the page. */}
-            <div
-              className="
-                min-w-0 max-w-full
-                overflow-x-auto
-                overscroll-x-contain
-              "
-            >
-              <table className="w-full min-w-[900px] table-fixed">
+            <div className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
+              <table className="w-full min-w-[980px] table-fixed">
                 <colgroup>
-                  <col className="w-[25%]" />
-                  <col className="w-[19%]" />
-                  <col className="w-[15%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[23%]" />
+                  <col className="w-[16%]" />
                   <col className="w-[13%]" />
-                  <col className="w-[14%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[12%]" />
+                  <col className="w-[24%]" />
                 </colgroup>
 
                 <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50/80">
-                    <th className="px-5 py-3.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      Transaction
+                  <tr className="border-b border-slate-200 bg-slate-50/80">
+                    <th className="px-5 py-4 text-left">
+                      <div className="flex items-center gap-1.5 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
+                        Transaction
+                        <ArrowUpDown className="h-3 w-3 opacity-40" />
+                      </div>
                     </th>
 
-                    <th className="px-4 py-3.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-4 py-4 text-left text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
                       Reference
                     </th>
 
-                    <th className="px-4 py-3.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-4 py-4 text-right text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
                       Amount
                     </th>
 
-                    <th className="px-4 py-3.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-4 py-4 text-left text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
                       Status
                     </th>
 
-                    <th className="px-4 py-3.5 text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-4 py-4 text-left text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
                       Date
                     </th>
 
-                    <th className="px-5 py-3.5 text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                    <th className="px-5 py-4 text-right text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">
                       Actions
                     </th>
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100">
+                <tbody>
                   {filteredTransactions.map(
                     (transaction, index) => (
                       <DesktopTransactionRow
@@ -1793,6 +2028,12 @@ const TransactionsList = () => {
                         index={index}
                         onView={() =>
                           handleView(transaction)
+                        }
+                        onViewReceipt={() =>
+                          handleViewReceipt(transaction)
+                        }
+                        onEdit={() =>
+                          handleEdit(transaction)
                         }
                         onApprove={() =>
                           handleApprove(transaction)
@@ -1807,7 +2048,6 @@ const TransactionsList = () => {
               </table>
             </div>
 
-            {/* Pagination */}
             {pagination.total >
               TRANSACTIONS_PER_PAGE && (
               <Pagination
@@ -1822,7 +2062,7 @@ const TransactionsList = () => {
       </section>
 
       {/* ======================================================
-          APPROVE / REJECT MODAL
+          APPROVE / DECLINE MODAL
       ====================================================== */}
 
       <Modal
@@ -1838,131 +2078,130 @@ const TransactionsList = () => {
         closeOnOutsideClick={false}
       >
         {modalContent && selectedTx && (
-          <div className="min-w-0 space-y-5">
-            {/* Message */}
-            <div className="flex min-w-0 items-start gap-3">
+          <div className="space-y-5">
+            <div className="flex items-start gap-3">
               <div
                 className={`
-                  flex h-11 w-11 shrink-0
+                  flex h-12 w-12 shrink-0
                   items-center justify-center
-                  rounded-xl
+                  rounded-2xl
                   ${
-                    modalContent.type ===
-                    'danger'
-                      ? 'bg-red-50'
-                      : 'bg-emerald-50'
+                    modalContent.type === 'danger'
+                      ? 'bg-rose-50 text-rose-600'
+                      : 'bg-emerald-50 text-emerald-600'
                   }
                 `}
               >
-                {modalContent.type ===
-                'danger' ? (
-                  <XCircle className="h-5 w-5 text-red-600" />
+                {modalContent.type === 'danger' ? (
+                  <XCircle className="h-6 w-6" />
                 ) : (
-                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                  <CheckCircle2 className="h-6 w-6" />
                 )}
               </div>
 
               <div className="min-w-0">
-                <h3 className="text-base font-semibold text-gray-900">
+                <h3 className="text-base font-extrabold text-slate-900">
                   {modalContent.title}
                 </h3>
 
-                <p className="mt-1.5 text-sm leading-5 text-gray-600">
+                <p className="mt-1.5 text-sm leading-6 text-slate-500">
                   {modalContent.message}
                 </p>
               </div>
             </div>
 
-            {/* Transaction summary */}
             <div
               className={`
-                min-w-0 overflow-hidden
-                rounded-xl border p-4
+                overflow-hidden rounded-2xl border p-4
                 ${
                   isReviewable(selectedTx)
                     ? 'border-amber-200 bg-amber-50/60'
-                    : 'border-gray-200 bg-gray-50'
+                    : 'border-slate-200 bg-slate-50'
                 }
               `}
             >
-              <div className="flex min-w-0 items-start justify-between gap-3">
+              <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Transfer amount
                   </p>
 
                   <p
                     className={`
-                      mt-0.5 truncate
-                      text-xl font-bold
+                      mt-1 truncate text-2xl font-extrabold
                       ${
                         isReviewable(selectedTx)
                           ? 'text-amber-700'
-                          : 'text-gray-900'
+                          : 'text-slate-900'
                       }
                     `}
                   >
                     {formatCurrency(
                       Math.abs(
-                        Number(
-                          selectedTx.amount
-                        ) || 0
+                        Number(selectedTx.amount) || 0
                       )
                     )}
                   </p>
                 </div>
 
-                <div className="shrink-0">
-                  <StatusBadge
-                    status={
-                      selectedTx.status
-                    }
-                  />
-                </div>
+                <StatusBadge
+                  status={selectedTx.status}
+                />
               </div>
 
-              <div className="mt-3 border-t border-gray-200/70 pt-3">
-                <p className="text-xs text-gray-500">
-                  Reference
-                </p>
+              <div className="mt-4 border-t border-slate-200/70 pt-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                    Reference
+                  </p>
 
-                <p
-                  className="
-                    mt-1
-                    break-all
-                    font-mono text-[11px]
-                    leading-4 text-gray-700
-                  "
-                >
+                  <button
+                    type="button"
+                    onClick={handleCopyReference}
+                    className="
+                      inline-flex shrink-0 items-center gap-1
+                      rounded-lg px-2 py-1
+                      text-[10px] font-bold text-primary-600
+                      hover:bg-primary-50
+                    "
+                  >
+                    {copiedReference ? (
+                      <>
+                        <Check className="h-3 w-3" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3" />
+                        Copy
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <p className="mt-1 break-all font-mono text-[11px] leading-5 text-slate-600">
                   {selectedTx.reference_id ||
-                    '—'}
+                    'No reference'}
                 </p>
               </div>
 
               {selectedTx.account?.account_number && (
                 <div className="mt-3">
-                  <p className="text-xs text-gray-500">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">
                     Sender account
                   </p>
 
-                  <p
-                    className="
-                      mt-1
-                      break-all
-                      font-mono text-[11px]
-                      leading-4 text-gray-700
-                    "
-                  >
+                  <p className="mt-1 break-all font-mono text-[11px] text-slate-600">
                     {selectedTx.account.account_number}
                   </p>
                 </div>
               )}
 
               {isReviewable(selectedTx) && (
-                <div className="mt-3 flex min-w-0 items-start gap-2">
-                  <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-white/70 px-3 py-2.5">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
 
-                  <p className="min-w-0 text-xs leading-4 text-amber-700">
+                  <p className="text-xs font-medium leading-5 text-amber-700">
                     This transfer is awaiting approval.
                     No money has moved yet.
                   </p>
@@ -1970,23 +2209,17 @@ const TransactionsList = () => {
               )}
             </div>
 
-            {/* Actions */}
-            <div className="flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+            <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={handleModalClose}
                 disabled={modalLoading}
                 className="
-                  inline-flex
-                  items-center justify-center
-                  rounded-xl
-                  px-4 py-2.5
-                  text-sm font-medium
-                  text-gray-700
+                  rounded-xl px-4 py-2.5
+                  text-sm font-bold text-slate-500
                   transition-colors
-                  hover:bg-gray-100
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
+                  hover:bg-slate-100 hover:text-slate-700
+                  disabled:opacity-40
                 "
               >
                 Cancel
@@ -1997,41 +2230,33 @@ const TransactionsList = () => {
                 onClick={handleConfirm}
                 disabled={modalLoading}
                 className={`
-                  inline-flex
-                  items-center justify-center
-                  gap-2
-                  rounded-xl
-                  px-4 py-2.5
-                  text-sm font-semibold
-                  text-white
-                  transition-colors
-                  disabled:cursor-not-allowed
-                  disabled:opacity-50
+                  inline-flex items-center justify-center gap-2
+                  rounded-xl px-5 py-2.5
+                  text-sm font-bold text-white
+                  shadow-sm
+                  transition-all
+                  disabled:cursor-not-allowed disabled:opacity-50
                   ${
-                    modalContent.type ===
-                    'danger'
-                      ? 'bg-red-600 hover:bg-red-700'
-                      : 'bg-emerald-600 hover:bg-emerald-700'
+                    modalContent.type === 'danger'
+                      ? 'bg-rose-600 shadow-rose-600/20 hover:bg-rose-700'
+                      : 'bg-emerald-600 shadow-emerald-600/20 hover:bg-emerald-700'
                   }
                 `}
               >
                 {modalLoading ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Processing...</span>
+                    Processing…
+                  </>
+                ) : modalContent.type === 'danger' ? (
+                  <>
+                    <XCircle className="h-4 w-4" />
+                    {modalContent.confirmText}
                   </>
                 ) : (
                   <>
-                    {modalContent.type ===
-                    'danger' ? (
-                      <XCircle className="h-4 w-4" />
-                    ) : (
-                      <CheckCircle className="h-4 w-4" />
-                    )}
-
-                    <span>
-                      {modalContent.confirmText}
-                    </span>
+                    <CheckCircle2 className="h-4 w-4" />
+                    {modalContent.confirmText}
                   </>
                 )}
               </button>
@@ -2039,6 +2264,46 @@ const TransactionsList = () => {
           </div>
         )}
       </Modal>
+
+      {/* ======================================================
+          RECEIPT
+      ====================================================== */}
+
+      <Modal
+        isOpen={receiptModalOpen}
+        onClose={() => {
+          setReceiptModalOpen(false);
+          setReceiptTransaction(null);
+        }}
+        title="Transaction receipt"
+        size="lg"
+        position="center"
+        showCloseButton
+        closeOnOutsideClick
+      >
+        {receiptTransaction && (
+          <Receipt
+            transaction={receiptTransaction}
+            
+          />
+        )}
+      </Modal>
+
+      {/* ======================================================
+          EDIT
+      ====================================================== */}
+
+      <EditTransactionModal
+        isOpen={editModalOpen}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditTransaction(null);
+        }}
+        transaction={editTransaction}
+        onSuccess={() =>
+          fetchAllTransactions({ silent: true })
+        }
+      />
     </motion.div>
   );
 };

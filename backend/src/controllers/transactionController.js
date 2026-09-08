@@ -1,8 +1,14 @@
 const { supabase } = require('../db/supabase');
-const { generateReference, validateAmount, formatCurrency } = require('../utils/helpers');
-const { sendEmail } = require('../email/email');
-const { sendNotification } = require('../socket');
+const {
+  generateReference,
+  validateAmount,
+  formatCurrency
+} = require('../utils/helpers');
 
+const { sendEmail } = require('../email/email');
+const {
+  createAndSendNotification
+} = require('../utils/notifications');
 
 // ============================================================
 // SMALL SERVER-SIDE DELAY
@@ -10,7 +16,6 @@ const { sendNotification } = require('../socket');
 
 const delay = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
 
 // ============================================================
 // OTP EMAIL
@@ -23,51 +28,283 @@ const sendOtpEmail = async (
   amount,
   recipientName
 ) => {
+  const frontendUrl = (
+    process.env.FRONTEND_URL || 'http://localhost:5173'
+  ).replace(/\/$/, '');
+
+  const logoUrl = `${frontendUrl}/logo.png`;
+
   const html = `
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;">
-      <h2>Transaction Verification</h2>
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-      <p>A transfer has been initiated from your account.</p>
+  <title>Transaction Verification</title>
+</head>
 
-      <p>
-        <strong>Recipient:</strong>
-        ${recipientName}
-      </p>
+<body style="
+  margin:0;
+  padding:0;
+  background:#f4f7fb;
+  font-family:Arial,Helvetica,sans-serif;
+  color:#172033;
+">
 
-      <p>
-        <strong>Amount:</strong>
-        ${formatCurrency(amount)}
-      </p>
+  <div style="
+    width:100%;
+    padding:40px 16px;
+    box-sizing:border-box;
+  ">
 
-      <p>Your verification code is:</p>
+    <div style="
+      max-width:600px;
+      margin:0 auto;
+      background:#ffffff;
+      border:1px solid #e7ebf2;
+      border-radius:20px;
+      overflow:hidden;
+      box-shadow:0 10px 30px rgba(20,40,80,0.06);
+    ">
+
+      <!-- HEADER -->
 
       <div style="
-        font-size:32px;
-        font-weight:bold;
-        letter-spacing:8px;
-        padding:20px;
-        background:#f5f5f5;
-        text-align:center;
-        margin:20px 0;
+        padding:28px 32px;
+        border-bottom:1px solid #edf0f5;
+        background:#ffffff;
       ">
-        ${otp}
+
+        <img
+          src="${logoUrl}"
+          alt="Trustybank"
+          style="
+            display:block;
+            max-width:170px;
+            max-height:48px;
+            width:auto;
+            height:auto;
+          "
+        />
+
       </div>
 
-      <p>This code expires in 10 minutes.</p>
+      <!-- CONTENT -->
 
-      <p>
-        <strong>Reference:</strong> ${reference}
-      </p>
+      <div style="padding:36px 32px;">
+
+        <div style="
+          display:inline-block;
+          padding:7px 11px;
+          border-radius:999px;
+          background:#eef5ff;
+          color:#2364d2;
+          font-size:12px;
+          font-weight:700;
+          letter-spacing:.4px;
+          margin-bottom:16px;
+        ">
+          TRANSACTION VERIFICATION
+        </div>
+
+        <h1 style="
+          margin:0 0 12px;
+          font-size:25px;
+          line-height:1.3;
+          color:#14213d;
+        ">
+          Confirm your transfer
+        </h1>
+
+        <p style="
+          margin:0 0 26px;
+          font-size:15px;
+          line-height:1.7;
+          color:#667085;
+        ">
+          A transfer has been initiated from your Trustybank account.
+          Enter the verification code below to continue.
+        </p>
+
+        <!-- TRANSFER DETAILS -->
+
+        <div style="
+          border:1px solid #e8edf4;
+          border-radius:14px;
+          overflow:hidden;
+          margin-bottom:24px;
+        ">
+
+          <div style="
+            padding:15px 18px;
+            background:#f8fafc;
+            border-bottom:1px solid #e8edf4;
+            font-size:13px;
+            font-weight:700;
+            color:#344054;
+          ">
+            Transfer details
+          </div>
+
+          <div style="padding:18px;">
+
+            <table
+              width="100%"
+              cellpadding="0"
+              cellspacing="0"
+              style="font-size:14px;"
+            >
+
+              <tr>
+                <td style="
+                  padding:7px 0;
+                  color:#667085;
+                ">
+                  Recipient
+                </td>
+
+                <td style="
+                  padding:7px 0;
+                  text-align:right;
+                  font-weight:700;
+                  color:#172033;
+                ">
+                  ${recipientName || 'Recipient'}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="
+                  padding:7px 0;
+                  color:#667085;
+                ">
+                  Amount
+                </td>
+
+                <td style="
+                  padding:7px 0;
+                  text-align:right;
+                  font-weight:700;
+                  color:#172033;
+                ">
+                  ${formatCurrency(amount)}
+                </td>
+              </tr>
+
+              <tr>
+                <td style="
+                  padding:7px 0;
+                  color:#667085;
+                ">
+                  Reference
+                </td>
+
+                <td style="
+                  padding:7px 0;
+                  text-align:right;
+                  font-weight:700;
+                  color:#172033;
+                  word-break:break-all;
+                ">
+                  ${reference}
+                </td>
+              </tr>
+
+            </table>
+
+          </div>
+
+        </div>
+
+        <!-- OTP -->
+
+        <div style="
+          text-align:center;
+          border:1px solid #dfe7f2;
+          border-radius:16px;
+          padding:24px 18px;
+          background:#fbfdff;
+        ">
+
+          <div style="
+            font-size:12px;
+            font-weight:700;
+            color:#667085;
+            letter-spacing:1px;
+            margin-bottom:12px;
+          ">
+            VERIFICATION CODE
+          </div>
+
+          <div style="
+            font-size:34px;
+            line-height:1;
+            font-weight:800;
+            letter-spacing:9px;
+            color:#14213d;
+            padding-left:9px;
+          ">
+            ${otp}
+          </div>
+
+          <p style="
+            margin:15px 0 0;
+            font-size:13px;
+            line-height:1.6;
+            color:#667085;
+          ">
+            This code expires in 10 minutes.
+          </p>
+
+        </div>
+
+        <p style="
+          margin:25px 0 0;
+          font-size:13px;
+          line-height:1.7;
+          color:#667085;
+        ">
+          If you did not initiate this transfer, do not share this
+          verification code and contact Trustybank immediately.
+        </p>
+
+      </div>
+
+      <!-- FOOTER -->
+
+      <div style="
+        padding:22px 32px;
+        border-top:1px solid #edf0f5;
+        background:#fafbfd;
+      ">
+
+        <p style="
+          margin:0;
+          font-size:12px;
+          line-height:1.6;
+          color:#98a2b3;
+        ">
+          This is an automated message from Trustybank.
+          Please do not reply to this email.
+        </p>
+
+      </div>
+
     </div>
+
+  </div>
+
+</body>
+</html>
   `;
 
   await sendEmail({
     to: toEmail,
-    subject: 'Transaction Verification Code',
+    subject: 'Trustybank — Transaction Verification Code',
     html
   });
 };
-
 
 // ============================================================
 // INITIATE SAME-BANK TRANSFER
@@ -83,7 +320,6 @@ const initiateTransfer = async (req, res, next) => {
       recipientName
     } = req.body;
 
-
     // --------------------------------------------------------
     // VALIDATE AMOUNT
     // --------------------------------------------------------
@@ -95,9 +331,8 @@ const initiateTransfer = async (req, res, next) => {
       });
     }
 
-
     // --------------------------------------------------------
-    // SOURCE ACCOUNT
+    // GET SOURCE ACCOUNT
     // --------------------------------------------------------
 
     const {
@@ -117,7 +352,6 @@ const initiateTransfer = async (req, res, next) => {
       .eq('user_id', req.user.id)
       .single();
 
-
     if (sourceError) {
       if (sourceError.code === 'PGRST116') {
         return res.status(404).json({
@@ -129,13 +363,8 @@ const initiateTransfer = async (req, res, next) => {
       throw sourceError;
     }
 
-
     // --------------------------------------------------------
-    // ACCOUNT STATUS
-    //
-    // Active  → completes after OTP
-    // Frozen  → pending review after OTP
-    // Banned  → pending review after OTP
+    // CHECK ACCOUNT RESTRICTION
     // --------------------------------------------------------
 
     const accountStatus =
@@ -144,14 +373,12 @@ const initiateTransfer = async (req, res, next) => {
     const profileStatus =
       String(sourceAccount.profiles?.status || '').toLowerCase();
 
-
     const senderRestricted =
       ['frozen', 'banned'].includes(accountStatus) ||
       ['frozen', 'banned'].includes(profileStatus);
 
-
     // --------------------------------------------------------
-    // BALANCE CHECK
+    // CHECK BALANCE
     // --------------------------------------------------------
 
     if (Number(sourceAccount.balance) < Number(amount)) {
@@ -164,9 +391,8 @@ const initiateTransfer = async (req, res, next) => {
       });
     }
 
-
     // --------------------------------------------------------
-    // RECIPIENT DETAILS
+    // VALIDATE RECIPIENT ACCOUNT
     // --------------------------------------------------------
 
     if (!recipientAccountNumber) {
@@ -175,11 +401,6 @@ const initiateTransfer = async (req, res, next) => {
         error: 'Recipient account number is required.'
       });
     }
-
-
-    // --------------------------------------------------------
-    // FIND RECIPIENT
-    // --------------------------------------------------------
 
     const {
       data: recipient,
@@ -194,14 +415,11 @@ const initiateTransfer = async (req, res, next) => {
         )
       `)
       .eq('account_number', recipientAccountNumber)
-      .eq('status', 'active')
       .maybeSingle();
-
 
     if (recipientError) {
       throw recipientError;
     }
-
 
     if (!recipient) {
       return res.status(404).json({
@@ -210,9 +428,8 @@ const initiateTransfer = async (req, res, next) => {
       });
     }
 
-
     // --------------------------------------------------------
-    // PREVENT SAME ACCOUNT
+    // SAME ACCOUNT CHECK
     // --------------------------------------------------------
 
     if (recipient.id === sourceAccount.id) {
@@ -222,9 +439,8 @@ const initiateTransfer = async (req, res, next) => {
       });
     }
 
-
     // --------------------------------------------------------
-    // RECIPIENT NAME VERIFICATION
+    // VERIFY RECIPIENT NAME
     // --------------------------------------------------------
 
     if (
@@ -239,33 +455,26 @@ const initiateTransfer = async (req, res, next) => {
       });
     }
 
-
     const confirmedRecipientName =
-      recipient.profiles?.full_name || recipientName;
-
+      recipient.profiles?.full_name ||
+      recipientName ||
+      'Recipient';
 
     // --------------------------------------------------------
-    // GENERATE REFERENCE
+    // GENERATE REFERENCE + OTP
     // --------------------------------------------------------
 
     const reference = generateReference();
 
+    const otp = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
 
-    // --------------------------------------------------------
-    // GENERATE OTP
-    // --------------------------------------------------------
-
-    const otp =
-      Math.floor(
-        100000 + Math.random() * 900000
-      ).toString();
-
+    const transferDescription =
+      description || 'Same bank transfer';
 
     // --------------------------------------------------------
     // CREATE PENDING TRANSACTION
-    //
-    // IMPORTANT:
-    // No money is moved here.
     // --------------------------------------------------------
 
     const {
@@ -276,29 +485,31 @@ const initiateTransfer = async (req, res, next) => {
         account_id: sourceAccount.id,
         transaction_type: 'transfer',
         amount,
-        description:
-          description || 'Same bank transfer',
+        description: transferDescription,
         reference_id: reference,
         counterparty_account: recipient.id,
-        status: 'pending',
+        status: 'pending_review',
+
         metadata: {
           transferType: 'same_bank',
+          direction: 'debit',
+
           recipientAccountNumber,
           recipientName: confirmedRecipientName,
           recipientAccountId: recipient.id,
+
           senderRestricted,
+
           otpRequired: true
         }
       }]);
-
 
     if (transactionError) {
       throw transactionError;
     }
 
-
     // --------------------------------------------------------
-    // CREATE OTP RECORD
+    // STORE OTP
     // --------------------------------------------------------
 
     const {
@@ -310,6 +521,7 @@ const initiateTransfer = async (req, res, next) => {
         otp,
         user_id: req.user.id,
         verified: false,
+
         expires_at:
           new Date(
             Date.now() + 10 * 60 * 1000
@@ -318,32 +530,41 @@ const initiateTransfer = async (req, res, next) => {
         data: {
           fromAccountId: sourceAccount.id,
           toAccountId: recipient.id,
+
           amount,
-          description:
-            description || 'Same bank transfer',
+
+          description: transferDescription,
+
           recipientAccountNumber,
           recipientName: confirmedRecipientName
         }
       });
 
-
     if (otpError) {
       throw otpError;
     }
 
-
     // --------------------------------------------------------
-    // SEND OTP
+    // SEND OTP EMAIL
     // --------------------------------------------------------
 
-    await sendOtpEmail(
-      req.user.email,
-      otp,
-      reference,
-      amount,
-      confirmedRecipientName
-    );
+    const senderEmail =
+      req.user.email ||
+      sourceAccount.profiles?.email;
 
+    if (senderEmail) {
+      await sendOtpEmail(
+        senderEmail,
+        otp,
+        reference,
+        amount,
+        confirmedRecipientName
+      );
+    } else {
+      console.warn(
+        'No sender email available. OTP email was not sent.'
+      );
+    }
 
     // --------------------------------------------------------
     // RESPONSE
@@ -353,11 +574,13 @@ const initiateTransfer = async (req, res, next) => {
       success: true,
       requiresOtp: true,
       reference,
-      status: 'pending',
+      status: 'pending_review',
+
       recipient: {
         accountNumber: recipient.account_number,
         name: confirmedRecipientName
       },
+
       message:
         'Transfer initiated. A verification code has been sent to your registered email.'
     });
@@ -372,16 +595,19 @@ const initiateTransfer = async (req, res, next) => {
   }
 };
 
+// ============================================================
+// VERIFY OTP AND COMPLETE TRANSFER
+// ============================================================
 
-// ============================================================
-// VERIFY OTP AND COMPLETE / SEND TO REVIEW
-// ============================================================
 const verifyOtpAndComplete = async (req, res, next) => {
   try {
-    const { reference, otp } = req.body;
+    const {
+      reference,
+      otp
+    } = req.body;
 
     // --------------------------------------------------------
-    // VALIDATION
+    // VALIDATE INPUT
     // --------------------------------------------------------
 
     if (!reference || !otp) {
@@ -417,7 +643,7 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // ALREADY VERIFIED
+    // OTP ALREADY USED
     // --------------------------------------------------------
 
     if (otpRecord.verified) {
@@ -428,10 +654,13 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // EXPIRED
+    // OTP EXPIRED
     // --------------------------------------------------------
 
-    if (new Date(otpRecord.expires_at) < new Date()) {
+    if (
+      new Date(otpRecord.expires_at) <
+      new Date()
+    ) {
       return res.status(400).json({
         success: false,
         error: 'This verification code has expired.'
@@ -439,20 +668,23 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // VERIFY OTP
+    // OTP MATCH
     // --------------------------------------------------------
 
-    if (String(otpRecord.otp) !== String(otp)) {
+    if (
+      String(otpRecord.otp) !==
+      String(otp)
+    ) {
       return res.status(400).json({
         success: false,
         error: 'Invalid verification code.'
       });
     }
 
-    const transferData = otpRecord.data;
+    const transferData = otpRecord.data || {};
 
     // --------------------------------------------------------
-    // GET TRANSACTION
+    // GET PENDING TRANSACTION
     // --------------------------------------------------------
 
     const {
@@ -476,7 +708,7 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw transactionError;
     }
 
-    if (transaction.status !== 'pending') {
+    if (transaction.status !== 'pending_review') {
       return res.status(400).json({
         success: false,
         error: 'This transaction has already been processed.'
@@ -508,6 +740,10 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw sourceError;
     }
 
+    // --------------------------------------------------------
+    // CHECK CURRENT RESTRICTION
+    // --------------------------------------------------------
+
     const accountStatus =
       String(sourceAccount.status || '').toLowerCase();
 
@@ -519,14 +755,12 @@ const verifyOtpAndComplete = async (req, res, next) => {
       ['frozen', 'banned'].includes(profileStatus);
 
     // ========================================================
-    // FROZEN / BANNED
+    // RESTRICTED ACCOUNT
     // ========================================================
 
     if (senderRestricted) {
-      // OTP has been correctly verified.
-      // Transfer moves to pending_review.
-      // NO MONEY MOVES.
 
+      // Mark OTP verified
       const {
         error: verifyError
       } = await supabase
@@ -541,45 +775,70 @@ const verifyOtpAndComplete = async (req, res, next) => {
         throw verifyError;
       }
 
+      // Keep transaction pending
       const {
         error: reviewError
       } = await supabase
         .from('transactions')
         .update({
           status: 'pending_review',
+
           metadata: {
             ...(transaction.metadata || {}),
+
             senderRestricted: true,
+
             restrictionStatus:
               accountStatus === 'banned'
                 ? 'banned'
                 : 'frozen',
+
             otpVerified: true,
-            reviewSubmittedAt: new Date().toISOString()
+
+            reviewSubmittedAt:
+              new Date().toISOString()
           }
         })
         .eq('id', transaction.id)
-        .eq('status', 'pending');
+        .eq('status', 'pending_review');
 
       if (reviewError) {
         throw reviewError;
       }
 
+      // ------------------------------------------------------
+      // IN-APP ONLY
+      // ------------------------------------------------------
+
+      const io = req.app.get('io');
+
+      await createAndSendNotification(
+        io,
+        req.user.id,
+        'system',
+        'Transfer Pending Review',
+        `Your transfer of ${formatCurrency(
+          transferData.amount
+        )} is pending bank review due to account restrictions.`,
+        reference
+      );
+
       return res.json({
         success: true,
         reference,
         status: 'pending_review',
+
         message:
-          'OTP verified. Transfer has been submitted for admin review.'
+          'OTP verified. Transfer has been submitted for bank review.'
       });
     }
 
     // ========================================================
-    // ACTIVE / UNRESTRICTED
+    // ACTIVE / UNRESTRICTED ACCOUNT
     // ========================================================
 
     // --------------------------------------------------------
-    // BALANCE CHECK AGAIN
+    // CHECK BALANCE AGAIN
     // --------------------------------------------------------
 
     if (
@@ -593,7 +852,7 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // DESTINATION
+    // GET DESTINATION ACCOUNT
     // --------------------------------------------------------
 
     const {
@@ -624,7 +883,7 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // SIMULATED PROCESSING DELAY
+    // DELAY
     // --------------------------------------------------------
 
     await delay(1000);
@@ -633,17 +892,33 @@ const verifyOtpAndComplete = async (req, res, next) => {
     // CALCULATE BALANCES
     // --------------------------------------------------------
 
-    const amount = Number(transferData.amount);
+    const amount =
+      Number(transferData.amount);
 
     const newSourceBalance =
-      Number(sourceAccount.balance) - amount;
+      Number(sourceAccount.balance) -
+      amount;
 
     const newDestinationBalance =
-      Number(destination.balance) + amount;
+      Number(destination.balance) +
+      amount;
 
-    // --------------------------------------------------------
+    const senderName =
+      sourceAccount.profiles?.full_name ||
+      'User';
+
+    const recipientName =
+      destination.profiles?.full_name ||
+      transferData.recipientName ||
+      'Recipient';
+
+    const description =
+      transferData.description ||
+      'Same bank transfer';
+
+    // ========================================================
     // DEBIT SOURCE
-    // --------------------------------------------------------
+    // ========================================================
 
     const {
       error: debitError
@@ -658,9 +933,9 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw debitError;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
     // CREDIT DESTINATION
-    // --------------------------------------------------------
+    // ========================================================
 
     const {
       error: creditError
@@ -672,7 +947,8 @@ const verifyOtpAndComplete = async (req, res, next) => {
       .eq('id', destination.id);
 
     if (creditError) {
-      // Restore source balance if credit fails.
+
+      // Restore source balance
       await supabase
         .from('accounts')
         .update({
@@ -683,9 +959,9 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw creditError;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
     // MARK OTP VERIFIED
-    // --------------------------------------------------------
+    // ========================================================
 
     const {
       error: verifyError
@@ -701,9 +977,9 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw verifyError;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
     // COMPLETE SENDER TRANSACTION
-    // --------------------------------------------------------
+    // ========================================================
 
     const {
       error: senderTransactionError
@@ -711,28 +987,32 @@ const verifyOtpAndComplete = async (req, res, next) => {
       .from('transactions')
       .update({
         status: 'completed',
+
         metadata: {
           ...(transaction.metadata || {}),
+
+          transferType: 'same_bank',
+          direction: 'debit',
+
           otpVerified: true,
-          completedAt: new Date().toISOString()
+
+          completedAt:
+            new Date().toISOString()
         }
       })
       .eq('id', transaction.id)
-      .eq('status', 'pending');
+      .eq('status', 'pending_review');
 
     if (senderTransactionError) {
       throw senderTransactionError;
     }
 
-    // --------------------------------------------------------
+    // ========================================================
     // CREATE RECIPIENT TRANSACTION
-    //
-    // IMPORTANT:
-    // reference_id is UNIQUE, so the recipient transaction
-    // MUST NOT use the same reference as the sender transaction.
-    // --------------------------------------------------------
+    // ========================================================
 
-    const recipientReference = `${reference}-CR`;
+    const recipientReference =
+      `${reference}-CR`;
 
     const {
       error: recipientTransactionError
@@ -740,36 +1020,34 @@ const verifyOtpAndComplete = async (req, res, next) => {
       .from('transactions')
       .insert([{
         account_id: destination.id,
-        transaction_type: 'transfer',
-        amount,
-        description:
-          transferData.description ||
-          'Same bank transfer',
 
-        // UNIQUE recipient-side reference
+        transaction_type: 'transfer',
+
+        amount,
+
+        description,
+
         reference_id: recipientReference,
 
-        counterparty_account: sourceAccount.id,
+        counterparty_account:
+          sourceAccount.id,
+
         status: 'completed',
 
         metadata: {
           transferType: 'same_bank',
 
-          // Original transfer reference
           transferReference: reference,
 
-          // This is the recipient-side transaction
           direction: 'credit',
 
-          fromAccountId: sourceAccount.id,
+          fromAccountId:
+            sourceAccount.id,
 
-          senderName:
-            sourceAccount.profiles?.full_name ||
-            null,
+          senderName,
 
           senderAccountNumber:
-            sourceAccount.account_number ||
-            null
+            sourceAccount.account_number
         }
       }]);
 
@@ -777,15 +1055,126 @@ const verifyOtpAndComplete = async (req, res, next) => {
       throw recipientTransactionError;
     }
 
+    // ========================================================
+    // SEND EMAIL + IN-APP NOTIFICATIONS
+    // ========================================================
+
+    const io = req.app.get('io');
+
     // --------------------------------------------------------
+    // SENDER
+    // debitEmail template
+    // --------------------------------------------------------
+
+    await createAndSendNotification(
+      io,
+
+      sourceAccount.user_id,
+
+      'debit',
+
+      `Transfer Debited – ${formatCurrency(amount)}`,
+
+      `You transferred ${formatCurrency(
+        amount
+      )} to ${recipientName}.`,
+
+      reference,
+
+      {
+        userName: senderName,
+
+        userEmail:
+          sourceAccount.profiles?.email ||
+          req.user.email,
+
+        accountNumber:
+          sourceAccount.account_number,
+
+        amount:
+          formatCurrency(amount),
+
+        newBalance:
+          formatCurrency(newSourceBalance),
+
+        description,
+
+        reference,
+
+        transferType: 'same_bank',
+
+        direction: 'sent',
+
+        recipientName,
+
+        recipientAccountNumber:
+          destination.account_number
+      }
+    );
+
+    // --------------------------------------------------------
+    // RECIPIENT
+    // creditEmail template
+    // --------------------------------------------------------
+
+    await createAndSendNotification(
+      io,
+
+      destination.user_id,
+
+      'credit',
+
+      `Transfer Credited – ${formatCurrency(amount)}`,
+
+      `You received ${formatCurrency(
+        amount
+      )} from ${senderName}.`,
+
+      reference,
+
+      {
+        userName: recipientName,
+
+        userEmail:
+          destination.profiles?.email,
+
+        accountNumber:
+          destination.account_number,
+
+        amount:
+          formatCurrency(amount),
+
+        newBalance:
+          formatCurrency(newDestinationBalance),
+
+        description,
+
+        reference,
+
+        transferType: 'same_bank',
+
+        direction: 'received',
+
+        senderName,
+
+        senderAccountNumber:
+          sourceAccount.account_number
+      }
+    );
+
+    // ========================================================
     // SUCCESS
-    // --------------------------------------------------------
+    // ========================================================
 
     return res.json({
       success: true,
+
       reference,
+
       status: 'completed',
-      message: 'Transfer completed successfully.',
+
+      message:
+        'Transfer completed successfully.',
 
       from_account: {
         id: sourceAccount.id,
@@ -799,6 +1188,7 @@ const verifyOtpAndComplete = async (req, res, next) => {
     });
 
   } catch (error) {
+
     console.error(
       'Verify OTP Error:',
       error
@@ -808,18 +1198,34 @@ const verifyOtpAndComplete = async (req, res, next) => {
   }
 };
 
-
-
-// ============================================
+// ============================================================
 // TRANSACTION HISTORY
-// ============================================
-const getTransactionHistory = async (req, res, next) => {
-  try {
-    const { accountId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
+// ============================================================
 
-    // 1. Verify that the account belongs to the authenticated user
-    const { data: account, error: accountError } = await supabase
+const getTransactionHistory = async (
+  req,
+  res,
+  next
+) => {
+  try {
+
+    const {
+      accountId
+    } = req.params;
+
+    const {
+      limit = 50,
+      offset = 0
+    } = req.query;
+
+    // --------------------------------------------------------
+    // VERIFY ACCOUNT OWNERSHIP
+    // --------------------------------------------------------
+
+    const {
+      data: account,
+      error: accountError
+    } = await supabase
       .from('accounts')
       .select('id')
       .eq('id', accountId)
@@ -827,87 +1233,253 @@ const getTransactionHistory = async (req, res, next) => {
       .single();
 
     if (accountError) {
-      if (accountError.code === 'PGRST116') {
-        return res.status(404).json({ success: false, error: 'Account not found' });
+
+      if (
+        accountError.code ===
+        'PGRST116'
+      ) {
+        return res.status(404).json({
+          success: false,
+          error: 'Account not found'
+        });
       }
+
       throw accountError;
     }
 
-    // 2. Fetch transactions for that account with pagination
-    const { data: transactions, error: txError } = await supabase
+    // --------------------------------------------------------
+    // GET TRANSACTIONS
+    // --------------------------------------------------------
+
+    const {
+      data: transactions,
+      error: txError
+    } = await supabase
       .from('transactions')
       .select('*')
       .eq('account_id', accountId)
-      .order('created_at', { ascending: false })
-      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+      .order('created_at', {
+        ascending: false
+      })
+      .range(
+        parseInt(offset),
+        parseInt(offset) +
+          parseInt(limit) -
+          1
+      );
 
-    if (txError) throw txError;
+    if (txError) {
+      throw txError;
+    }
 
-    // 3. Get total count for pagination
-    const { count, error: countError } = await supabase
+    // --------------------------------------------------------
+    // COUNT
+    // --------------------------------------------------------
+
+    const {
+      count,
+      error: countError
+    } = await supabase
       .from('transactions')
-      .select('*', { count: 'exact', head: true })
+      .select('*', {
+        count: 'exact',
+        head: true
+      })
       .eq('account_id', accountId);
 
-    if (countError) throw countError;
+    if (countError) {
+      throw countError;
+    }
 
-    // 4. Return response
-    res.json({
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    return res.json({
       success: true,
+
       transactions,
+
       pagination: {
         total: count,
         limit: parseInt(limit),
         offset: parseInt(offset)
       }
     });
+
   } catch (error) {
+
+    console.error(
+      'Get Transaction History Error:',
+      error
+    );
+
     next(error);
   }
 };
 
-
-// ============================================
+// ============================================================
 // GET TRANSACTION BY REFERENCE
-// ============================================
-const getTransactionByReference = async (req, res, next) => {
-  try {
-    const { referenceId } = req.params;
+// PUBLIC RECEIPT ENDPOINT
+// ============================================================
 
-    // 1. Fetch transaction by reference ID
-    const { data: transaction, error } = await supabase
+const getTransactionByReference = async (
+  req,
+  res,
+  next
+) => {
+  try {
+
+    const {
+      referenceId
+    } = req.params;
+
+    console.log(
+      'Looking for transaction with reference:',
+      referenceId
+    );
+
+    // --------------------------------------------------------
+    // VALIDATE REFERENCE
+    // --------------------------------------------------------
+
+    if (
+      !referenceId ||
+      referenceId.trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Reference ID is required'
+      });
+    }
+
+    // --------------------------------------------------------
+    // QUERY TRANSACTION
+    // --------------------------------------------------------
+
+    const {
+      data: transaction,
+      error
+    } = await supabase
       .from('transactions')
-      .select('*')
-      .eq('reference_id', referenceId)
+      .select(`
+        *,
+        accounts:account_id (
+          id,
+          account_number,
+          user_id,
+          profiles:user_id (
+            id,
+            full_name,
+            email,
+            phone
+          )
+        )
+      `)
+      .eq(
+        'reference_id',
+        referenceId
+      )
       .single();
+
+    // --------------------------------------------------------
+    // DATABASE ERROR
+    // --------------------------------------------------------
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return res.status(404).json({ success: false, error: 'Transaction not found' });
+
+      console.error(
+        'Supabase error:',
+        error
+      );
+
+      if (
+        error.code ===
+        'PGRST116'
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'Transaction not found with this reference'
+        });
       }
-      throw error;
+
+      return res.status(500).json({
+        success: false,
+        error:
+          'Database error occurred while fetching transaction'
+      });
     }
 
-    // 2. Verify the user owns the account associated with this transaction
-    const { data: account, error: accountError } = await supabase
-      .from('accounts')
-      .select('user_id')
-      .eq('id', transaction.account_id)
-      .single();
+    // --------------------------------------------------------
+    // NOT FOUND
+    // --------------------------------------------------------
 
-    if (accountError) throw accountError;
-
-    if (account.user_id !== req.user.id) {
-      return res.status(403).json({ success: false, error: 'Access denied' });
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error: 'Transaction not found'
+      });
     }
 
-    // 3. Return transaction
-    res.json({ success: true, transaction });
+    console.log(
+      'Transaction found:',
+      transaction.id
+    );
+
+    // --------------------------------------------------------
+    // PARSE METADATA
+    // --------------------------------------------------------
+
+    let metadata =
+      transaction.metadata || {};
+
+    if (
+      typeof metadata ===
+      'string'
+    ) {
+      try {
+        metadata =
+          JSON.parse(metadata);
+      } catch {
+        metadata = {};
+      }
+    }
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    return res.json({
+      success: true,
+
+      transaction: {
+        ...transaction,
+
+        amount:
+          parseFloat(
+            transaction.amount
+          ) || 0,
+
+        metadata
+      }
+    });
+
   } catch (error) {
-    next(error);
+
+    console.error(
+      'Get Transaction By Reference Error:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      error:
+        error.message ||
+        'Failed to fetch transaction'
+    });
   }
 };
-
 
 // ============================================================
 // EXPORTS
@@ -916,8 +1488,6 @@ const getTransactionByReference = async (req, res, next) => {
 module.exports = {
   initiateTransfer,
   verifyOtpAndComplete,
-		getTransactionHistory,
-  getTransactionByReference,
+  getTransactionHistory,
+  getTransactionByReference
 };
-
-

@@ -1,5 +1,6 @@
 const { supabase } = require('../db/supabase');
 const crypto = require('crypto');
+const { createAndSendNotification } = require('../utils/notifications');
 
 // ============================================================
 // HELPERS
@@ -67,24 +68,23 @@ const getConversation = async (conversationId) => {
   return data;
 };
 
-// This helper now only checks regular user access.
-// Admin checks are handled separately in each endpoint.
-const ensureConversationParticipant = (conversation, userId, role) => {
-  const normalizedRole = String(role).toLowerCase();
-  // For non‑admin, require user_id match
-  if (normalizedRole !== 'admin') {
-    if (conversation.user_id !== userId) {
-      const error = new Error('You do not have access to this conversation');
-      error.statusCode = 403;
-      throw error;
-    }
-  }
-  // For admin, we skip the check here – let the endpoint decide.
-};
-
 const getMessages = (conversation) => {
   if (!Array.isArray(conversation.messages)) return [];
   return conversation.messages;
+};
+
+// NEW: Fetch all active admins
+const getAllAdmins = async () => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .eq('role', 'admin')
+    .eq('status', 'active');
+  if (error) {
+    console.error('Failed to fetch admins:', error);
+    return [];
+  }
+  return data || [];
 };
 
 // ============================================================
@@ -125,6 +125,22 @@ const createConversation = async (req, res, next) => {
         message: 'Unable to create conversation.',
       });
     }
+
+    // --- Notify all admins ---
+    const io = req.app.get('io');
+    const admins = await getAllAdmins();
+    const senderName = profile.full_name || 'User';
+    for (const admin of admins) {
+      await createAndSendNotification(
+        io,
+        admin.id,
+        'system',
+        'New Support Request',
+        `${senderName} has started a new conversation.`,
+        data.id
+      );
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Conversation created successfully.',
@@ -173,6 +189,22 @@ const startNewConversation = async (req, res, next) => {
         message: 'Unable to start a new conversation.',
       });
     }
+
+    // --- Notify all admins ---
+    const io = req.app.get('io');
+    const admins = await getAllAdmins();
+    const senderName = profile.full_name || 'User';
+    for (const admin of admins) {
+      await createAndSendNotification(
+        io,
+        admin.id,
+        'system',
+        'New Support Request',
+        `${senderName} has started a new conversation.`,
+        data.id
+      );
+    }
+
     return res.status(201).json({
       success: true,
       message: 'New conversation started.',
@@ -212,7 +244,7 @@ const getUserConversations = async (req, res, next) => {
 };
 
 // ============================================================
-// GET SINGLE CONVERSATION – ALLOW ADMIN TO VIEW ANY
+// GET SINGLE CONVERSATION
 // ============================================================
 const getConversationById = async (req, res, next) => {
   try {
@@ -224,7 +256,6 @@ const getConversationById = async (req, res, next) => {
 
     const conversation = await getConversation(conversationId);
 
-    // Admin can view any conversation; non‑admin must be the owner
     if (role !== 'admin') {
       if (conversation.user_id !== userId) {
         return res.status(403).json({
@@ -276,53 +307,9 @@ const getAdminConversations = async (req, res, next) => {
   }
 };
 
-// ============================================================
-// ADMIN — CLAIM CONVERSATION
-// ============================================================
-const claimConversation = async (req, res, next) => {
-  try {
-    const adminId = req.user.id;
-    await ensureAdmin(adminId);
-    const { conversationId } = req.params;
-    const conversation = await getConversation(conversationId);
-    if (conversation.status !== 'active') {
-      return res.status(400).json({
-        success: false,
-        message: 'Closed conversations cannot be claimed.',
-      });
-    }
-    if (conversation.admin_id && conversation.admin_id !== adminId) {
-      return res.status(409).json({
-        success: false,
-        message: 'This conversation is already assigned to another admin.',
-      });
-    }
-    const { data, error } = await supabase
-      .from('chat_conversations')
-      .update({ admin_id: adminId })
-      .eq('id', conversationId)
-      .is('admin_id', null)
-      .eq('status', 'active')
-      .select('*')
-      .single();
-    if (error || !data) {
-      return res.status(409).json({
-        success: false,
-        message: 'Unable to claim conversation. It may already be assigned.',
-      });
-    }
-    return res.json({
-      success: true,
-      message: 'Conversation assigned successfully.',
-      conversation: data,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
 
 // ============================================================
-// SEND MESSAGE – AUTO‑ASSIGN ADMIN IF UNASSIGNED
+// SEND MESSAGE
 // ============================================================
 const sendMessage = async (req, res, next) => {
   try {
@@ -348,7 +335,6 @@ const sendMessage = async (req, res, next) => {
 
     // ---- Admin handling ----
     if (role === 'admin') {
-      // If conversation has no admin_id, auto‑assign this admin
       if (!conversation.admin_id) {
         const { data: updated, error: updateErr } = await supabase
           .from('chat_conversations')
@@ -357,13 +343,11 @@ const sendMessage = async (req, res, next) => {
           .select('*')
           .single();
         if (!updateErr && updated) {
-          conversation.admin_id = userId; // update local object
+          conversation.admin_id = userId;
         } else {
           console.error('Auto-assign error:', updateErr);
-          // Continue anyway (message will be sent, but admin_id stays null)
         }
       }
-      // If conversation is assigned to a different admin, block
       if (conversation.admin_id && conversation.admin_id !== userId) {
         return res.status(403).json({
           success: false,
@@ -371,7 +355,6 @@ const sendMessage = async (req, res, next) => {
         });
       }
     } else {
-      // ---- User handling ----
       if (conversation.user_id !== userId) {
         return res.status(403).json({
           success: false,
@@ -421,6 +404,43 @@ const sendMessage = async (req, res, next) => {
       });
     }
 
+    // --- NOTIFY THE OTHER PARTICIPANT ---
+    const io = req.app.get('io');
+    let recipientId = null;
+    if (role === 'admin') {
+      recipientId = conversation.user_id;
+    } else {
+      // If admin assigned, notify that admin; otherwise notify all admins
+      if (conversation.admin_id) {
+        recipientId = conversation.admin_id;
+      } else {
+        const admins = await getAllAdmins();
+        for (const admin of admins) {
+          await createAndSendNotification(
+            io,
+            admin.id,
+            'system',
+            `New message from ${profile.full_name || 'User'}`,
+            messageText.slice(0, 100) + (messageText.length > 100 ? '...' : ''),
+            conversationId
+          );
+        }
+        recipientId = null;
+      }
+    }
+
+    if (recipientId) {
+      const senderName = profile.full_name || 'Someone';
+      await createAndSendNotification(
+        io,
+        recipientId,
+        'system',
+        `New message from ${senderName}`,
+        messageText.slice(0, 100) + (messageText.length > 100 ? '...' : ''),
+        conversationId
+      );
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Message sent successfully.',
@@ -433,7 +453,7 @@ const sendMessage = async (req, res, next) => {
 };
 
 // ============================================================
-// MARK CHAT AS READ – ADMIN CAN MARK ANY
+// MARK CHAT AS READ
 // ============================================================
 const markConversationRead = async (req, res, next) => {
   try {
@@ -443,7 +463,6 @@ const markConversationRead = async (req, res, next) => {
     const role = String(profile.role).toLowerCase();
     const conversation = await getConversation(conversationId);
 
-    // Admin can mark any conversation; regular user must be the owner
     if (role !== 'admin' && conversation.user_id !== userId) {
       return res.status(403).json({
         success: false,
@@ -475,7 +494,7 @@ const markConversationRead = async (req, res, next) => {
 };
 
 // ============================================================
-// CLOSE CONVERSATION – ADMIN CAN CLOSE ANY
+// CLOSE CONVERSATION
 // ============================================================
 const closeConversation = async (req, res, next) => {
   try {
@@ -485,7 +504,6 @@ const closeConversation = async (req, res, next) => {
     const role = String(profile.role).toLowerCase();
     const conversation = await getConversation(conversationId);
 
-    // Admin can close any; regular user must be the owner
     if (role !== 'admin' && conversation.user_id !== userId) {
       return res.status(403).json({
         success: false,
@@ -516,6 +534,27 @@ const closeConversation = async (req, res, next) => {
       });
     }
 
+    // --- NOTIFY THE OTHER PARTICIPANT ---
+    const io = req.app.get('io');
+    let otherUserId = null;
+    if (role === 'admin') {
+      otherUserId = conversation.user_id;
+    } else {
+      otherUserId = conversation.admin_id;
+    }
+
+    if (otherUserId) {
+      const closerName = profile.full_name || 'Someone';
+      await createAndSendNotification(
+        io,
+        otherUserId,
+        'system',
+        'Conversation Closed',
+        `${closerName} has closed this conversation.`,
+        conversationId
+      );
+    }
+
     return res.json({
       success: true,
       message: 'Conversation closed successfully.',
@@ -526,6 +565,116 @@ const closeConversation = async (req, res, next) => {
   }
 };
 
+
+// ============================================================
+// DELETE CONVERSATION
+// Admin only
+// ============================================================
+const deleteConversation = async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    const role = String(
+      req.user?.role ||
+        req.user?.user_metadata?.role ||
+        ''
+    ).toLowerCase();
+
+    // ----------------------------------------------------------
+    // ADMIN AUTHORIZATION
+    // ----------------------------------------------------------
+
+    if (!userId || role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only administrators can delete conversations.',
+      });
+    }
+
+    const { conversationId } = req.params;
+
+    if (!conversationId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Conversation ID is required.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // VERIFY CONVERSATION EXISTS
+    // ----------------------------------------------------------
+
+    const { data: conversation, error: findError } =
+      await supabase
+        .from('chat_conversations')
+        .select('id, user_id, status')
+        .eq('id', conversationId)
+        .maybeSingle();
+
+    if (findError) {
+      console.error(
+        '[Chat] Delete conversation lookup error:',
+        findError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to find conversation.',
+      });
+    }
+
+    if (!conversation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Conversation not found.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // DELETE
+    // ----------------------------------------------------------
+
+    const { error: deleteError } = await supabase
+      .from('chat_conversations')
+      .delete()
+      .eq('id', conversationId);
+
+    if (deleteError) {
+      console.error(
+        '[Chat] Delete conversation error:',
+        deleteError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to delete conversation.',
+      });
+    }
+
+    // ----------------------------------------------------------
+    // RESPONSE
+    // ----------------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+      message: 'Conversation deleted successfully.',
+      conversationId,
+    });
+  } catch (error) {
+    console.error(
+      '[Chat] Delete conversation exception:',
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: 'An unexpected error occurred while deleting the conversation.',
+    });
+  }
+};
+
+
+
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -535,8 +684,8 @@ module.exports = {
   getUserConversations,
   getConversationById,
   getAdminConversations,
-  claimConversation,
   sendMessage,
   markConversationRead,
   closeConversation,
+		deleteConversation,
 };

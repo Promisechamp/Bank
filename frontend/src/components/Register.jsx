@@ -1,7 +1,9 @@
 // src/pages/SupportPageRegister.jsx
 
 import React from 'react';
+import { Link } from 'react-router-dom';
 import {
+  ArrowLeft,
   ArrowRight,
   Building2,
   CheckCircle2,
@@ -24,13 +26,13 @@ const SUPPORT_INFO = {
   accountOfficer: {
     name: 'Registration Support Team',
     role: 'Account Setup Specialists',
-    email: 'register@yourbank.com',
-    phone: '+234 800 000 0000',
+    email: 'trustycdubank@gmail.com',
+    phone: '+1(323) 212-0135',
   },
 
   business: {
-    email: 'support@yourbank.com',
-    phone: '+234 800 000 0000',
+    email: 'support@trustybank.com',
+    phone: '+1(323) 212-0135',
     hours: 'Available 24/7',
   },
 };
@@ -256,6 +258,8 @@ const SupportPageRegister = () => {
               sm:justify-between
             "
           >
+            {/* LEFT — TITLE */}
+
             <div className="flex min-w-0 items-center gap-3">
               <div
                 className="
@@ -293,21 +297,60 @@ const SupportPageRegister = () => {
               </div>
             </div>
 
-            <div
-              className="
-                flex w-fit items-center gap-2
-                rounded-xl border border-gray-200
-                bg-white px-3 py-2
-              "
-            >
-              <ShieldCheck
-                className="h-3.5 w-3.5 text-emerald-500"
-                strokeWidth={1.8}
-              />
+            {/* RIGHT — ACTIONS */}
 
-              <span className="text-[10px] font-semibold text-gray-500">
-                Secure banking
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {/* BACK TO LOGIN */}
+
+              <Link
+                to="/login"
+                className="
+                  group inline-flex items-center gap-2
+                  rounded-xl border border-gray-200
+                  bg-white px-3.5 py-2
+                  text-[11px] font-semibold text-gray-700
+                  shadow-[0_1px_2px_rgba(15,23,42,0.03)]
+                  transition duration-200
+                  hover:-translate-y-0.5
+                  hover:border-gray-300
+                  hover:bg-gray-50
+                  hover:text-gray-900
+                  focus:outline-none
+                  focus:ring-2 focus:ring-primary-500/20
+                "
+              >
+                <ArrowLeft
+                  className="
+                    h-3.5 w-3.5
+                    text-gray-400
+                    transition
+                    group-hover:-translate-x-0.5
+                    group-hover:text-primary-600
+                  "
+                  strokeWidth={1.8}
+                />
+
+                <span>Back to Login</span>
+              </Link>
+
+              {/* SECURITY STATUS */}
+
+              <div
+                className="
+                  flex items-center gap-2
+                  rounded-xl border border-gray-200
+                  bg-white px-3 py-2
+                "
+              >
+                <ShieldCheck
+                  className="h-3.5 w-3.5 text-emerald-500"
+                  strokeWidth={1.8}
+                />
+
+                <span className="text-[10px] font-semibold text-gray-500">
+                  Secure banking
+                </span>
+              </div>
             </div>
           </div>
 

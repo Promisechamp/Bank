@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { transactionsAPI, accountsAPI } from '../api';
 import { formatCurrency, validateAmount } from '../utils/helpers';
 import Modal from './Modal';
+import Receipt from './Receipt';
 import { toast } from 'sonner';
 import {
   ArrowRight,
@@ -25,6 +27,8 @@ import {
   User,
   Wallet,
   Zap,
+  FileText,
+  ExternalLink,
 } from 'lucide-react';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -411,6 +415,7 @@ const ClassicDebitCard = ({
 /* -------------------------------------------------------------------------- */
 
 const Transfer = () => {
+  const navigate = useNavigate();
   const [transferType, setTransferType] = useState('external');
 
   const [accounts, setAccounts] = useState([]);
@@ -441,6 +446,11 @@ const Transfer = () => {
   const [otpReference, setOtpReference] = useState('');
   const [otpAttempts, setOtpAttempts] = useState(0);
 
+  // Receipt modal state
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [receiptTransaction, setReceiptTransaction] = useState(null);
+  const [autoRedirectCountdown, setAutoRedirectCountdown] = useState(0);
+
   useEffect(() => {
     fetchAccounts();
   }, []);
@@ -459,6 +469,20 @@ const Transfer = () => {
 
     return () => clearTimeout(timer);
   }, [recipientAccountNumber]);
+
+  // Auto-redirect countdown
+  useEffect(() => {
+    let interval;
+    if (autoRedirectCountdown > 0) {
+      interval = setInterval(() => {
+        setAutoRedirectCountdown((prev) => prev - 1);
+      }, 1000);
+    } else if (autoRedirectCountdown === 0 && success && reference) {
+      // Redirect to receipt page
+      navigate(`/receipt/${reference}`);
+    }
+    return () => clearInterval(interval);
+  }, [autoRedirectCountdown, success, reference, navigate]);
 
   const fetchAccounts = async () => {
     try {
@@ -546,11 +570,35 @@ const Transfer = () => {
     setAccountCheckResult(null);
     setAccountCheckError('');
     setError('');
+    setSuccess('');
+    setReference('');
+    setResultStatus('');
+    setInitializationStep('idle');
+    setAutoRedirectCountdown(0);
+  };
+
+  const handleViewReceipt = () => {
+    if (reference) {
+      // Fetch the full transaction details for the receipt
+      const fetchTransaction = async () => {
+        try {
+          const response = await transactionsAPI.getByReference(reference);
+          if (response?.success && response?.transaction) {
+            setReceiptTransaction(response.transaction);
+            setReceiptModalOpen(true);
+          }
+        } catch (err) {
+          toast.error('Could not load receipt details');
+        }
+      };
+      fetchTransaction();
+    }
   };
 
   const handleTransferSubmit = async (e) => {
     e.preventDefault();
 
+    // Reset states
     setError('');
     setSuccess('');
     setReference('');
@@ -627,31 +675,30 @@ const Transfer = () => {
         setOtpStep('sent');
         setOtpModalOpen(true);
         setInitializationStep('idle');
+        setLoading(false);
 
         toast.success('Verification code sent');
-      } else {
-        setReference(response.reference || '');
-        setResultStatus(
-          response.status || 'completed'
-        );
-
-        setSuccess(
-          response.message ||
-            'Transfer completed successfully.'
-        );
-
-        resetTransferForm();
-        await fetchAccounts();
+        return;
       }
+
+      // No OTP required - transfer completed immediately
+      setReference(response.reference || '');
+      setResultStatus(response.status || 'completed');
+      setSuccess(response.message || 'Transfer completed successfully.');
+      setLoading(false);
+      
+      // Start auto-redirect countdown
+      setAutoRedirectCountdown(5);
+      
+      await fetchAccounts();
+
     } catch (err) {
       setError(
         err?.error ||
           err?.message ||
           'Transfer initiation failed.'
       );
-
       setInitializationStep('idle');
-    } finally {
       setLoading(false);
     }
   };
@@ -688,23 +735,22 @@ const Transfer = () => {
           setOtpError(
             'Too many failed attempts. Please try again later.'
           );
-
           setOtpStep('idle');
-
           await sleep(500);
           setOtpModalOpen(false);
-        } else {
-          setOtpError(
-            `Invalid OTP. ${
-              3 - nextAttempts
-            } attempt${
-              3 - nextAttempts === 1 ? '' : 's'
-            } remaining.`
-          );
-
-          setOtpStep('sent');
+          setOtpLoading(false);
+          return;
         }
 
+        setOtpError(
+          `Invalid OTP. ${
+            3 - nextAttempts
+          } attempt${
+            3 - nextAttempts === 1 ? '' : 's'
+          } remaining.`
+        );
+        setOtpStep('sent');
+        setOtpLoading(false);
         return;
       }
 
@@ -714,48 +760,49 @@ const Transfer = () => {
 
       if (response.status === 'pending_review') {
         setOtpStep('pending_review');
-
-        setReference(
-          response.reference || otpReference
-        );
-
+        setReference(response.reference || otpReference);
         setResultStatus('pending_review');
-
+        setSuccess('Transfer submitted for review');
+        setLoading(false);
+        setOtpLoading(false);
+        
+        // Start auto-redirect countdown for pending review too
+        setAutoRedirectCountdown(5);
+        
+        await fetchAccounts();
         toast.success('Transfer submitted for review');
-
         return;
       }
 
       if (response.status === 'completed') {
         setOtpStep('completed');
-
-        setReference(
-          response.reference || otpReference
-        );
-
+        setReference(response.reference || otpReference);
         setResultStatus('completed');
-
-        toast.success('Transfer completed');
-
+        setSuccess('Transfer completed successfully');
+        setLoading(false);
+        setOtpLoading(false);
+        
+        // Start auto-redirect countdown
+        setAutoRedirectCountdown(5);
+        
         await fetchAccounts();
-
+        toast.success('Transfer completed');
         return;
       }
 
       setOtpError(
         'The transfer returned an unexpected status.'
       );
-
       setOtpStep('sent');
+      setOtpLoading(false);
+
     } catch (err) {
       setOtpError(
         err?.error ||
           err?.message ||
           'Unable to verify this transaction.'
       );
-
       setOtpStep('sent');
-    } finally {
       setOtpLoading(false);
     }
   };
@@ -773,6 +820,18 @@ const Transfer = () => {
     setOtpCode('');
     setOtpError('');
     setOtpReference('');
+    
+    // If OTP was cancelled and we're still in loading state, reset it
+    if (loading) {
+      setLoading(false);
+      setInitializationStep('idle');
+    }
+  };
+
+  // Handle successful OTP completion - close modal and reset
+  const handleOtpDone = () => {
+    closeOtpModal();
+    resetTransferForm();
   };
 
   if (fetching) {
@@ -906,6 +965,7 @@ const Transfer = () => {
             onClick={() => {
               setTransferType('internal');
               setError('');
+              resetTransferForm();
             }}
           />
 
@@ -918,6 +978,7 @@ const Transfer = () => {
             onClick={() => {
               setTransferType('external');
               setError('');
+              resetTransferForm();
             }}
           />
 
@@ -930,6 +991,7 @@ const Transfer = () => {
             onClick={() => {
               setTransferType('interbank');
               setError('');
+              resetTransferForm();
             }}
           />
         </div>
@@ -943,15 +1005,44 @@ const Transfer = () => {
         <div className="mt-6">
           <InfoBanner
             icon={CheckCircle}
-            title="Transfer completed"
-            tone="blue"
+            title={resultStatus === 'pending_review' ? 'Transfer submitted' : 'Transfer completed'}
+            tone={resultStatus === 'pending_review' ? 'amber' : 'blue'}
           >
             {success}
 
             {reference && (
-              <span className="ml-1 font-mono">
-                Reference: {reference}
-              </span>
+              <>
+                <span className="ml-1 font-mono">
+                  Reference: {reference}
+                </span>
+                
+                {/* View Receipt Link */}
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    onClick={handleViewReceipt}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    View Receipt
+                  </button>
+                  
+                  <span className="text-gray-300">|</span>
+                  
+                  <button
+                    onClick={() => navigate(`/receipt/${reference}`)}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary-600 hover:text-primary-700 transition-colors"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Open Full Page
+                  </button>
+                  
+                  {autoRedirectCountdown > 0 && (
+                    <span className="text-xs text-gray-400">
+                      Redirecting in {autoRedirectCountdown}s...
+                    </span>
+                  )}
+                </div>
+              </>
             )}
           </InfoBanner>
         </div>
@@ -962,6 +1053,7 @@ const Transfer = () => {
           <InfoBanner
             icon={AlertCircleIcon}
             title="Transfer could not be started"
+            tone="amber"
           >
             {error}
           </InfoBanner>
@@ -1659,10 +1751,7 @@ const Transfer = () => {
             </div>
 
             <button
-              onClick={() => {
-                closeOtpModal();
-                resetTransferForm();
-              }}
+              onClick={handleOtpDone}
               className="btn-primary mt-5 w-full rounded-xl"
             >
               Done
@@ -1716,15 +1805,39 @@ const Transfer = () => {
             </div>
 
             <button
-              onClick={() => {
-                closeOtpModal();
-                resetTransferForm();
-              }}
+              onClick={handleOtpDone}
               className="btn-primary mt-5 w-full rounded-xl"
             >
               Done
             </button>
           </div>
+        )}
+      </Modal>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* RECEIPT MODAL                                                       */}
+      {/* ------------------------------------------------------------------ */}
+
+      <Modal
+        isOpen={receiptModalOpen}
+        onClose={() => {
+          setReceiptModalOpen(false);
+          setReceiptTransaction(null);
+        }}
+        title="Transaction Receipt"
+        size="lg"
+        position="center"
+        showCloseButton={true}
+        closeOnOutsideClick={true}
+      >
+        {receiptTransaction && (
+          <Receipt
+            transaction={receiptTransaction}
+            onClose={() => {
+              setReceiptModalOpen(false);
+              setReceiptTransaction(null);
+            }}
+          />
         )}
       </Modal>
     </div>

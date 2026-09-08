@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import Notifications from '../Notifications';
 
 import {
   LayoutDashboard,
@@ -14,17 +15,85 @@ import {
   Home,
   Menu,
   X,
-		MessagesSquare,
+  MessagesSquare,
   ChevronLeft,
   ChevronRight,
-  Bell,
-  CheckCircle2,
-  AlertTriangle,
-  ArrowRightLeft,
   CreditCard,
-  MoreHorizontal,
-  Settings,
+  LifeBuoy,
+  KeyRound,
+  PanelLeft,
 } from 'lucide-react';
+
+import { adminAPI } from '../../api';
+
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const getInitials = (name) => {
+  if (!name) return 'AD';
+
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('');
+};
+
+
+const getPageName = (pathname) => {
+  if (pathname.startsWith('/admin/accounts/')) {
+    return 'Account Details';
+  }
+
+  if (pathname === '/admin/accounts') {
+    return 'Accounts';
+  }
+
+  if (pathname.startsWith('/admin/users/')) {
+    return 'User Details';
+  }
+
+  if (pathname === '/admin/users') {
+    return 'Users';
+  }
+
+  if (pathname.startsWith('/admin/transactions/')) {
+    return 'Transaction Details';
+  }
+
+  if (pathname === '/admin/transactions') {
+    return 'Transactions';
+  }
+
+  if (pathname === '/admin/pending-transactions') {
+    return 'Pending Approvals';
+  }
+
+  if (pathname.startsWith('/admin/chat')) {
+    return 'Chats';
+  }
+
+  if (
+    pathname === '/admin/card' ||
+    pathname.startsWith('/admin/card-tracking/')
+  ) {
+    return 'Cards';
+  }
+
+  if (pathname.startsWith('/admin/tokens')) {
+    return 'Register Tokens';
+  }
+
+  return 'Accounts';
+};
+
+
+// ============================================================
+// ADMIN LAYOUT
+// ============================================================
 
 const AdminLayout = ({ children }) => {
   const { user, logout } = useAuth();
@@ -34,48 +103,62 @@ const AdminLayout = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [stats, setStats] = useState({
+    unreadChats: 0,
+    cardOrders: 0,
+    pendingTransactions: 0,
+  });
 
-  const notificationRef = useRef(null);
+  const [statsLoading, setStatsLoading] = useState(true);
 
-  // --------------------------------------------------------------------------
-  // Demo notifications
-  // Replace this with your notifications API later.
-  // --------------------------------------------------------------------------
 
-  const [notifications, setNotifications] = useState([
-    {
-      id: 1,
-      type: 'transaction',
-      title: 'Pending transaction',
-      message: 'A transfer is waiting for administrator approval.',
-      time: 'Just now',
-      unread: true,
-      icon: ArrowRightLeft,
-    },
-    {
-      id: 2,
-      type: 'user',
-      title: 'New user registered',
-      message: 'A new customer account requires attention.',
-      time: '12 min ago',
-      unread: true,
-      icon: Users,
-    },
-    {
-      id: 3,
-      type: 'card',
-      title: 'Debit card request',
-      message: 'A new debit card order has been submitted.',
-      time: '1 hr ago',
-      unread: false,
-      icon: CreditCard,
-    },
-  ]);
+  // ==========================================================
+  // FETCH ADMIN STATS
+  // ==========================================================
 
-  // --------------------------------------------------------------------------
-  // Responsive sidebar
-  // --------------------------------------------------------------------------
+  useEffect(() => {
+    let mounted = true;
+
+    const fetchStats = async () => {
+      try {
+        setStatsLoading(true);
+
+        const response = await adminAPI.getLayoutStats();
+
+        if (!mounted) return;
+
+        if (response?.success && response?.stats) {
+          setStats({
+            unreadChats: Number(response.stats.unreadChats || 0),
+            cardOrders: Number(response.stats.cardOrders || 0),
+            pendingTransactions: Number(
+              response.stats.pendingTransactions || 0
+            ),
+          });
+        }
+      } catch (error) {
+        console.error(
+          'Failed to fetch admin layout stats:',
+          error
+        );
+      } finally {
+        if (mounted) {
+          setStatsLoading(false);
+        }
+      }
+    };
+
+    fetchStats();
+
+    return () => {
+      mounted = false;
+    };
+  }, [location.pathname]);
+
+
+  // ==========================================================
+  // RESPONSIVE SIDEBAR
+  // ==========================================================
 
   useEffect(() => {
     const checkMobile = () => {
@@ -99,45 +182,18 @@ const AdminLayout = ({ children }) => {
     };
   }, []);
 
-  // --------------------------------------------------------------------------
-  // Close notification dropdown when clicking outside
-  // --------------------------------------------------------------------------
 
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (
-        notificationRef.current &&
-        !notificationRef.current.contains(event.target)
-      ) {
-        setNotificationsOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-
-    return () => {
-      document.removeEventListener(
-        'mousedown',
-        handleClickOutside
-      );
-    };
-  }, []);
-
-  // --------------------------------------------------------------------------
-  // Logout
-  // --------------------------------------------------------------------------
+  // ==========================================================
+  // ACTIONS
+  // ==========================================================
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/login', { replace: true });
   };
 
-  // --------------------------------------------------------------------------
-  // Sidebar
-  // --------------------------------------------------------------------------
-
   const toggleSidebar = () => {
-    setSidebarOpen((current) => !current);
+    setSidebarOpen((previous) => !previous);
   };
 
   const closeSidebar = () => {
@@ -146,50 +202,64 @@ const AdminLayout = ({ children }) => {
     }
   };
 
-  // --------------------------------------------------------------------------
-  // Navigation
-  // --------------------------------------------------------------------------
 
-  const navItems = [
-    {
-      to: '/admin',
-      icon: LayoutDashboard,
-      label: 'Dashboard',
-    },
-    {
-      to: '/admin/users',
-      icon: Users,
-      label: 'Users',
-    },
-    {
-      to: '/admin/accounts',
-      icon: Wallet,
-      label: 'Accounts',
-    },
-    {
-      to: '/admin/transactions',
-      icon: History,
-      label: 'Transactions',
-    },
-    {
-      to: '/admin/pending-transactions',
-      icon: Clock3,
-      label: 'Pending Approvals',
-      badge: 0,
-    },
-				{
-      to: '/admin/chat',
-      icon: MessagesSquare,
-      label: 'Chats',
-      badge: 0,
-    },
-				{
-      to: '/admin/card',
-      icon: CreditCard,
-      label: 'Cards Order',
-      badge: 0,
-    },
-  ];
+  // ==========================================================
+  // NAVIGATION
+  // ==========================================================
+
+  const navItems = useMemo(
+    () => [
+      {
+        to: '/admin/accounts',
+        icon: Wallet,
+        label: 'Accounts',
+      },
+
+      {
+        to: '/admin/users',
+        icon: Users,
+        label: 'Users',
+      },
+
+      {
+        to: '/admin/transactions',
+        icon: History,
+        label: 'Transactions',
+      },
+
+      {
+        to: '/admin/pending-transactions',
+        icon: Clock3,
+        label: 'Pending Approvals',
+        badge: stats.pendingTransactions,
+        badgeType: 'warning',
+      },
+
+      {
+        to: '/admin/chat',
+        icon: MessagesSquare,
+        label: 'Chats',
+        badge: stats.unreadChats,
+        badgeType: 'primary',
+      },
+
+      {
+        to: '/admin/card',
+        icon: CreditCard,
+        label: 'Cards Order',
+        badge: stats.cardOrders,
+        badgeType: 'primary',
+      },
+
+      {
+        to: '/admin/tokens',
+        icon: KeyRound,
+        label: 'Register Tokens',
+      },
+    ],
+    [stats]
+  );
+
 
   const secondaryItems = [
     {
@@ -199,72 +269,99 @@ const AdminLayout = ({ children }) => {
     },
   ];
 
+
+  // ==========================================================
+  // ACTIVE ROUTE
+  // ==========================================================
+
   const isActive = (path) => {
-    if (path === '/admin') {
-      return location.pathname === '/admin';
+    if (path === '/admin/accounts') {
+      return (
+        location.pathname === '/admin/accounts' ||
+        location.pathname.startsWith('/admin/accounts/')
+      );
     }
 
-    return location.pathname.startsWith(path);
-  };
+    if (path === '/admin/users') {
+      return (
+        location.pathname === '/admin/users' ||
+        location.pathname.startsWith('/admin/users/')
+      );
+    }
 
-  // --------------------------------------------------------------------------
-  // Notifications
-  // --------------------------------------------------------------------------
+    if (path === '/admin/transactions') {
+      return (
+        location.pathname === '/admin/transactions' ||
+        location.pathname.startsWith('/admin/transactions/')
+      );
+    }
 
-  const unreadCount = notifications.filter(
-    (notification) => notification.unread
-  ).length;
+    if (path === '/admin/card') {
+      return (
+        location.pathname === '/admin/card' ||
+        location.pathname.startsWith('/admin/card-tracking/')
+      );
+    }
 
-  const markAllAsRead = () => {
-    setNotifications((current) =>
-      current.map((notification) => ({
-        ...notification,
-        unread: false,
-      }))
+    return (
+      location.pathname === path ||
+      location.pathname.startsWith(`${path}/`)
     );
   };
 
-  const markNotificationAsRead = (id) => {
-    setNotifications((current) =>
-      current.map((notification) =>
-        notification.id === id
-          ? {
-              ...notification,
-              unread: false,
-            }
-          : notification
-      )
-    );
-  };
 
-  // --------------------------------------------------------------------------
-  // Render
-  // --------------------------------------------------------------------------
+  // ==========================================================
+  // PAGE INFORMATION
+  // ==========================================================
+
+  const pageName = getPageName(location.pathname);
+
 
   return (
-    <div className="min-h-screen bg-[#f7f8fa] text-gray-900">
+    <div className="min-h-screen bg-[#f8fafc] text-gray-900">
 
-      {/* ======================================================================
+
+      {/* ======================================================
           TOP BAR
-          ====================================================================== */}
+          ====================================================== */}
 
-      <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-gray-200/80 bg-white/95 backdrop-blur-xl">
+      <header
+        className="
+          fixed inset-x-0 top-0 z-50
+          h-16
+          border-b border-gray-200/80
+          bg-white/95
+          backdrop-blur-xl
+        "
+      >
+        <div className="flex h-full items-center justify-between px-3 sm:px-4 md:px-6">
 
-        <div className="flex h-full items-center justify-between px-4 md:px-6">
 
-          {/* --------------------------------------------------------------
+          {/* ==================================================
               BRAND
-          -------------------------------------------------------------- */}
+              ================================================== */}
 
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
 
             {/* Mobile menu */}
-
             <button
               type="button"
               onClick={toggleSidebar}
-              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-500 transition hover:bg-gray-100 md:hidden"
-              aria-label="Toggle sidebar"
+              className="
+                flex h-10 w-10 shrink-0
+                items-center justify-center
+                rounded-xl
+                text-gray-500
+                transition
+                hover:bg-gray-100
+                hover:text-gray-900
+                md:hidden
+              "
+              aria-label={
+                sidebarOpen
+                  ? 'Close navigation'
+                  : 'Open navigation'
+              }
             >
               {sidebarOpen ? (
                 <X className="h-5 w-5" />
@@ -273,247 +370,108 @@ const AdminLayout = ({ children }) => {
               )}
             </button>
 
-            {/* Brand */}
 
-            <div className="flex items-center gap-3">
+            {/* Brand links to real admin entry point */}
+            <Link
+              to="/admin/accounts"
+              onClick={closeSidebar}
+              className="
+                group
+                flex
+                min-w-0
+                items-center
+                gap-2.5
+                sm:gap-3
+              "
+            >
 
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-600 text-white shadow-sm">
-                <Shield className="h-4.5 w-4.5" />
+              <div
+                className="
+                  relative
+                  flex h-9 w-9 shrink-0
+                  items-center justify-center
+                  rounded-xl
+                  bg-primary-600
+                  text-white
+                  shadow-sm
+                  shadow-primary-600/20
+                  transition
+                  group-hover:scale-[1.03]
+                "
+              >
+                <Shield className="h-[18px] w-[18px]" />
+
+                <span
+                  className="
+                    absolute
+                    -right-0.5
+                    -top-0.5
+                    h-2
+                    w-2
+                    rounded-full
+                    bg-emerald-400
+                    ring-2
+                    ring-white
+                  "
+                />
               </div>
 
-              <div className="hidden sm:block">
-                <p className="text-sm font-bold tracking-tight text-gray-950">
+
+              <div className="hidden min-w-0 sm:block">
+                <p className="truncate text-sm font-bold tracking-tight text-gray-950">
                   Admin Console
                 </p>
 
-                <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                <p className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">
                   Banking Operations
                 </p>
               </div>
 
-            </div>
+            </Link>
 
           </div>
 
 
-          {/* --------------------------------------------------------------
+          {/* ==================================================
               RIGHT SIDE
-          -------------------------------------------------------------- */}
+              ================================================== */}
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
 
-            {/* Notifications */}
+            <Notifications />
 
-            <div
-              ref={notificationRef}
-              className="relative"
-            >
-
-              <button
-                type="button"
-                onClick={() =>
-                  setNotificationsOpen((current) => !current)
-                }
-                className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition ${
-                  notificationsOpen
-                    ? 'bg-primary-50 text-primary-600'
-                    : 'text-gray-500 hover:bg-gray-100'
-                }`}
-                aria-label="Notifications"
-              >
-
-                <Bell className="h-5 w-5" />
-
-                {unreadCount > 0 && (
-                  <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white ring-2 ring-white">
-                    {unreadCount > 9 ? '9+' : unreadCount}
-                  </span>
-                )}
-
-              </button>
-
-
-              {/* Notification dropdown */}
-
-              {notificationsOpen && (
-                <div className="fixed left-1/2 top-[270px] w-[calc(100vw-2rem)] max-w-[380px] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl z-50">
-
-                  {/* Header */}
-
-                  <div className="flex items-center justify-between border-b border-gray-100 px-4 py-4">
-
-                    <div>
-                      <h3 className="text-sm font-bold text-gray-900">
-                        Notifications
-                      </h3>
-
-                      <p className="mt-0.5 text-xs text-gray-400">
-                        {unreadCount > 0
-                          ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'}`
-                          : 'You re all caught up'}
-                      </p>
-                    </div>
-
-                    {unreadCount > 0 && (
-                      <button
-                        type="button"
-                        onClick={markAllAsRead}
-                        className="text-xs font-semibold text-primary-600 hover:text-primary-700"
-                      >
-                        Mark all read
-                      </button>
-                    )}
-
-                  </div>
-
-
-                  {/* Notifications */}
-
-                  <div className="max-h-[380px] overflow-y-auto">
-
-                    {notifications.length === 0 ? (
-
-                      <div className="px-6 py-10 text-center">
-
-                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
-                          <Bell className="h-5 w-5 text-gray-400" />
-                        </div>
-
-                        <p className="mt-3 text-sm font-semibold text-gray-900">
-                          No notifications
-                        </p>
-
-                        <p className="mt-1 text-xs text-gray-400">
-                          New activity will appear here.
-                        </p>
-
-                      </div>
-
-                    ) : (
-
-                      notifications.map((notification) => {
-
-                        const Icon = notification.icon;
-
-                        return (
-                          <button
-                            key={notification.id}
-                            type="button"
-                            onClick={() => {
-                              markNotificationAsRead(
-                                notification.id
-                              );
-
-                              if (
-                                notification.type ===
-                                'transaction'
-                              ) {
-                                navigate(
-                                  '/admin/pending-transactions'
-                                );
-
-                                setNotificationsOpen(
-                                  false
-                                );
-                              }
-                            }}
-                            className={`flex w-full gap-3 border-b border-gray-100 px-4 py-4 text-left transition hover:bg-gray-50 ${
-                              notification.unread
-                                ? 'bg-primary-50/40'
-                                : 'bg-white'
-                            }`}
-                          >
-
-                            <div
-                              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
-                                notification.type ===
-                                'transaction'
-                                  ? 'bg-amber-50 text-amber-600'
-                                  : notification.type ===
-                                      'card'
-                                    ? 'bg-primary-50 text-primary-600'
-                                    : 'bg-emerald-50 text-emerald-600'
-                              }`}
-                            >
-                              <Icon className="h-4.5 w-4.5" />
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-
-                              <div className="flex items-start justify-between gap-2">
-
-                                <p className="text-sm font-semibold text-gray-900">
-                                  {notification.title}
-                                </p>
-
-                                {notification.unread && (
-                                  <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary-600" />
-                                )}
-
-                              </div>
-
-                              <p className="mt-1 text-xs leading-5 text-gray-500">
-                                {notification.message}
-                              </p>
-
-                              <p className="mt-1.5 text-[10px] font-medium text-gray-400">
-                                {notification.time}
-                              </p>
-
-                            </div>
-
-                          </button>
-                        );
-
-                      })
-
-                    )}
-
-                  </div>
-
-
-                  {/* Footer */}
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setNotificationsOpen(false);
-                      toastInfo();
-                    }}
-                    className="flex w-full items-center justify-center gap-2 border-t border-gray-100 px-4 py-3 text-xs font-semibold text-gray-600 transition hover:bg-gray-50"
-                  >
-                    View notification center
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </button>
-
-                </div>
-              )}
-
-            </div>
-
-
-            {/* Divider */}
 
             <div className="hidden h-7 w-px bg-gray-200 sm:block" />
 
 
-            {/* User */}
-
+            {/* User information */}
             <div className="hidden items-center gap-3 sm:flex">
 
               <div className="text-right">
-
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="max-w-[160px] truncate text-sm font-semibold text-gray-900">
                   {user?.full_name || 'Admin'}
                 </p>
 
-                <p className="text-[10px] font-medium uppercase tracking-wider text-gray-400">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-gray-400">
                   Administrator
                 </p>
-
               </div>
 
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-900 text-xs font-bold text-white">
+
+              <div
+                className="
+                  flex h-9 w-9
+                  shrink-0
+                  items-center justify-center
+                  rounded-full
+                  bg-primary-50
+                  text-xs
+                  font-bold
+                  text-primary-700
+                  ring-1
+                  ring-primary-100
+                "
+              >
                 {getInitials(user?.full_name)}
               </div>
 
@@ -521,24 +479,60 @@ const AdminLayout = ({ children }) => {
 
 
             {/* User view */}
-
             <Link
               to="/dashboard"
-              className="hidden h-10 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 transition hover:border-gray-300 hover:bg-gray-50 sm:flex"
+              className="
+                hidden
+                h-10
+                items-center
+                gap-2
+                rounded-xl
+                border
+                border-gray-200
+                bg-white
+                px-3
+                text-xs
+                font-semibold
+                text-gray-700
+                shadow-sm
+                transition
+                hover:border-gray-300
+                hover:bg-gray-50
+                md:flex
+              "
             >
               <Home className="h-4 w-4" />
-              User View
+              <span>User View</span>
             </Link>
 
 
             {/* Logout */}
-
             <button
               type="button"
               onClick={handleLogout}
-              className="flex h-10 items-center justify-center gap-2 rounded-xl bg-gray-900 px-3 text-xs font-semibold text-white transition hover:bg-gray-800"
+              className="
+                flex
+                h-10
+                items-center
+                justify-center
+                gap-2
+                rounded-xl
+                border
+                border-gray-200
+                bg-white
+                px-3
+                text-xs
+                font-semibold
+                text-gray-700
+                shadow-sm
+                transition
+                hover:border-red-200
+                hover:bg-red-50
+                hover:text-red-600
+              "
             >
               <LogOut className="h-4 w-4" />
+
               <span className="hidden lg:inline">
                 Logout
               </span>
@@ -547,32 +541,40 @@ const AdminLayout = ({ children }) => {
           </div>
 
         </div>
-
       </header>
 
 
-      {/* ======================================================================
+      {/* ======================================================
           MOBILE OVERLAY
-          ====================================================================== */}
+          ====================================================== */}
 
       {isMobile && sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-gray-950/40 backdrop-blur-[2px] md:hidden"
+        <button
+          type="button"
+          aria-label="Close navigation"
           onClick={closeSidebar}
+          className="
+            fixed
+            inset-0
+            z-40
+            bg-gray-900/20
+            backdrop-blur-[2px]
+            md:hidden
+          "
         />
       )}
 
 
-      {/* ======================================================================
+      {/* ======================================================
           BODY
-          ====================================================================== */}
+          ====================================================== */}
 
       <div className="flex pt-16">
 
 
-        {/* ====================================================================
+        {/* ====================================================
             SIDEBAR
-            ==================================================================== */}
+            ==================================================== */}
 
         <aside
           className={`
@@ -586,12 +588,13 @@ const AdminLayout = ({ children }) => {
             bg-white
             transition-all
             duration-300
-            ease-in-out
+            ease-out
+
             ${
               isMobile
                 ? sidebarOpen
-                  ? 'w-[270px] translate-x-0'
-                  : 'w-[270px] -translate-x-full'
+                  ? 'w-[280px] translate-x-0 shadow-2xl'
+                  : 'w-[280px] -translate-x-full'
                 : sidebarOpen
                   ? 'w-64 translate-x-0'
                   : 'w-[76px] translate-x-0'
@@ -602,44 +605,78 @@ const AdminLayout = ({ children }) => {
           <div className="flex h-full flex-col p-3">
 
 
-            {/* --------------------------------------------------------------
-                Workspace label
-            -------------------------------------------------------------- */}
+            {/* =================================================
+                WORKSPACE HEADER
+                ================================================= */}
 
             <div
-              className={`mb-3 px-2 ${
-                !sidebarOpen && !isMobile
-                  ? 'text-center'
-                  : ''
-              }`}
+              className={`
+                mb-3
+                px-2
+                ${
+                  !sidebarOpen && !isMobile
+                    ? 'text-center'
+                    : ''
+                }
+              `}
             >
 
               {sidebarOpen || isMobile ? (
                 <>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
-                    Workspace
-                  </p>
+                  <div className="flex items-center justify-between">
 
-                  <p className="mt-1 text-xs font-medium text-gray-500">
-                    Administration
-                  </p>
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-gray-400">
+                        Workspace
+                      </p>
+
+                      <p className="mt-1 text-xs font-medium text-gray-500">
+                        Administration
+                      </p>
+                    </div>
+
+                    <span
+                      className="
+                        flex h-6 w-6
+                        items-center justify-center
+                        rounded-lg
+                        bg-gray-50
+                        text-gray-400
+                      "
+                    >
+                      <PanelLeft className="h-3.5 w-3.5" />
+                    </span>
+
+                  </div>
                 </>
               ) : (
-                <div className="mx-auto h-1.5 w-1.5 rounded-full bg-primary-600" />
+                <div
+                  className="
+                    mx-auto
+                    flex h-6 w-6
+                    items-center justify-center
+                    rounded-lg
+                    bg-primary-50
+                  "
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary-600" />
+                </div>
               )}
 
             </div>
 
 
-            {/* --------------------------------------------------------------
-                Main navigation
-            -------------------------------------------------------------- */}
+            {/* =================================================
+                MAIN NAVIGATION
+                ================================================= */}
 
             <nav className="space-y-1">
 
               {navItems.map((item) => {
 
                 const active = isActive(item.to);
+
+                const Icon = item.icon;
 
                 return (
                   <Link
@@ -659,14 +696,16 @@ const AdminLayout = ({ children }) => {
                       gap-3
                       rounded-xl
                       px-3
-                      py-3
+                      py-2.5
                       transition-all
                       duration-200
+
                       ${
                         active
                           ? 'bg-primary-50 text-primary-700'
                           : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                       }
+
                       ${
                         !sidebarOpen && !isMobile
                           ? 'justify-center'
@@ -676,57 +715,90 @@ const AdminLayout = ({ children }) => {
                   >
 
                     {/* Active indicator */}
-
                     {active && (
-                      <span className="absolute bottom-2 left-0 top-2 w-0.5 rounded-r-full bg-primary-600" />
+                      <span
+                        className="
+                          absolute
+                          bottom-2
+                          left-0
+                          top-2
+                          w-0.5
+                          rounded-r-full
+                          bg-primary-600
+                        "
+                      />
                     )}
 
-                    <item.icon
-                      className={`h-[18px] w-[18px] shrink-0 ${
-                        active
-                          ? 'text-primary-600'
-                          : 'text-gray-400 group-hover:text-gray-700'
-                      }`}
+
+                    {/* Icon */}
+                    <Icon
+                      className={`
+                        h-[18px]
+                        w-[18px]
+                        shrink-0
+
+                        ${
+                          active
+                            ? 'text-primary-600'
+                            : 'text-gray-400 group-hover:text-gray-700'
+                        }
+                      `}
                     />
+
 
                     {(sidebarOpen || isMobile) && (
                       <>
-                        <span className="flex-1 text-sm font-semibold">
+                        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
                           {item.label}
                         </span>
 
-                        {item.badge && (
+
+                        {item.badge > 0 && (
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                              active
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-amber-100 text-amber-700'
-                            }`}
+                            className={`
+                              min-w-[22px]
+                              rounded-full
+                              px-1.5
+                              py-0.5
+                              text-center
+                              text-[10px]
+                              font-bold
+
+                              ${
+                                active
+                                  ? 'bg-primary-600 text-white'
+                                  : item.badgeType === 'warning'
+                                    ? 'bg-amber-100 text-amber-700'
+                                    : 'bg-primary-50 text-primary-700'
+                              }
+                            `}
                           >
-                            {item.badge}
+                            {item.badge > 99
+                              ? '99+'
+                              : item.badge}
                           </span>
                         )}
+
                       </>
                     )}
 
                   </Link>
                 );
-
               })}
 
             </nav>
 
 
-            {/* --------------------------------------------------------------
-                Divider
-            -------------------------------------------------------------- */}
+            {/* =================================================
+                DIVIDER
+                ================================================= */}
 
             <div className="my-4 h-px bg-gray-100" />
 
 
-            {/* --------------------------------------------------------------
-                Secondary
-            -------------------------------------------------------------- */}
+            {/* =================================================
+                ACCOUNT
+                ================================================= */}
 
             <div className="space-y-1">
 
@@ -736,9 +808,12 @@ const AdminLayout = ({ children }) => {
                 </p>
               )}
 
+
               {secondaryItems.map((item) => {
 
                 const active = isActive(item.to);
+
+                const Icon = item.icon;
 
                 return (
                   <Link
@@ -751,21 +826,22 @@ const AdminLayout = ({ children }) => {
                         : undefined
                     }
                     className={`
+                      group
                       flex
                       items-center
                       gap-3
                       rounded-xl
                       px-3
-                      py-3
+                      py-2.5
                       text-gray-600
                       transition
-                      hover:bg-gray-50
-                      hover:text-gray-900
+
                       ${
                         active
                           ? 'bg-gray-100 text-gray-900'
-                          : ''
+                          : 'hover:bg-gray-50 hover:text-gray-900'
                       }
+
                       ${
                         !sidebarOpen && !isMobile
                           ? 'justify-center'
@@ -774,7 +850,19 @@ const AdminLayout = ({ children }) => {
                     `}
                   >
 
-                    <item.icon className="h-[18px] w-[18px] shrink-0" />
+                    <Icon
+                      className={`
+                        h-[18px]
+                        w-[18px]
+                        shrink-0
+
+                        ${
+                          active
+                            ? 'text-gray-700'
+                            : 'text-gray-400 group-hover:text-gray-700'
+                        }
+                      `}
+                    />
 
                     {(sidebarOpen || isMobile) && (
                       <span className="text-sm font-semibold">
@@ -784,38 +872,73 @@ const AdminLayout = ({ children }) => {
 
                   </Link>
                 );
-
               })}
 
             </div>
 
 
-            {/* --------------------------------------------------------------
-                Bottom admin profile card
-            -------------------------------------------------------------- */}
+            {/* =================================================
+                BOTTOM SECTION
+                ================================================= */}
 
             <div className="mt-auto">
 
 
+              {/* Admin status card */}
               {(sidebarOpen || isMobile) && (
-                <div className="mb-3 rounded-2xl bg-gray-50 p-3">
+                <div
+                  className="
+                    mb-3
+                    rounded-2xl
+                    border
+                    border-gray-100
+                    bg-gray-50
+                    p-3
+                  "
+                >
 
                   <div className="flex items-center gap-3">
 
-                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-gray-700 shadow-sm ring-1 ring-gray-200">
+                    <div
+                      className="
+                        relative
+                        flex h-9 w-9
+                        shrink-0
+                        items-center justify-center
+                        rounded-xl
+                        bg-white
+                        text-primary-600
+                        shadow-sm
+                        ring-1
+                        ring-gray-200
+                      "
+                    >
                       <Shield className="h-4 w-4" />
+
+                      <span
+                        className="
+                          absolute
+                          -right-0.5
+                          -top-0.5
+                          h-2
+                          w-2
+                          rounded-full
+                          bg-emerald-400
+                          ring-2
+                          ring-white
+                        "
+                      />
                     </div>
 
-                    <div className="min-w-0">
 
+                    <div className="min-w-0">
                       <p className="truncate text-xs font-bold text-gray-900">
                         Admin Access
                       </p>
 
-                      <p className="mt-0.5 text-[10px] text-gray-400">
+                      <p className="mt-0.5 truncate text-[10px] text-gray-400">
                         Full permissions
                       </p>
-
                     </div>
 
                   </div>
@@ -824,8 +947,7 @@ const AdminLayout = ({ children }) => {
               )}
 
 
-              {/* Collapse */}
-
+              {/* Desktop collapse button */}
               {!isMobile && (
                 <button
                   type="button"
@@ -841,6 +963,7 @@ const AdminLayout = ({ children }) => {
                     transition
                     hover:bg-gray-50
                     hover:text-gray-700
+
                     ${
                       !sidebarOpen
                         ? 'justify-center'
@@ -857,6 +980,7 @@ const AdminLayout = ({ children }) => {
                   {sidebarOpen ? (
                     <>
                       <ChevronLeft className="h-4 w-4" />
+
                       <span className="text-xs font-semibold">
                         Collapse sidebar
                       </span>
@@ -875,16 +999,18 @@ const AdminLayout = ({ children }) => {
         </aside>
 
 
-        {/* ====================================================================
+        {/* ====================================================
             MAIN CONTENT
-            ==================================================================== */}
+            ==================================================== */}
 
         <main
           className={`
             min-w-0
             flex-1
-            transition-all
+            transition-[margin]
             duration-300
+            ease-out
+
             ${
               isMobile
                 ? 'ml-0'
@@ -895,21 +1021,95 @@ const AdminLayout = ({ children }) => {
           `}
         >
 
-          <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 md:px-8 md:py-8">
+          <div
+            className="
+              mx-auto
+              w-full
+              max-w-[1440px]
+              px-4
+              py-5
+              sm:px-6
+              md:px-8
+              md:py-7
+            "
+          >
 
-            {/* Small page location indicator */}
+            {/* =================================================
+                PAGE LOCATION
+                ================================================= */}
 
-            <div className="mb-5 hidden items-center gap-2 text-[11px] font-medium text-gray-400 md:flex">
+            <div className="mb-5 hidden items-center justify-between md:flex">
 
-              <span>Admin</span>
+              <div className="flex items-center gap-2 text-[11px] font-medium">
 
-              <ChevronRight className="h-3 w-3" />
+                <Link
+                  to="/admin/accounts"
+                  className="text-gray-400 transition hover:text-primary-600"
+                >
+                  Admin
+                </Link>
 
-              <span className="text-gray-600">
-                {getPageName(location.pathname)}
-              </span>
+                <ChevronRight className="h-3 w-3 text-gray-300" />
+
+                <span className="font-semibold text-gray-700">
+                  {pageName}
+                </span>
+
+              </div>
+
+
+              {/* Current section indicator */}
+              <div
+                className="
+                  flex
+                  items-center
+                  gap-2
+                  rounded-full
+                  border
+                  border-gray-200
+                  bg-white
+                  px-3
+                  py-1.5
+                  shadow-sm
+                "
+              >
+                <span className="relative flex h-2 w-2">
+                  <span
+                    className="
+                      absolute
+                      inline-flex
+                      h-full
+                      w-full
+                      animate-ping
+                      rounded-full
+                      bg-emerald-400
+                      opacity-60
+                    "
+                  />
+
+                  <span
+                    className="
+                      relative
+                      inline-flex
+                      h-2
+                      w-2
+                      rounded-full
+                      bg-emerald-500
+                    "
+                  />
+                </span>
+
+                <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">
+                  Operations Online
+                </span>
+              </div>
 
             </div>
+
+
+            {/* =================================================
+                PAGE CONTENT
+                ================================================= */}
 
             {children}
 
@@ -923,61 +1123,4 @@ const AdminLayout = ({ children }) => {
   );
 };
 
-
-/* ============================================================================
-   HELPERS
-   ============================================================================ */
-
-const getInitials = (name) => {
-  if (!name) return 'AD';
-
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0).toUpperCase())
-    .join('');
-};
-
-
-const getPageName = (pathname) => {
-  if (pathname === '/admin') return 'Dashboard';
-
-  if (pathname.startsWith('/admin/users')) {
-    return 'Users';
-  }
-
-  if (pathname.startsWith('/admin/accounts')) {
-    return 'Accounts';
-  }
-
-  if (pathname.startsWith('/admin/transactions')) {
-    return 'Transactions';
-  }
-
-  if (
-    pathname.startsWith(
-      '/admin/pending-transactions'
-    )
-  ) {
-    return 'Pending Approvals';
-  }
-
-  if (pathname.startsWith('/profile')) {
-    return 'My Profile';
-  }
-
-  return 'Administration';
-};
-
-
-// Temporary UI feedback until a notification center exists.
-const toastInfo = () => {
-  console.info(
-    'Notification center can be connected to your notifications API here.'
-  );
-};
-
-
 export default AdminLayout;
-

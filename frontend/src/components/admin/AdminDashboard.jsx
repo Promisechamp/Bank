@@ -83,7 +83,7 @@ const AdminDashboard = () => {
         const txData = await transactionsAPI.getHistory(accounts[0].id, { limit: 50 });
         allTransactions = txData.transactions || [];
         totalVolume = allTransactions.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-        pendingCount = allTransactions.filter(tx => tx.status === 'pending').length;
+        pendingCount = allTransactions.filter(tx => tx.status === 'pending_review').length;
         setRecentTransactions(allTransactions.slice(0, 5));
       }
 
@@ -204,7 +204,7 @@ const AdminDashboard = () => {
 
   const quickActions = [
     { label: 'View All Users', icon: Users, path: '/admin/users', color: 'bg-blue-50 text-blue-600' },
-    { label: 'Pending Approvals', icon: Clock, path: '/admin/transactions?status=pending', color: 'bg-yellow-50 text-yellow-600' },
+    { label: 'Pending Approvals', icon: Clock, path: '/admin/transactions?status=pending_review', color: 'bg-yellow-50 text-yellow-600' },
     { label: 'Create Account', icon: Plus, action: () => setShowCreateModal(true), color: 'bg-green-50 text-green-600' },
     { label: 'View Reports', icon: TrendingUp, path: '#', color: 'bg-purple-50 text-purple-600' },
   ];
@@ -234,13 +234,7 @@ const AdminDashboard = () => {
           <p className="text-sm text-gray-500">Overview of the entire banking system</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="btn-primary flex items-center space-x-2 px-4 py-2 text-sm"
-          >
-            <Plus className="h-4 w-4" />
-            <span>Create Account</span>
-          </button>
+          
           <button
             onClick={fetchStats}
             className="bg-white border border-gray-200 text-gray-700 hover:bg-gray-50 px-4 py-2 rounded-xl text-sm flex items-center space-x-2 transition-colors"
@@ -357,7 +351,7 @@ const AdminDashboard = () => {
                   </p>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     tx.status === 'completed' ? 'bg-green-100 text-green-800' :
-                    tx.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    tx.status === 'pending_review' ? 'bg-yellow-100 text-yellow-800' :
                     'bg-red-100 text-red-800'
                   }`}>
                     {tx.status}

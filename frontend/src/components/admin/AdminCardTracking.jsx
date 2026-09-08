@@ -217,64 +217,6 @@ const PaymentBadge = ({ status }) => {
 };
 
 // ============================================================
-// STAT CARD
-// ============================================================
-
-const StatCard = ({ label, value, icon: Icon, tone = 'gray' }) => {
-  const tones = {
-    gray: {
-      card: 'border-gray-200 bg-white',
-      label: 'text-gray-400',
-      value: 'text-gray-900',
-      iconBg: 'bg-gray-50',
-      icon: 'text-gray-500',
-    },
-    amber: {
-      card: 'border-amber-200 bg-amber-50/60',
-      label: 'text-amber-600',
-      value: 'text-amber-700',
-      iconBg: 'bg-amber-100',
-      icon: 'text-amber-600',
-    },
-    emerald: {
-      card: 'border-emerald-200 bg-emerald-50/60',
-      label: 'text-emerald-600',
-      value: 'text-emerald-700',
-      iconBg: 'bg-emerald-100',
-      icon: 'text-emerald-600',
-    },
-    blue: {
-      card: 'border-blue-200 bg-blue-50/60',
-      label: 'text-blue-600',
-      value: 'text-blue-700',
-      iconBg: 'bg-blue-100',
-      icon: 'text-blue-600',
-    },
-  };
-  const current = tones[tone] || tones.gray;
-
-  return (
-    <div
-      className={`min-w-0 overflow-hidden rounded-2xl border p-4 ${current.card}`}
-    >
-      <div className="flex min-w-0 items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className={`truncate text-[11px] font-semibold uppercase tracking-wide ${current.label}`}>
-            {label}
-          </p>
-          <p className={`mt-1 truncate text-xl font-bold sm:text-2xl ${current.value}`} title={String(value)}>
-            {value}
-          </p>
-        </div>
-        <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${current.iconBg}`}>
-          <Icon className={`h-5 w-5 ${current.icon}`} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ============================================================
 // ORDER CARD
 // ============================================================
 
@@ -500,11 +442,6 @@ const AdminCardTracking = () => {
           <div className="h-7 w-40 animate-pulse rounded-lg bg-gray-100" />
           <div className="h-4 w-72 max-w-full animate-pulse rounded bg-gray-100" />
         </div>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-2xl bg-gray-100" />
-          ))}
-        </div>
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="h-56 animate-pulse rounded-2xl bg-gray-100" />
@@ -519,7 +456,7 @@ const AdminCardTracking = () => {
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className="w-full min-w-0 max-w-full overflow-hidden space-y-5 sm:space-y-6"
+      className="w-full min-w-0 max-w-full overflow-hidden p-3 space-y-5 sm:space-y-6"
     >
       {/* HEADER */}
       <header className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -559,14 +496,6 @@ const AdminCardTracking = () => {
           </div>
         </div>
       )}
-
-      {/* STATS */}
-      <div className="grid min-w-0 grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <StatCard label="Total Orders" value={stats.total} icon={Package} tone="gray" />
-        <StatCard label="Processing" value={stats.processing} icon={Clock3} tone="amber" />
-        <StatCard label="In Transit" value={stats.inTransit} icon={Truck} tone="blue" />
-        <StatCard label="Delivered" value={stats.delivered} icon={CheckCircle2} tone="emerald" />
-      </div>
 
       {/* SEARCH BAR */}
       <section className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white p-3 sm:p-4">

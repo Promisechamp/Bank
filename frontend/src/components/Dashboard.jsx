@@ -45,7 +45,11 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [totalBalance, setTotalBalance] = useState(0);
 
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  // ✅ Persist balance visibility in localStorage
+  const [balanceVisible, setBalanceVisible] = useState(() => {
+    const stored = localStorage.getItem('dashboardBalanceVisible');
+    return stored !== null ? JSON.parse(stored) : true;
+  });
 
   const [restrictedModalOpen, setRestrictedModalOpen] = useState(false);
   const [restrictedAction, setRestrictedAction] = useState('');
@@ -53,6 +57,11 @@ const Dashboard = () => {
   const [servicesModalOpen, setServicesModalOpen] = useState(false);
 
   const [activePromo, setActivePromo] = useState(0);
+
+  // ✅ Save preference whenever it changes
+  useEffect(() => {
+    localStorage.setItem('dashboardBalanceVisible', JSON.stringify(balanceVisible));
+  }, [balanceVisible]);
 
   /*
    * ------------------------------------------------------------

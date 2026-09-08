@@ -1,62 +1,79 @@
 const express = require('express');
-const { authenticate } = require('../middleware/auth');
-const { adminAuth } = require('../middleware/adminAuth');
 const {
-  // User management
+  adminGetAllAccounts,
+  adminGetAccountById,
+  adminUpdateAccountStatus,
+  adminDeleteAccount,
+} = require('../controllers/accountController');
+const {
   getAllUsers,
   getUserById,
   updateUser,
   updateUserStatus,
   deleteUser,
-  // Account management
-  getAllAccounts,
-		getAccountById,
-  updateAccountStatus,
-  // Transaction management
+  getSystemStats,
+  layoutStats,
+  getRegisterTokens,
+  generateRegisterToken,
+  revokeRegisterToken,
+  adminCredit,      // ← ADD THIS
+  adminDebit        // ← ADD THIS
+} = require('../controllers/adminController');
+const {
   getAllTransactions,
   getTransactionById,
+  updateTransaction,
   approveTransaction,
   rejectTransaction,
-  // System stats
-  getSystemStats,
-		adminCredit,
-		adminDebit,
-		updateTransaction
 } = require('../controllers/adminController');
+const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
-
-// All admin routes require authentication AND admin role
 router.use(authenticate);
-router.use(adminAuth);
 
-// User management
+// ============================================
+// USERS
+// ============================================
 router.get('/users', getAllUsers);
 router.get('/users/:userId', getUserById);
 router.put('/users/:userId', updateUser);
 router.patch('/users/:userId/status', updateUserStatus);
 router.delete('/users/:userId', deleteUser);
 
-// Account management
-router.get('/accounts', getAllAccounts);
-router.get('/accounts/:accountId', getAccountById); 
-router.patch('/accounts/:accountId/status', updateAccountStatus);
+// ============================================
+// ACCOUNTS (admin)
+// ============================================
+router.get('/accounts', adminGetAllAccounts);
+router.get('/accounts/:accountId', adminGetAccountById);
+router.patch('/accounts/:accountId/status', adminUpdateAccountStatus);
+router.delete('/accounts/:accountId', adminDeleteAccount);
 
-// Transaction management
+// ============================================
+// TRANSACTIONS (admin)
+// ============================================
 router.get('/transactions', getAllTransactions);
 router.get('/transactions/:txId', getTransactionById);
+router.patch('/transactions/:txId', updateTransaction);
 router.patch('/transactions/:txId/approve', approveTransaction);
 router.patch('/transactions/:txId/reject', rejectTransaction);
-// Credit / Debit
+
+// ============================================
+// ADMIN CREDIT / DEBIT
+// ============================================
 router.post('/users/:userId/credit', adminCredit);
 router.post('/users/:userId/debit', adminDebit);
-router.patch('/transactions/:txId', updateTransaction);
 
-// System stats
+// ============================================
+// REGISTER TOKENS
+// ============================================
+router.post('/tokens/generate', generateRegisterToken);
+router.get('/tokens', getRegisterTokens);
+router.delete('/tokens/:token', revokeRegisterToken);
+
+// ============================================
+// STATS
+// ============================================
 router.get('/stats', getSystemStats);
+router.get('/stats/layout', layoutStats);
 
 module.exports = router;
-
-
-
-

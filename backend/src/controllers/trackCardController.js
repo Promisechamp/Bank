@@ -1,5 +1,21 @@
 const { supabase } = require('../db/supabase');
 const crypto = require('crypto');
+const { createAndSendNotification } = require('../utils/notifications');
+
+
+const getUserProfile = async (userId) => {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, full_name, email, role, status')
+    .eq('id', userId)
+    .maybeSingle();
+  if (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
+  }
+  return data || null;
+};
+
 
 /*
 |--------------------------------------------------------------------------
@@ -232,12 +248,37 @@ const createCardOrder = async (req, res) => {
       throw error;
     }
 
+    // --- Send notification to the user ---
+    const io = req.app.get('io');
+    const userProfile = await getUserProfile(userId);
+    const userEmail = userProfile?.email;
+    const userName = userProfile?.full_name || 'User';
+
+    await createAndSendNotification(
+      io,
+      userId,
+      'system',
+      'Card Order Placed',
+      `Your card order #${data.order_id} has been placed successfully.`,
+      data.id, // reference_id
+      {
+        template: 'card_order_update',
+        userName,
+        orderId: data.order_id,
+        status: data.order_status,
+        description: 'Your card order has been placed and is being processed.',
+        // You can add more fields if your template expects them
+      }
+    );
+
     return res.status(201).json({ success: true, card: data });
   } catch (error) {
     console.error('createCardOrder error:', error);
     return res.status(500).json({ success: false, message: error.message });
   }
 };
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -324,12 +365,36 @@ const createCardTracking = async (req, res) => {
       throw error;
     }
 
+    // --- Notify the user ---
+    const io = req.app.get('io');
+    const userProfile = await getUserProfile(user_id);
+    const userEmail = userProfile?.email;
+    const userName = userProfile?.full_name || 'User';
+
+    await createAndSendNotification(
+      io,
+      user_id,
+      'system',
+      'Card Order Created',
+      `Your card order #${data.order_id} has been created by an administrator.`,
+      data.id,
+      {
+        template: 'card_order_update',
+        userName,
+        orderId: data.order_id,
+        status: data.order_status,
+        description: 'Your card order has been created.',
+      }
+    );
+
     return res.status(201).json({ success: true, message: 'Card tracking record created.', card: data });
   } catch (error) {
     console.error('createCardTracking error:', error);
     return res.status(500).json({ success: false, message: 'Failed to create card tracking record.' });
   }
 };
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -360,10 +425,10 @@ const updateCardTracking = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid payment status.' });
     }
 
-    // Fetch existing record to preserve and extend tracking history
+    // Fetch existing record to preserve history and get user_id
     const { data: existing, error: fetchError } = await supabase
       .from('track_card')
-      .select('tracking_history, tracking_status, current_location, current_message')
+      .select('tracking_history, tracking_status, current_location, current_message, user_id, order_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -405,7 +470,6 @@ const updateCardTracking = async (req, res) => {
       updated_at: new Date().toISOString(),
     };
 
-    // Remove undefined fields to avoid overwriting with null
     Object.keys(updates).forEach((key) => {
       if (updates[key] === undefined) delete updates[key];
     });
@@ -419,12 +483,37 @@ const updateCardTracking = async (req, res) => {
 
     if (error) throw error;
 
+    // --- Send notification to the user if status changed ---
+    if (tracking_status || order_status) {
+      const io = req.app.get('io');
+      const userProfile = await getUserProfile(existing.user_id);
+      const userName = userProfile?.full_name || 'User';
+      const statusMsg = tracking_status || order_status;
+      await createAndSendNotification(
+        io,
+        existing.user_id,
+        'system',
+        `Card Order Update: ${statusMsg}`,
+        `Your card order #${existing.order_id} status changed to ${statusMsg}.`,
+        id,
+        {
+          template: 'card_order_update',
+          userName,
+          orderId: existing.order_id,
+          status: statusMsg,
+          description: `Status updated to ${statusMsg}.`,
+        }
+      );
+    }
+
     return res.json({ success: true, message: 'Card tracking updated.', card: data });
   } catch (error) {
     console.error('updateCardTracking error:', error);
     return res.status(500).json({ success: false, message: 'Failed to update card tracking.' });
   }
 };
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -469,7 +558,6 @@ const addTrackingEvent = async (req, res) => {
     const { id } = req.params;
     const { status, title, description, location, timestamp } = req.body;
 
-    // Validate required fields
     if (!status && !title) {
       return res.status(400).json({
         success: false,
@@ -477,10 +565,10 @@ const addTrackingEvent = async (req, res) => {
       });
     }
 
-    // Fetch the existing record
+    // Fetch existing record (to get user_id and order_id)
     const { data: existing, error: fetchError } = await supabase
       .from('track_card')
-      .select('tracking_history')
+      .select('tracking_history, user_id, order_id')
       .eq('id', id)
       .maybeSingle();
 
@@ -492,7 +580,6 @@ const addTrackingEvent = async (req, res) => {
       });
     }
 
-    // Build the new event
     const newEvent = {
       id: crypto.randomUUID(),
       status: status || null,
@@ -502,13 +589,9 @@ const addTrackingEvent = async (req, res) => {
       timestamp: timestamp || new Date().toISOString(),
     };
 
-    // Append to existing history (ensure it's an array)
-    const history = Array.isArray(existing.tracking_history)
-      ? existing.tracking_history
-      : [];
+    const history = Array.isArray(existing.tracking_history) ? existing.tracking_history : [];
     history.push(newEvent);
 
-    // Update the record
     const { data, error } = await supabase
       .from('track_card')
       .update({ tracking_history: history, updated_at: new Date().toISOString() })
@@ -517,6 +600,27 @@ const addTrackingEvent = async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // --- Notify the user ---
+    const io = req.app.get('io');
+    const userProfile = await getUserProfile(existing.user_id);
+    const userName = userProfile?.full_name || 'User';
+    const eventTitle = title || status || 'New tracking event';
+    await createAndSendNotification(
+      io,
+      existing.user_id,
+      'system',
+      `Card Tracking: ${eventTitle}`,
+      `New update for order #${existing.order_id}: ${eventTitle}`,
+      id,
+      {
+        template: 'card_order_update',
+        userName,
+        orderId: existing.order_id,
+        status: status || 'update',
+        description: eventTitle,
+      }
+    );
 
     return res.status(200).json({
       success: true,
@@ -531,6 +635,8 @@ const addTrackingEvent = async (req, res) => {
     });
   }
 };
+
+
 
 module.exports = {
   getMyCardTracking,
