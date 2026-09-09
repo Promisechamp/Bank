@@ -39,6 +39,7 @@ const UpdateUserModal = ({
     status: 'active',
     date_of_birth: '',
     country: '',
+				created_at: '',
     profile_image: '',
   });
 
@@ -64,6 +65,7 @@ const UpdateUserModal = ({
       status: user.status || 'active',
       date_of_birth: user.date_of_birth || '',
       country: user.country || '',
+      created_at: user.created_at || user.created_at,
       profile_image: user.profile_image || '',
     });
 
@@ -561,6 +563,26 @@ const UpdateUserModal = ({
                   onChange={handleChange}
                   className={iconInputClass}
                   placeholder="United States"
+                />
+              </div>
+            </div>
+												
+												{/* created_at */}
+            <div>
+              <label className={labelClass}>
+                Created At
+              </label>
+
+              <div className="relative">
+                <FieldIcon icon={Calendar} />
+
+                <input
+                  type="datetime-local"
+                  name="created_at"
+                  value={formData.created_at}
+                  onChange={handleChange}
+                  className={iconInputClass}
+                  placeholder=""
                 />
               </div>
             </div>

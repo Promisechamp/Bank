@@ -735,7 +735,8 @@ const updateUser = async (req, res, next) => {
       password,
       profile_image,
       date_of_birth,
-      country
+      country,
+						created_at,
     } = req.body;
 
     const profileUpdates = {};
@@ -744,6 +745,7 @@ const updateUser = async (req, res, next) => {
     if (address !== undefined) profileUpdates.address = address;
     if (role !== undefined) profileUpdates.role = role;
     if (status !== undefined) profileUpdates.status = status;
+    if (created_at !== undefined) profileUpdates.created_at = created_at;
     if (profile_image !== undefined) profileUpdates.profile_image = profile_image;
     
     // ✅ Convert empty date_of_birth to null

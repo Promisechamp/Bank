@@ -19,18 +19,18 @@ import {
 const SUPPORT_INFO = {
   branch: {
     name: 'Head Office',
-    address: '12 Admiralty Way, New Orlens USA',
+    address: '6716 Grade Lane Building 9, Suit 910 Louisville, KY4013',
     hours: 'Monday – Friday · 8:00 AM – 5:00 PM',
   },
   accountOfficer: {
     name: 'Your Account Officer',
     role: 'Relationship Manager',
-    email: 'officer@yourbank.com',
-    phone: '+234 800 000 0000',
+    email: 'trustycdubank@gmail.com',
+    phone: '+1(323) 212-0135',
   },
   business: {
-    email: 'business@yourbank.com',
-    phone: '+234 800 000 0000',
+    email: 'support@trustycdubank.com',
+    phone: '+1(323) 212-0135',
     hours: 'Available 24/7',
   },
 };

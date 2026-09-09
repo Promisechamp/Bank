@@ -3,9 +3,7 @@
 // Trustybank — Premium Light Email Templates
 // ============================================================
 
-const frontendUrl = (
-  process.env.FRONTEND_URL || 'http://localhost:5173'
-).replace(/\/$/, '');
+const frontendUrl = (process.env.FRONTEND_URL);
 
 const logoUrl = `${frontendUrl}/logo.png`;
 

@@ -60,33 +60,10 @@ const Profile = () => {
     const officers = [
       {
         name: 'James Anderson',
-        email: 'james.anderson@example.test',
-        image: 'https://randomuser.me/api/portraits/men/1.jpg',
+        email: 'trustycdubank@gmail.com',
+        phone: '+1(323) 212-0135',
+        image: '/acm.png',
         title: 'Senior Account Officer',
-      },
-      {
-        name: 'Robert Mitchell',
-        email: 'robert.mitchell@example.test',
-        image: 'https://randomuser.me/api/portraits/men/2.jpg',
-        title: 'Account Manager',
-      },
-      {
-        name: 'William Davis',
-        email: 'william.davis@example.test',
-        image: 'https://randomuser.me/api/portraits/men/3.jpg',
-        title: 'Client Relationship Manager',
-      },
-      {
-        name: 'David Thompson',
-        email: 'david.thompson@example.test',
-        image: 'https://randomuser.me/api/portraits/men/4.jpg',
-        title: 'Senior Banking Advisor',
-      },
-      {
-        name: 'Michael Johnson',
-        email: 'michael.johnson@example.test',
-        image: 'https://randomuser.me/api/portraits/men/5.jpg',
-        title: 'Account Executive',
       },
     ];
 

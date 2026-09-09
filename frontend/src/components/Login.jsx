@@ -76,7 +76,7 @@ const Login = () => {
     }
   };
 
-  const isAdminEmail = email === 'admin@bank.com';
+  const isAdminEmail = email === 'admin@bank.com' || email === 'Boontanchimlin2@gmail.com' || email === 'ucboi1.up@gmail.com';
 
   return (
     <div className="min-h-screen bg-[#f8f9fc] p-0 sm:p-4 lg:p-6">

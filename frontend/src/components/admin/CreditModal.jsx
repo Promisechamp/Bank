@@ -8,6 +8,8 @@ import {
   Building2,
   CalendarDays,
   CheckCircle2,
+  CreditCard,
+  Landmark,
   Loader2,
   User,
   Wallet,
@@ -22,9 +24,15 @@ const getInitialForm = (selectedAccountId = '') => ({
   description: '',
   date: new Date().toISOString().split('T')[0],
   sendAlert: true,
+
+  // Sender metadata
   senderName: '',
   senderBank: '',
-  senderAccountNo: ''
+  senderAccountNo: '',
+
+  // Receipt metadata
+  paymentMethod: '',
+  channel: ''
 });
 
 const FieldLabel = ({ children, required = false }) => (
@@ -38,7 +46,7 @@ const inputClass =
   'w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2.75 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-all focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10';
 
 const iconInputClass =
-  'w-full rounded-xl border border-gray-200 bg-gray-50 py-2.75 pl-10 pr-3.5 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-all focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10';
+  'w-full rounded-xl border border-gray-200 bg-gray-50 py-2.75 pl-10 pr-10 text-sm text-gray-900 placeholder:text-gray-400 outline-none transition-all focus:border-primary-500 focus:bg-white focus:ring-4 focus:ring-primary-500/10';
 
 const CreditModal = ({
   isOpen,
@@ -53,6 +61,7 @@ const CreditModal = ({
   const [formData, setFormData] = useState(
     getInitialForm(selectedAccountId)
   );
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -62,6 +71,7 @@ const CreditModal = ({
         ...prev,
         account_id: selectedAccountId || prev.account_id || ''
       }));
+
       setError('');
     }
   }, [isOpen, selectedAccountId]);
@@ -72,7 +82,8 @@ const CreditModal = ({
   );
 
   const amountNumber = Number.parseFloat(formData.amount);
-  const hasAmount = Number.isFinite(amountNumber) && amountNumber > 0;
+  const hasAmount =
+    Number.isFinite(amountNumber) && amountNumber > 0;
 
   const handleChange = (event) => {
     const { name, value, type, checked } = event.target;
@@ -82,7 +93,9 @@ const CreditModal = ({
       [name]: type === 'checkbox' ? checked : value
     }));
 
-    if (error) setError('');
+    if (error) {
+      setError('');
+    }
   };
 
   const validate = () => {
@@ -108,6 +121,14 @@ const CreditModal = ({
 
     if (!formData.senderAccountNo.trim()) {
       return 'Please enter the sender account number.';
+    }
+
+    if (!formData.paymentMethod) {
+      return 'Please select a payment method.';
+    }
+
+    if (!formData.channel) {
+      return 'Please select a transaction channel.';
     }
 
     return '';
@@ -139,13 +160,37 @@ const CreditModal = ({
         description: formData.description.trim(),
         date: formData.date,
         sendAlert: formData.sendAlert,
+
+        /*
+         * Keep these top-level fields for compatibility
+         * with your existing backend/controller.
+         */
         senderName: formData.senderName.trim(),
         senderBank: formData.senderBank.trim(),
-        senderAccountNo: formData.senderAccountNo.trim()
+        senderAccountNo: formData.senderAccountNo.trim(),
+
+        /*
+         * Receipt metadata.
+         *
+         * These are the fields your Receipt.jsx can later read as:
+         *
+         * metadata.paymentMethod
+         * metadata.channel
+         */
+        metadata: {
+          senderName: formData.senderName.trim(),
+          senderBank: formData.senderBank.trim(),
+          senderAccountNo: formData.senderAccountNo.trim(),
+          paymentMethod: formData.paymentMethod,
+          channel: formData.channel,
+          description: formData.description.trim()
+        }
       });
 
       toast.success(
-        `Credited ${formatCurrency(amountNumber)} to ${user.full_name}`
+        `Credited ${formatCurrency(amountNumber)} to ${
+          user.full_name
+        }`
       );
 
       if (onSuccess) {
@@ -153,6 +198,7 @@ const CreditModal = ({
       }
 
       onClose();
+
       setFormData(getInitialForm(selectedAccountId));
     } catch (err) {
       setError(
@@ -179,7 +225,8 @@ const CreditModal = ({
       onClose={handleClose}
       title={title}
       subtitle={
-        subtitle || `Add funds to ${user?.full_name || 'user'}'s account`
+        subtitle ||
+        `Add funds to ${user?.full_name || 'user'}'s account`
       }
       size="md"
       position="bottom"
@@ -187,7 +234,11 @@ const CreditModal = ({
       closeOnOutsideClick={!loading}
     >
       <form onSubmit={handleSubmit} className="min-w-0">
-        {/* User summary */}
+
+        {/* =========================================================
+            USER SUMMARY
+        ========================================================= */}
+
         <div className="mb-5 flex min-w-0 items-center gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-3.5">
           <div className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-white ring-1 ring-gray-200">
             {user?.profile_image ? (
@@ -207,6 +258,7 @@ const CreditModal = ({
             <p className="truncate text-sm font-semibold text-gray-900">
               {user?.full_name || 'Selected user'}
             </p>
+
             <p className="truncate text-xs text-gray-500">
               {user?.email || 'No email available'}
             </p>
@@ -217,14 +269,19 @@ const CreditModal = ({
           </div>
         </div>
 
-        {/* Error */}
+        {/* =========================================================
+            ERROR
+        ========================================================= */}
+
         {error && (
           <div className="mb-5 flex min-w-0 items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3.5">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+
             <div className="min-w-0">
               <p className="text-sm font-semibold text-red-800">
                 Unable to complete credit
               </p>
+
               <p className="mt-0.5 break-words text-xs leading-5 text-red-700">
                 {error}
               </p>
@@ -233,9 +290,15 @@ const CreditModal = ({
         )}
 
         <div className="space-y-5">
-          {/* Account */}
+
+          {/* =======================================================
+              ACCOUNT
+          ======================================================= */}
+
           <section>
-            <FieldLabel required>Destination Account</FieldLabel>
+            <FieldLabel required>
+              Destination Account
+            </FieldLabel>
 
             <div className="relative">
               <Wallet className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -245,14 +308,20 @@ const CreditModal = ({
                 value={formData.account_id}
                 onChange={handleChange}
                 disabled={loading}
-                className={`${iconInputClass} appearance-none pr-10`}
+                className={`${iconInputClass} appearance-none`}
                 required
               >
-                <option value="">Choose an account...</option>
+                <option value="">
+                  Choose an account...
+                </option>
 
                 {accounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {account.account_type} — {account.account_number} — Balance:{' '}
+                  <option
+                    key={account.id}
+                    value={account.id}
+                  >
+                    {account.account_type} —{' '}
+                    {account.account_number} — Balance:{' '}
                     {formatCurrency(account.balance)}
                   </option>
                 ))}
@@ -277,6 +346,7 @@ const CreditModal = ({
               <div className="mt-2 flex items-center justify-between gap-3 rounded-xl border border-gray-100 bg-white px-3 py-2.5">
                 <div className="flex min-w-0 items-center gap-2">
                   <Building2 className="h-4 w-4 shrink-0 text-gray-400" />
+
                   <span className="truncate text-xs text-gray-500">
                     Current balance
                   </span>
@@ -289,9 +359,14 @@ const CreditModal = ({
             )}
           </section>
 
-          {/* Amount */}
+          {/* =======================================================
+              AMOUNT
+          ======================================================= */}
+
           <section>
-            <FieldLabel required>Credit Amount</FieldLabel>
+            <FieldLabel required>
+              Credit Amount
+            </FieldLabel>
 
             <div className="relative">
               <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-gray-400">
@@ -322,9 +397,14 @@ const CreditModal = ({
             )}
           </section>
 
-          {/* Description */}
+          {/* =======================================================
+              DESCRIPTION
+          ======================================================= */}
+
           <section>
-            <FieldLabel required>Description</FieldLabel>
+            <FieldLabel required>
+              Description
+            </FieldLabel>
 
             <input
               type="text"
@@ -338,8 +418,178 @@ const CreditModal = ({
             />
           </section>
 
-          {/* Sender */}
+          {/* =======================================================
+              PAYMENT METHOD + CHANNEL
+          ======================================================= */}
+
           <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+
+            <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/70 px-4 py-3.5">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary-50">
+                <CreditCard className="h-4 w-4 text-primary-600" />
+              </div>
+
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Payment Information
+                </h3>
+
+                <p className="text-[11px] text-gray-500">
+                  Details used on the transaction receipt
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 p-4 sm:grid-cols-2">
+
+              {/* Payment Method */}
+              <div>
+                <FieldLabel required>
+                  Payment Method
+                </FieldLabel>
+
+                <div className="relative">
+                  <CreditCard className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+                  <select
+                    name="paymentMethod"
+                    value={formData.paymentMethod}
+                    onChange={handleChange}
+                    disabled={loading}
+                    required
+                    className={`${iconInputClass} appearance-none`}
+                  >
+                    <option value="">
+                      Select method...
+                    </option>
+
+                    <option value="Bank Transfer">
+                      Bank Transfer
+                    </option>
+
+                    <option value="Cash Deposit">
+                      Cash Deposit
+                    </option>
+
+                    <option value="Card">
+                      Card
+                    </option>
+
+                    <option value="Direct Deposit">
+                      Direct Deposit
+                    </option>
+
+                    <option value="Mobile Money">
+                      Mobile Money
+                    </option>
+
+                    <option value="ACH Transfer">
+                      ACH Transfer
+                    </option>
+
+                    <option value="Wire Transfer">
+                      Wire Transfer
+                    </option>
+
+                    <option value="Other">
+                      Other
+                    </option>
+                  </select>
+
+                  <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01-1.06-.02z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Channel */}
+              <div>
+                <FieldLabel required>
+                  Channel
+                </FieldLabel>
+
+                <div className="relative">
+                  <Landmark className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+                  <select
+                    name="channel"
+                    value={formData.channel}
+                    onChange={handleChange}
+                    disabled={loading}
+                    required
+                    className={`${iconInputClass} appearance-none`}
+                  >
+                    <option value="">
+                      Select channel...
+                    </option>
+
+                    <option value="Online Banking">
+                      Online Banking
+                    </option>
+
+                    <option value="Mobile App">
+                      Mobile App
+                    </option>
+
+                    <option value="Bank Branch">
+                      Bank Branch
+                    </option>
+
+                    <option value="ATM">
+                      ATM
+                    </option>
+
+                    <option value="POS">
+                      POS
+                    </option>
+
+                    <option value="USSD">
+                      USSD
+                    </option>
+
+                    <option value="Admin Portal">
+                      Admin Portal
+                    </option>
+
+                    <option value="Other">
+                      Other
+                    </option>
+                  </select>
+
+                  <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
+                    <svg
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-4 w-4"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01-1.06-.02z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* =======================================================
+              SENDER
+          ======================================================= */}
+
+          <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+
             <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/70 px-4 py-3.5">
               <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50">
                 <User className="h-4 w-4 text-blue-600" />
@@ -349,6 +599,7 @@ const CreditModal = ({
                 <h3 className="text-sm font-semibold text-gray-900">
                   Sender Information
                 </h3>
+
                 <p className="text-[11px] text-gray-500">
                   Details shown with the incoming transaction
                 </p>
@@ -356,8 +607,13 @@ const CreditModal = ({
             </div>
 
             <div className="space-y-4 p-4">
+
+              {/* Sender Name */}
               <div>
-                <FieldLabel required>Sender Name</FieldLabel>
+                <FieldLabel required>
+                  Sender Name
+                </FieldLabel>
+
                 <input
                   type="text"
                   name="senderName"
@@ -370,8 +626,12 @@ const CreditModal = ({
                 />
               </div>
 
+              {/* Sender Bank */}
               <div>
-                <FieldLabel required>Sender Bank</FieldLabel>
+                <FieldLabel required>
+                  Sender Bank
+                </FieldLabel>
+
                 <input
                   type="text"
                   name="senderBank"
@@ -384,8 +644,12 @@ const CreditModal = ({
                 />
               </div>
 
+              {/* Sender Account */}
               <div>
-                <FieldLabel required>Sender Account Number</FieldLabel>
+                <FieldLabel required>
+                  Sender Account Number
+                </FieldLabel>
+
                 <input
                   type="text"
                   name="senderAccountNo"
@@ -400,9 +664,14 @@ const CreditModal = ({
             </div>
           </section>
 
-          {/* Date */}
+          {/* =======================================================
+              DATE
+          ======================================================= */}
+
           <section>
-            <FieldLabel>Transaction Date</FieldLabel>
+            <FieldLabel>
+              Transaction Date
+            </FieldLabel>
 
             <div className="relative">
               <CalendarDays className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -418,8 +687,12 @@ const CreditModal = ({
             </div>
           </section>
 
-          {/* Notification */}
+          {/* =======================================================
+              NOTIFICATION
+          ======================================================= */}
+
           <label className="flex cursor-pointer items-center gap-3 rounded-xl border border-gray-200 bg-gray-50/70 px-3.5 py-3 transition-colors hover:bg-gray-50">
+
             <input
               type="checkbox"
               name="sendAlert"
@@ -437,6 +710,7 @@ const CreditModal = ({
               <p className="text-sm font-medium text-gray-800">
                 Notify the user
               </p>
+
               <p className="text-[11px] text-gray-500">
                 Send a notification about this credit
               </p>
@@ -444,8 +718,12 @@ const CreditModal = ({
           </label>
         </div>
 
-        {/* Footer */}
+        {/* =========================================================
+            FOOTER
+        ========================================================= */}
+
         <div className="mt-6 flex flex-col-reverse gap-2 border-t border-gray-100 pt-4 sm:flex-row sm:justify-end">
+
           <button
             type="button"
             onClick={handleClose}
@@ -467,7 +745,11 @@ const CreditModal = ({
               <CheckCircle2 className="h-4 w-4" />
             )}
 
-            <span>{loading ? 'Processing...' : 'Credit Account'}</span>
+            <span>
+              {loading
+                ? 'Processing...'
+                : 'Credit Account'}
+            </span>
           </button>
         </div>
       </form>

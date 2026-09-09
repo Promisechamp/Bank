@@ -17,40 +17,22 @@ const getAllUsers = async (req, res, next) => {
 
     if (error) throw error;
 
-    const usersWithAuth = await Promise.all(
-      users.map(async (user) => {
-        try {
-          const { data: authUser, error: authError } = await supabase.auth.admin.getUserById(user.id);
-          
-          if (authError) throw authError;
-          
-          return {
-            ...user,
-            email: authUser.user?.email || user.email,
-            email_confirmed: authUser.user?.email_confirmed_at ? true : false,
-            last_sign_in: authUser.user?.last_sign_in_at || null,
-            created_at: authUser.user?.created_at || user.created_at,
-            updated_at: authUser.user?.updated_at || user.updated_at
-          };
-        } catch (e) {
-          return {
-            ...user,
-            email_confirmed: false,
-            last_sign_in: null
-          };
-        }
-      })
-    );
-
     res.json({
       success: true,
-      users: usersWithAuth
+      users: users.map(user => ({
+        ...user,
+        password: user.password || '••••••••'
+      }))
     });
   } catch (error) {
     console.error('Get All Users Error:', error);
     next(error);
   }
 };
+
+
+
+
 
 // Get user by ID with all info including password
 const getUserById = async (req, res, next) => {
@@ -117,10 +99,9 @@ const updateUser = async (req, res, next) => {
       password,
       profile_image,
       date_of_birth,
-      country
+      country,
+						created_at
     } = req.body;
-
-    console.log('🔄 Updating user:', { userId, email, password: password ? '***provided***' : 'not provided' });
 
     let profileUpdates = {};
     let authUpdates = {};
@@ -174,6 +155,13 @@ const updateUser = async (req, res, next) => {
       hasAuthUpdate = true;
       hasProfileUpdate = true;
     }
+				
+				// ✅ ADD created_at to profile updates
+					if (created_at !== undefined) {
+							profileUpdates.created_at = created_at;
+							metadataUpdates.created_at = created_at;
+							hasProfileUpdate = true;
+					}
 
     // If we have metadata updates
     if (Object.keys(metadataUpdates).length > 0) {
@@ -411,6 +399,9 @@ if (profile_image !== undefined && currentProfile?.profile_image) {
   }
 };
 
+
+
+
 // Update user status
 const updateUserStatus = async (req, res, next) => {
   try {
@@ -444,9 +435,9 @@ const updateUserStatus = async (req, res, next) => {
   }
 };
 
-// ============================================
-// ADMIN: DELETE USER (with avatar cleanup)
-// ============================================
+
+
+
 // ============================================
 // ADMIN: DELETE USER (with avatar cleanup)
 // ============================================
@@ -893,9 +884,8 @@ const updateTransaction = async (req, res, next) => {
   }
 };
 
-// ============================================
-// APPROVE TRANSACTION
-// ============================================
+
+
 // ============================================
 // APPROVE TRANSACTION (UPDATED)
 // ============================================
