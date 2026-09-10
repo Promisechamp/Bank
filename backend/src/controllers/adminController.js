@@ -757,11 +757,32 @@ const getTransactionById = async (req, res, next) => {
 // ============================================
 // UPDATE TRANSACTION (with balance adjustment)
 // ============================================
+// ============================================
+// UPDATE TRANSACTION (full — no type restrictions)
+// ============================================
 const updateTransaction = async (req, res, next) => {
   try {
     const { txId } = req.params;
-    const { amount, description, date, status } = req.body;
+    const {
+      amount,
+      description,
+      date,
+      status,
+      transaction_type,
+      reference_id,
+      metadata,
+      counterparty_account,
+      balance_after,
+      currency,
+      fee,
+      category,
+      channel,
+      payment_method,
+    } = req.body;
 
+    // ---------------------------------------------------------
+    // FETCH EXISTING
+    // ---------------------------------------------------------
     const { data: existing, error: fetchError } = await supabase
       .from('transactions')
       .select(`
@@ -777,74 +798,121 @@ const updateTransaction = async (req, res, next) => {
 
     if (fetchError) {
       if (fetchError.code === 'PGRST116') {
-        return res.status(404).json({ success: false, error: 'Transaction not found' });
+        return res.status(404).json({
+          success: false,
+          error: 'Transaction not found',
+        });
       }
       throw fetchError;
     }
 
-    const { account_id, amount: oldAmount, transaction_type } = existing;
     const account = existing.accounts;
     if (!account) {
-      return res.status(404).json({ success: false, error: 'Associated account not found' });
+      return res.status(404).json({
+        success: false,
+        error: 'Associated account not found',
+      });
     }
 
-    let updates = {};
+    // ---------------------------------------------------------
+    // BUILD UPDATES
+    // ---------------------------------------------------------
+    const updates = {};
     let newBalance = account.balance;
     let balanceUpdated = false;
 
+    // ---- Amount (allowed for ALL transaction types) ----
     if (amount !== undefined && amount !== null) {
       const newAmount = parseFloat(amount);
       if (isNaN(newAmount) || newAmount <= 0) {
-        return res.status(400).json({ success: false, error: 'Amount must be a positive number' });
+        return res.status(400).json({
+          success: false,
+          error: 'Amount must be a positive number',
+        });
       }
 
-      const old = parseFloat(oldAmount);
-      const diff = newAmount - old;
+      const oldAmount = parseFloat(existing.amount);
+      const diff = newAmount - oldAmount;
 
-      if (transaction_type === 'credit') {
-        newBalance = account.balance + diff;
-      } else if (transaction_type === 'debit') {
-        newBalance = account.balance + old - newAmount;
+      const type = transaction_type || existing.transaction_type;
+
+      // ✅ Recalculate balance for every type — no restrictions
+      if (type === 'credit') {
+        newBalance = parseFloat(account.balance) + diff;
+      } else if (type === 'debit') {
+        newBalance = parseFloat(account.balance) - diff;
         if (newBalance < 0) {
           return res.status(400).json({
             success: false,
-            error: `Insufficient balance. Available: ${formatCurrency(account.balance)}, requested debit: ${formatCurrency(newAmount)}`
+            error: `Insufficient balance. Available: ${formatCurrency(
+              account.balance
+            )}, resulting balance would be negative.`,
           });
         }
       } else {
-        return res.status(400).json({
-          success: false,
-          error: 'Editing amount for transfer transactions is not supported'
-        });
+        // transfer / reversal / anything else — treat as a debit-style
+        // adjustment on the source account
+        newBalance = parseFloat(account.balance) - diff;
+        if (newBalance < 0) {
+          return res.status(400).json({
+            success: false,
+            error: `Insufficient balance for this adjustment. Available: ${formatCurrency(
+              account.balance
+            )}.`,
+          });
+        }
       }
 
       updates.amount = newAmount;
       balanceUpdated = true;
     }
 
+    // ---- All other editable columns (unrestricted) ----
     if (description !== undefined) updates.description = description;
     if (date !== undefined) updates.created_at = date;
     if (status !== undefined) updates.status = status;
+    if (transaction_type !== undefined) updates.transaction_type = transaction_type;
+    if (reference_id !== undefined) updates.reference_id = reference_id;
+    if (metadata !== undefined) updates.metadata = metadata;
+    if (counterparty_account !== undefined) updates.counterparty_account = counterparty_account;
+    if (balance_after !== undefined) updates.balance_after = balance_after;
+    if (currency !== undefined) updates.currency = currency;
+    if (fee !== undefined) updates.fee = fee;
+    if (category !== undefined) updates.category = category;
+    if (channel !== undefined) updates.channel = channel;
+    if (payment_method !== undefined) updates.payment_method = payment_method;
 
     if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ success: false, error: 'No fields to update' });
+      return res.status(400).json({
+        success: false,
+        error: 'No fields to update',
+      });
     }
 
+    // ---------------------------------------------------------
+    // APPLY BALANCE CHANGE FIRST (with rollback guard on tx update)
+    // ---------------------------------------------------------
     if (balanceUpdated) {
       const { error: balanceError } = await supabase
         .from('accounts')
-        .update({ balance: newBalance, updated_at: new Date().toISOString() })
+        .update({
+          balance: newBalance,
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', account.id);
 
       if (balanceError) {
         console.error('Balance update error:', balanceError);
         return res.status(500).json({
           success: false,
-          error: 'Failed to update account balance'
+          error: 'Failed to update account balance',
         });
       }
     }
 
+    // ---------------------------------------------------------
+    // UPDATE TRANSACTION
+    // ---------------------------------------------------------
     const { data: updated, error: updateError } = await supabase
       .from('transactions')
       .update(updates)
@@ -864,25 +932,36 @@ const updateTransaction = async (req, res, next) => {
       .single();
 
     if (updateError) {
+      // Roll back balance if we moved it
+      if (balanceUpdated) {
+        await supabase
+          .from('accounts')
+          .update({
+            balance: account.balance,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', account.id);
+      }
+
       console.error('Transaction update error:', updateError);
       return res.status(500).json({
         success: false,
-        error: 'Failed to update transaction'
+        error: 'Failed to update transaction',
       });
     }
 
     res.json({
       success: true,
-      message: 'Transaction updated and balance adjusted',
+      message: 'Transaction updated successfully',
       transaction: updated,
-      new_balance: newBalance
+      new_balance: balanceUpdated ? newBalance : account.balance,
     });
-
   } catch (error) {
     console.error('Update Transaction Error:', error);
     next(error);
   }
 };
+
 
 
 
@@ -1483,10 +1562,27 @@ const generateReference = () => {
 // ============================================
 // ADMIN CREDIT / DEBIT
 // ============================================
+// ============================================
+// ADMIN CREDIT
+// ============================================
 const adminCredit = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    const { accountId, senderName, senderBank, senderAccountNo, amount, description, date, sendAlert } = req.body;
+    const {
+      accountId,
+      amount,
+      description,
+      date,
+      sendAlert,
+
+      // Sender metadata (top-level, kept for compatibility)
+      senderName,
+      senderBank,
+      senderAccountNo,
+
+      // ✅ Accept full metadata object from frontend
+      metadata: incomingMetadata,
+    } = req.body;
 
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
@@ -1536,7 +1632,39 @@ const adminCredit = async (req, res, next) => {
 
     if (updateError) throw updateError;
 
+    // ---------------------------------------------------------
+    // BUILD FULL METADATA
+    // Merge anything the frontend sent under `metadata` with the
+    // top-level sender fields so nothing is ever dropped.
+    // ---------------------------------------------------------
+    const safeIncomingMetadata =
+      incomingMetadata && typeof incomingMetadata === 'object'
+        ? incomingMetadata
+        : {};
+
+    const finalMetadata = {
+      ...safeIncomingMetadata,
+
+      // Ensure canonical keys always exist (fall back to top-level)
+      senderName:
+        safeIncomingMetadata.senderName ?? senderName ?? null,
+      senderBank:
+        safeIncomingMetadata.senderBank ?? senderBank ?? null,
+      senderAccountNo:
+        safeIncomingMetadata.senderAccountNo ?? senderAccountNo ?? null,
+
+      // Explicitly carry these through so Receipt.jsx finds them
+      paymentMethod:
+        safeIncomingMetadata.paymentMethod ?? null,
+      channel:
+        safeIncomingMetadata.channel ?? null,
+
+      description:
+        safeIncomingMetadata.description ?? description ?? null,
+    };
+
     const reference = generateReference();
+
     const transactionData = {
       account_id: accountId,
       transaction_type: 'credit',
@@ -1545,11 +1673,7 @@ const adminCredit = async (req, res, next) => {
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
-      metadata: { 
-        senderName: senderName || null,
-        senderBank: senderBank || null,
-        senderAccountNo: senderAccountNo || null
-      }
+      metadata: finalMetadata, // ✅ Full metadata saved
     };
 
     const { data: transaction, error: txError } = await supabase
@@ -1576,11 +1700,11 @@ const adminCredit = async (req, res, next) => {
             amount: formatCurrency(amountNum),
             newBalance: formatCurrency(newBalance),
             description: description || 'Credit transaction',
-            reference
+            reference,
           }
         );
       } catch (notifError) {
-        console.error('Notification/Email error (non‑critical):', notifError);
+        console.error('Notification/Email error (non-critical):', notifError);
       }
     }
 
@@ -1588,9 +1712,8 @@ const adminCredit = async (req, res, next) => {
       success: true,
       message: `Credited ${formatCurrency(amountNum)} to account ${account.account_number}`,
       transaction,
-      new_balance: newBalance
+      new_balance: newBalance,
     });
-
   } catch (error) {
     console.error('Admin Credit Error:', error);
     next(error);
@@ -1599,11 +1722,30 @@ const adminCredit = async (req, res, next) => {
 
 
 
+
+
+// ============================================
+// ADMIN DEBIT
+// ============================================
 const adminDebit = async (req, res, next) => {
   try {
     const { userId } = req.params;
-    // Added receiverBank to destructuring
-    const { accountId, receiverAccountNo, receiverName, receiverBank, amount, description, note, date, sendAlert } = req.body;
+    const {
+      accountId,
+      amount,
+      description,
+      note,
+      date,
+      sendAlert,
+
+      // Receiver metadata (top-level, kept for compatibility)
+      receiverAccountNo,
+      receiverName,
+      receiverBank,
+
+      // ✅ Accept full metadata object from frontend
+      metadata: incomingMetadata,
+    } = req.body;
 
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
@@ -1612,7 +1754,6 @@ const adminDebit = async (req, res, next) => {
       });
     }
 
-    // Added validation for receiver information
     if (!receiverName || !receiverAccountNo || !receiverBank) {
       return res.status(400).json({
         success: false,
@@ -1668,7 +1809,40 @@ const adminDebit = async (req, res, next) => {
 
     if (updateError) throw updateError;
 
+    // ---------------------------------------------------------
+    // BUILD FULL METADATA
+    // ---------------------------------------------------------
+    const safeIncomingMetadata =
+      incomingMetadata && typeof incomingMetadata === 'object'
+        ? incomingMetadata
+        : {};
+
+    const finalMetadata = {
+      ...safeIncomingMetadata,
+
+      // Ensure canonical keys always exist (fall back to top-level)
+      receiverAccountNo:
+        safeIncomingMetadata.receiverAccountNo ?? receiverAccountNo ?? null,
+      receiverName:
+        safeIncomingMetadata.receiverName ?? receiverName ?? null,
+      receiverBank:
+        safeIncomingMetadata.receiverBank ?? receiverBank ?? null,
+
+      // Explicitly carry these through so Receipt.jsx finds them
+      paymentMethod:
+        safeIncomingMetadata.paymentMethod ?? null,
+      channel:
+        safeIncomingMetadata.channel ?? null,
+
+      admin_note:
+        safeIncomingMetadata.admin_note ?? note ?? '',
+
+      description:
+        safeIncomingMetadata.description ?? description ?? null,
+    };
+
     const reference = generateReference();
+
     const transactionData = {
       account_id: accountId,
       transaction_type: 'debit',
@@ -1677,12 +1851,7 @@ const adminDebit = async (req, res, next) => {
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
-      metadata: { 
-        receiverAccountNo: receiverAccountNo,
-        receiverName: receiverName,
-        receiverBank: receiverBank,
-        admin_note: note || ''
-      }
+      metadata: finalMetadata, // ✅ Full metadata saved
     };
 
     const { data: transaction, error: txError } = await supabase
@@ -1710,11 +1879,11 @@ const adminDebit = async (req, res, next) => {
             newBalance: formatCurrency(newBalance),
             description: description || 'Debit transaction',
             note: note || '',
-            reference
+            reference,
           }
         );
       } catch (notifError) {
-        console.error('Notification/Email error (non‑critical):', notifError);
+        console.error('Notification/Email error (non-critical):', notifError);
       }
     }
 
@@ -1722,14 +1891,15 @@ const adminDebit = async (req, res, next) => {
       success: true,
       message: `Debited ${formatCurrency(amountNum)} from account ${account.account_number}`,
       transaction,
-      new_balance: newBalance
+      new_balance: newBalance,
     });
-
   } catch (error) {
     console.error('Admin Debit Error:', error);
     next(error);
   }
 };
+
+
 
 
 

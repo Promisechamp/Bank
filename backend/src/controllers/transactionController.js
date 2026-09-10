@@ -310,6 +310,10 @@ const sendOtpEmail = async (
 // INITIATE SAME-BANK TRANSFER
 // ============================================================
 
+// ============================================================
+// INITIATE SAME-BANK TRANSFER
+// ============================================================
+
 const initiateTransfer = async (req, res, next) => {
   try {
     const {
@@ -474,6 +478,16 @@ const initiateTransfer = async (req, res, next) => {
       description || 'Same bank transfer';
 
     // --------------------------------------------------------
+    // SENDER INFO (for metadata)
+    // --------------------------------------------------------
+
+    const senderName =
+      sourceAccount.profiles?.full_name || 'User';
+
+    const senderBank =
+      sourceAccount.bank_name || 'Trustycdu bank';
+
+    // --------------------------------------------------------
     // CREATE PENDING TRANSACTION
     // --------------------------------------------------------
 
@@ -491,17 +505,30 @@ const initiateTransfer = async (req, res, next) => {
         status: 'pending_review',
 
         metadata: {
-          transferType: 'same_bank',
-          direction: 'debit',
-
-          recipientAccountNumber,
-          recipientName: confirmedRecipientName,
-          recipientAccountId: recipient.id,
-
-          senderRestricted,
-
-          otpRequired: true
-        }
+										transferType: 'same_bank',
+										direction: 'debit',
+								
+										// Canonical for Receipt.jsx
+										receiverName: confirmedRecipientName,
+										receiverBank: 'Trustycdu bank',
+										receiverAccountNo: recipient.account_number,
+								
+										// Kept for backward compatibility
+										recipientAccountNumber,
+										recipientName: confirmedRecipientName,
+										recipientAccountId: recipient.id,
+								
+										// Sender info (used for display on recipient's receipt)
+										senderName,
+										senderAccountNumber: sourceAccount.account_number,
+										senderBank,
+								
+										paymentMethod: 'Bank Transfer',
+										channel: 'Online Banking',
+								
+										senderRestricted,
+										otpRequired: true
+								}
       }]);
 
     if (transactionError) {
@@ -594,6 +621,17 @@ const initiateTransfer = async (req, res, next) => {
     next(error);
   }
 };
+
+
+
+
+
+
+
+
+
+
+
 
 // ============================================================
 // VERIFY OTP AND COMPLETE TRANSFER
