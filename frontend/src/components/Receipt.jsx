@@ -53,7 +53,7 @@ const RECEIPT_FONT =
 ================================================================ */
 
 const PROCESSING_BANK_NAME =
-  'Creditunion bank';
+  'Trustycdu bank';
 
 const PROCESSING_BANK_LOGO =
   '/logo.png';
@@ -314,6 +314,10 @@ const ImageReceipt = ({
     metadata = {},
   } = receiptData;
 
+  /* --------------------------------------------------------------
+     PARTY — with all backward-compat fallbacks
+  -------------------------------------------------------------- */
+
   const senderName =
     metadata.senderName ||
     metadata.sender_name ||
@@ -326,12 +330,16 @@ const ImageReceipt = ({
 
   const senderAccountNo =
     metadata.senderAccountNo ||
+    metadata.senderAccountNumber ||
     metadata.sender_account_no ||
+    metadata.sender_account_number ||
     null;
 
   const receiverName =
     metadata.receiverName ||
+    metadata.recipientName ||
     metadata.receiver_name ||
+    metadata.recipient_name ||
     null;
 
   const receiverBank =
@@ -341,8 +349,14 @@ const ImageReceipt = ({
 
   const receiverAccountNo =
     metadata.receiverAccountNo ||
+    metadata.recipientAccountNumber ||
     metadata.receiver_account_no ||
+    metadata.recipient_account_number ||
     null;
+
+  /* --------------------------------------------------------------
+     ACCOUNT
+  -------------------------------------------------------------- */
 
   const accountNumber =
     transaction.accounts?.account_number ||
@@ -362,6 +376,10 @@ const ImageReceipt = ({
     metadata.bankName ||
     metadata.bank_name ||
     null;
+
+  /* --------------------------------------------------------------
+     DESCRIPTION / TYPE / TITLE
+  -------------------------------------------------------------- */
 
   const description =
     transaction.description ||
@@ -389,6 +407,10 @@ const ImageReceipt = ({
       : isDebit
         ? '−'
         : '';
+
+  /* --------------------------------------------------------------
+     MONEY / META
+  -------------------------------------------------------------- */
 
   const currency =
     transaction.currency ||
@@ -440,6 +462,10 @@ const ImageReceipt = ({
     metadata.category ||
     null;
 
+  /* --------------------------------------------------------------
+     FORMATTERS
+  -------------------------------------------------------------- */
+
   const formatOptionalMoney = (value) => {
     if (
       value === undefined ||
@@ -479,26 +505,32 @@ const ImageReceipt = ({
         )
       : null;
 
-  const partyName =
-    isCredit
-      ? senderName
-      : isDebit
-        ? receiverName
-        : null;
+  const partyName = (
+  isCredit
+    ? senderName
+    : isDebit
+      ? receiverName
+      : null
+)?.toUpperCase() || null;
 
-  const partyBank =
-    isCredit
-      ? senderBank
-      : isDebit
-        ? receiverBank
-        : null;
+const partyBank = (
+  isCredit
+    ? senderBank
+    : isDebit
+      ? receiverBank
+      : null
+)?.toUpperCase() || null;
 
-  const partyLabel =
-    isCredit
-      ? 'Received from'
-      : isDebit
-        ? 'Paid to'
-        : 'Transaction party';
+const partyLabel = (
+  isCredit
+    ? 'Received from'
+    : isDebit
+      ? 'Paid to'
+      : 'Transaction party'
+).toUpperCase();
+  /* --------------------------------------------------------------
+     STATUS COLORS
+  -------------------------------------------------------------- */
 
   const statusLabel =
     statusData?.label ||
@@ -537,6 +569,10 @@ const ImageReceipt = ({
     statusColors[
       normalizedStatus
     ] || statusColors.completed;
+
+  /* --------------------------------------------------------------
+     SUB COMPONENTS
+  -------------------------------------------------------------- */
 
   const Row = ({
     label,
@@ -647,6 +683,10 @@ const ImageReceipt = ({
       </div>
     );
   };
+
+  /* --------------------------------------------------------------
+     EXTRA DETAILS GRID
+  -------------------------------------------------------------- */
 
   const extraDetails = [
     {
@@ -1023,6 +1063,7 @@ const ImageReceipt = ({
                     color: '#111827',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
+																				textTransform: 'uppercase',
                     textOverflow: 'ellipsis',
                   }}
                 >
@@ -1918,13 +1959,32 @@ const Receipt = ({
         }
       );
 
+    /* ----------------------------------------------------------
+       ✅ FIX: handle transaction_type: 'transfer' by looking at
+       metadata.direction to decide credit vs debit.
+    ---------------------------------------------------------- */
+
+    const rawType = String(
+      transaction.transaction_type || ''
+    ).toLowerCase();
+
+    const direction = String(
+      metadata.direction || ''
+    ).toLowerCase();
+
+    const isTransfer = rawType === 'transfer';
+
     const isCredit =
-      transaction.transaction_type ===
-      'credit';
+      rawType === 'credit' ||
+      (isTransfer &&
+        (direction === 'credit' ||
+          direction === 'received'));
 
     const isDebit =
-      transaction.transaction_type ===
-      'debit';
+      rawType === 'debit' ||
+      (isTransfer &&
+        (direction === 'debit' ||
+          direction === 'sent'));
 
     return {
       status,
@@ -2081,6 +2141,10 @@ const Receipt = ({
   const StatusIcon =
     statusData.icon;
 
+  /* --------------------------------------------------------------
+     PARTY — with all backward-compat fallbacks
+  -------------------------------------------------------------- */
+
   const senderName =
     metadata.senderName ||
     metadata.sender_name ||
@@ -2093,12 +2157,16 @@ const Receipt = ({
 
   const senderAccountNo =
     metadata.senderAccountNo ||
+    metadata.senderAccountNumber ||
     metadata.sender_account_no ||
+    metadata.sender_account_number ||
     null;
 
   const receiverName =
     metadata.receiverName ||
+    metadata.recipientName ||
     metadata.receiver_name ||
+    metadata.recipient_name ||
     null;
 
   const receiverBank =
@@ -2108,7 +2176,9 @@ const Receipt = ({
 
   const receiverAccountNo =
     metadata.receiverAccountNo ||
+    metadata.recipientAccountNumber ||
     metadata.receiver_account_no ||
+    metadata.recipient_account_number ||
     null;
 
   const adminNote =
