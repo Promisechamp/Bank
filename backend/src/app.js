@@ -15,7 +15,13 @@ app.use(helmet());
 // Allow multiple origins: comma-separated in CORS_ORIGIN env, or fallback to localhost
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:3000', 'https://bank-tzkw.onrender.com']; 
+  : [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://bank-tzkw.onrender.com',
+      'https://trustycreditunion.com',
+      'https://www.trustycreditunion.com',
+    ];
 
 app.use(cors({
   origin: function (origin, callback) {
