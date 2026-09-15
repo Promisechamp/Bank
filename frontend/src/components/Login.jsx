@@ -192,7 +192,7 @@ const Login = () => {
 
           {/* Footer */}
           <p className="relative text-[11px] text-white/35">
-            © {new Date().getFullYear()} Trustybank. All rights reserved.
+            © {new Date().getFullYear()} trusty credit union bank. All rights reserved.
           </p>
         </div>
 
@@ -232,7 +232,7 @@ const Login = () => {
               </h2>
 
               <p className="mt-2 text-sm leading-6 text-gray-500">
-                Sign in to securely access your Trustybank account.
+                Sign in to securely access your trusty credit union bank account.
               </p>
             </div>
 

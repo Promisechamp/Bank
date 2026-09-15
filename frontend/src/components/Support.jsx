@@ -25,11 +25,11 @@ const SUPPORT_INFO = {
   accountOfficer: {
     name: 'Your Account Officer',
     role: 'Relationship Manager',
-    email: 'trustycdubank@gmail.com',
+    email: 'JamesAnderson@trustycreditunion.com',
     phone: '+1(323) 212-0135',
   },
   business: {
-    email: 'support@trustycdubank.com',
+    email: 'support@trustycreditunion.com',
     phone: '+1(323) 212-0135',
     hours: 'Available 24/7',
   },

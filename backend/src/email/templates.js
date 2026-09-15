@@ -1,6 +1,6 @@
 // ============================================================
 // email/templates.js
-// Trustybank — Premium Light Email Templates
+// Trusty credit union bank — Premium Light Email Templates
 // ============================================================
 
 const frontendUrl = (process.env.FRONTEND_URL);
@@ -292,7 +292,7 @@ const emailShell = ({
 
         <img
           src="${logoUrl}"
-          alt="Trustybank"
+          alt="Trusty credit union bank"
           style="
             display:block;
             max-width:175px;
@@ -315,12 +315,12 @@ const emailShell = ({
       <div class="footer">
 
         <p class="footer-text">
-          This is an automated message from Trustybank.
+          This is an automated message from Trusty credit union bank.
           Please do not reply to this email.
         </p>
 
         <p class="footer-text" style="margin-top:5px;">
-          © ${new Date().getFullYear()} Trustybank. All rights reserved.
+          © ${new Date().getFullYear()} Trusty credit union bank. All rights reserved.
         </p>
 
       </div>
@@ -389,7 +389,7 @@ const creditEmail = ({
 
   const sender =
     senderName ||
-    'Trustybank';
+    'Trusty credit union bank';
 
   const isTransfer =
     direction === 'received' ||
@@ -402,8 +402,8 @@ const creditEmail = ({
 
   const intro =
     isTransfer
-      ? `A transfer from ${sender} has been successfully credited to your Trustybank account.`
-      : 'A credit has been successfully posted to your Trustybank account.';
+      ? `A transfer from ${sender} has been successfully credited to your Trusty credit union bank account.`
+      : 'A credit has been successfully posted to your Trusty credit union bank account.';
 
   const counterpartyRows = isTransfer
     ? `
@@ -420,9 +420,9 @@ const creditEmail = ({
     : '';
 
   return emailShell({
-    title: 'Trustybank — Transfer Received',
+    title: 'Trusty credit union bank — Transfer Received',
     preheader:
-      `You received ${amount} in your Trustybank account.`,
+      `You received ${amount} in your Trusty credit union bank account.`,
 
     content: `
 
@@ -509,7 +509,7 @@ const creditEmail = ({
 
       <p class="muted">
         If you do not recognize this transaction,
-        please contact Trustybank through your official
+        please contact Trusty credit union bank through your official
         banking support channel.
       </p>
 
@@ -549,7 +549,7 @@ const debitEmail = ({
   const intro =
     isTransfer
       ? `Your transfer to ${recipientName || 'the recipient'} has been successfully processed.`
-      : 'A debit has been successfully posted to your Trustybank account.';
+      : 'A debit has been successfully posted to your Trusty credit union bank account.';
 
   const counterpartyRows = isTransfer
     ? `
@@ -566,9 +566,9 @@ const debitEmail = ({
     : '';
 
   return emailShell({
-    title: 'Trustybank — Transfer Sent',
+    title: 'Trusty credit union bank — Transfer Sent',
     preheader:
-      `Your Trustybank account was debited ${amount}.`,
+      `Your Trusty credit union bank account was debited ${amount}.`,
 
     content: `
 
@@ -655,7 +655,7 @@ const debitEmail = ({
 
       <p class="muted">
         If you do not recognize this transaction,
-        please contact Trustybank through your official
+        please contact Trusty credit union bank through your official
         banking support channel immediately.
       </p>
 
@@ -720,9 +720,9 @@ const transferEmail = ({
   }
 
   return emailShell({
-    title: 'Trustybank — Transfer Completed',
+    title: 'Trusty credit union bank — Transfer Completed',
     preheader:
-      `Your Trustybank transfer of ${amount} has been completed.`,
+      `Your Trusty credit union bank transfer of ${amount} has been completed.`,
 
     content: `
 
@@ -821,14 +821,14 @@ const welcomeEmail = ({
 } = {}) => {
 
   return emailShell({
-    title: 'Welcome to Trustybank',
+    title: 'Welcome to Trusty credit union bank',
     preheader:
-      'Your Trustybank account has been created successfully.',
+      'Your Trusty credit union bank account has been created successfully.',
 
     content: `
 
       <span class="eyebrow">
-        WELCOME TO TRUSTYBANK
+        WELCOME TO Trusty credit union bank
       </span>
 
       <h1 class="title">
@@ -836,7 +836,7 @@ const welcomeEmail = ({
       </h1>
 
       <p class="text">
-        Your Trustybank account has been successfully
+        Your Trusty credit union bank account has been successfully
         created. We are pleased to have you with us.
       </p>
 
@@ -896,7 +896,7 @@ const welcomeEmail = ({
           class="button"
           target="_blank"
         >
-          Open Trustybank
+          Open Trusty credit union bank
         </a>
 
       </div>
@@ -924,9 +924,9 @@ const newUserRegistrationAdminEmail = ({
 } = {}) => {
 
   return emailShell({
-    title: 'Trustybank — New User Registration',
+    title: 'Trusty credit union bank — New User Registration',
     preheader:
-      `${userName} has registered for a Trustybank account.`,
+      `${userName} has registered for a Trusty credit union bank account.`,
 
     content: `
 
@@ -947,7 +947,7 @@ const newUserRegistrationAdminEmail = ({
         style="margin-top:8px;"
       >
         A new customer has successfully registered
-        with Trustybank.
+        with Trusty credit union bank.
       </p>
 
       <table
@@ -1013,9 +1013,9 @@ const cardOrderEmail = ({
 } = {}) => {
 
   return emailShell({
-    title: 'Trustybank — Card Order Update',
+    title: 'Trusty credit union bank — Card Order Update',
     preheader:
-      `Your Trustybank card order status is ${status}.`,
+      `Your Trusty credit union bank card order status is ${status}.`,
 
     content: `
 
@@ -1035,7 +1035,7 @@ const cardOrderEmail = ({
         class="text"
         style="margin-top:8px;"
       >
-        Your Trustybank card order has been updated.
+        Your Trusty credit union bank card order has been updated.
       </p>
 
       <div class="status">
@@ -1100,9 +1100,9 @@ const transferRejectedEmail = ({
 } = {}) => {
 
   return emailShell({
-    title: 'Trustybank — Transfer Rejected',
+    title: 'Trusty credit union bank — Transfer Rejected',
     preheader:
-      `Your Trustybank transfer of ${amount} was rejected.`,
+      `Your Trusty credit union bank transfer of ${amount} was rejected.`,
 
     content: `
 
@@ -1223,7 +1223,7 @@ const transferRejectedEmail = ({
 
       <p class="muted">
         If you believe this rejection was made in error,
-        please contact Trustybank support through your
+        please contact Trusty credit union bank support through your
         official banking channel.
       </p>
 

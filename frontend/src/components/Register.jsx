@@ -26,7 +26,7 @@ const SUPPORT_INFO = {
   accountOfficer: {
     name: 'Registration Support Team',
     role: 'Account Setup Specialists',
-    email: 'trustycdubank@gmail.com',
+    email: 'joinUs@trustycreditunion.com',
     phone: '+1(323) 212-0135',
   },
 

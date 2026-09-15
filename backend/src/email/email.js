@@ -63,7 +63,7 @@ const verifyEmailTransporter = async () => {
     await transporter.verify();
 
     console.log(
-      `Trustybank email server connected: ${smtpHost}:${smtpPort}`
+      `Trusty credit union bank email server connected: ${smtpHost}:${smtpPort}`
     );
 
     return true;
@@ -71,7 +71,7 @@ const verifyEmailTransporter = async () => {
   } catch (error) {
 
     console.error(
-      'Trustybank email server connection failed:',
+      'Trusty credit union bank email server connection failed:',
       error.message
     );
 
@@ -114,7 +114,7 @@ const sendEmail = async ({
 
   const from =
     process.env.SMTP_FROM ||
-    `"Trustybank" <${process.env.SMTP_USER}>`;
+    `"Trusty credit union bank" <${process.env.SMTP_USER}>`;
 
   // ----------------------------------------------------------
   // SEND
@@ -140,7 +140,7 @@ const sendEmail = async ({
       });
 
     console.log(
-      `Trustybank email sent to ${to}: ${info.messageId}`
+      `Trusty credit union bank email sent to ${to}: ${info.messageId}`
     );
 
     return info;
@@ -148,7 +148,7 @@ const sendEmail = async ({
   } catch (error) {
 
     console.error(
-      `Trustybank email send error for ${to}:`,
+      `Trusty credit union bank email send error for ${to}:`,
       error.message
     );
 

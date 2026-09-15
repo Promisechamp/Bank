@@ -194,7 +194,7 @@ const createAndSendNotification = async (
     if (type === 'credit') {
 
       subject =
-        `Trustybank — Transfer Received ${templateData.amount}`;
+        `Trusty credit union bank — Transfer Received ${templateData.amount}`;
 
       html =
         creditEmail(templateData);
@@ -207,7 +207,7 @@ const createAndSendNotification = async (
     else if (type === 'debit') {
 
       subject =
-        `Trustybank — Transfer Sent ${templateData.amount}`;
+        `Trusty credit union bank — Transfer Sent ${templateData.amount}`;
 
       html =
         debitEmail(templateData);
@@ -220,7 +220,7 @@ const createAndSendNotification = async (
     else if (type === 'transfer') {
 
       subject =
-        `Trustybank — Transfer Completed ${templateData.amount}`;
+        `Trusty credit union bank — Transfer Completed ${templateData.amount}`;
 
       html =
         transferEmail(templateData);
@@ -236,7 +236,7 @@ const createAndSendNotification = async (
     ) {
 
       subject =
-        'Welcome to Trustybank';
+        'Welcome to Trusty credit union bank';
 
       html =
         welcomeEmail(templateData);
@@ -252,7 +252,7 @@ const createAndSendNotification = async (
     ) {
 
       subject =
-        'Trustybank — New User Registration';
+        'Trusty credit union bank — New User Registration';
 
       html =
         newUserRegistrationAdminEmail(
@@ -270,7 +270,7 @@ const createAndSendNotification = async (
     ) {
 
       subject =
-        'Trustybank — Card Order Update';
+        'Trusty credit union bank — Card Order Update';
 
       html =
         cardOrderEmail(
@@ -288,7 +288,7 @@ const createAndSendNotification = async (
     ) {
 
       subject =
-        'Trustybank — Transfer Rejected';
+        'Trusty credit union bank — Transfer Rejected';
 
       html =
         transferRejectedEmail(

@@ -16,7 +16,7 @@ const {
 const isAdmin = (req) => {
   return (
     req.user?.role === 'admin' ||
-    req.user?.email === 'admin@bank.com'
+    
   );
 };
 

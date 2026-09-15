@@ -292,7 +292,7 @@ const OrderCard = () => {
     try {
       const payload = {
         card_type: 'debit',
-        card_brand: 'TRUSTCDU',
+        card_brand: 'TRUSTYCDU BANK',
         cardholder_name: form.cardholderName.trim(),
         card_fee: CARD_FEE,
         currency: 'USD',
@@ -1045,7 +1045,7 @@ const OrderCard = () => {
                       </p>
 
                       <p className="mt-1 text-sm font-black tracking-[0.15em]">
-                        TRUSTCDU
+                        TRUSTYCDU BANK
                       </p>
                     </div>
 

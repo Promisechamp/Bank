@@ -78,7 +78,7 @@ const sendOtpEmail = async (
 
         <img
           src="${logoUrl}"
-          alt="Trustybank"
+          alt="Trusty credit union bank"
           style="
             display:block;
             max-width:170px;
@@ -123,7 +123,7 @@ const sendOtpEmail = async (
           line-height:1.7;
           color:#667085;
         ">
-          A transfer has been initiated from your Trustybank account.
+          A transfer has been initiated from your Trusty credit union bank account.
           Enter the verification code below to continue.
         </p>
 
@@ -266,7 +266,7 @@ const sendOtpEmail = async (
           color:#667085;
         ">
           If you did not initiate this transfer, do not share this
-          verification code and contact Trustybank immediately.
+          verification code and contact Trusty credit union bank support immediately.
         </p>
 
       </div>
@@ -285,7 +285,7 @@ const sendOtpEmail = async (
           line-height:1.6;
           color:#98a2b3;
         ">
-          This is an automated message from Trustybank.
+          This is an automated message from Trusty credit union bank.
           Please do not reply to this email.
         </p>
 
@@ -301,7 +301,7 @@ const sendOtpEmail = async (
 
   await sendEmail({
     to: toEmail,
-    subject: 'Trustybank — Transaction Verification Code',
+    subject: 'Trusty credit union bank — Transaction Verification Code',
     html
   });
 };
@@ -485,7 +485,7 @@ const initiateTransfer = async (req, res, next) => {
       sourceAccount.profiles?.full_name || 'User';
 
     const senderBank =
-      sourceAccount.bank_name || 'Trustycdu bank';
+      sourceAccount.bank_name || 'Trusty credit union bank';
 
     // --------------------------------------------------------
     // CREATE PENDING TRANSACTION
@@ -510,7 +510,7 @@ const initiateTransfer = async (req, res, next) => {
 								
 										// Canonical for Receipt.jsx
 										receiverName: confirmedRecipientName,
-										receiverBank: 'Trustycdu bank',
+										receiverBank: 'Trusty credit union bank',
 										receiverAccountNo: recipient.account_number,
 								
 										// Kept for backward compatibility

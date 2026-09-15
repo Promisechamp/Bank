@@ -8,7 +8,7 @@ const PORT = process.env.PORT || 5000;
 // Parse allowed origins the same way as in app.js
 const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(origin => origin.trim())
-  : ['http://localhost:5173', 'http://localhost:3000', 'https://bank-tzkw.onrender.com'];
+  : ['http://localhost:5173', 'http://localhost:3000', 'https://bank-tzkw.onrender.com', 'https://www.trustycreditunion.com'];
 
 const server = http.createServer(app);
 

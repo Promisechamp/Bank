@@ -60,7 +60,7 @@ const Profile = () => {
     const officers = [
       {
         name: 'James Anderson',
-        email: 'trustycdubank@gmail.com',
+        email: 'jamesanderson@trustycreditunion.com',
         phone: '+1(323) 212-0135',
         image: '/acm.png',
         title: 'Senior Account Officer',

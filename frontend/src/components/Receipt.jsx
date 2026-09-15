@@ -53,7 +53,7 @@ const RECEIPT_FONT =
 ================================================================ */
 
 const PROCESSING_BANK_NAME =
-  'Trustycdu bank';
+  'Trusty credit union';
 
 const PROCESSING_BANK_LOGO =
   '/logo.png';

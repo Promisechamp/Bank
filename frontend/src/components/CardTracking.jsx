@@ -274,7 +274,7 @@ function PremiumCard({ order }) {
           <div className="flex items-start justify-between">
             <div>
               <p className="text-[18px] font-semibold tracking-[0.14em]">
-                TRUSTCDU
+                TRUSTYCDU BANK
               </p>
               <p className="mt-1 text-[8px] uppercase tracking-[0.28em] text-white/50">
                 Banking card

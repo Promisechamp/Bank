@@ -159,7 +159,7 @@ const register = async (req, res, next) => {
       io,
       authData.user.id,
       'system',
-      'Welcome to Trustycredit union banking!',
+      'Welcome to Trusty credit union banking!',
       'Your account has been created successfully. Start exploring.',
       null,
       {
@@ -368,7 +368,7 @@ const selfRegister = async (req, res, next) => {
       io,
       authData.user.id,
       'system',
-      'Welcome to Trustycredit union banking!',
+      'Welcome to Trusty credit union banking!',
       'Your account has been created successfully. Start exploring.',
       null,
       {

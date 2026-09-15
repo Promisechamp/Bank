@@ -64,7 +64,7 @@ function Logo() {
     <Link to="/" className="inline-flex items-center">
       <img
         src={LogoImg}
-        alt="Trustybank"
+        alt="trustycreditunion"
         width={120}
         className="-ms-5"
       />
@@ -389,7 +389,7 @@ function BankCard() {
                 </div>
 
                 <span className="text-sm font-bold tracking-wide">
-                  TRUSTYBANK
+                  TRUSTYCDU BANK
                 </span>
               </div>
 
@@ -1258,7 +1258,7 @@ function SecurityBand() {
             </h2>
 
             <p className="mt-5 max-w-lg text-sm leading-7 text-indigo-100 sm:text-base">
-              Banking should give you confidence. Trustybank is designed around
+              Banking should give you confidence. Trusty credit union bank is designed around
               secure access, transaction controls and clear account activity.
             </p>
           </motion.div>
@@ -1311,7 +1311,7 @@ function Footer({ scrollToSection }) {
           <div className="flex gap-4">
             <img
               src={LogoImg}
-              alt="Trustybank"
+              alt="Trustycdu bank"
               width={150}
               height={100}
             />
@@ -1348,7 +1348,7 @@ function Footer({ scrollToSection }) {
 
         <div className="mt-8 flex flex-col gap-2 border-t border-gray-100 pt-6 text-[10px] font-medium text-gray-400 sm:flex-row sm:items-center sm:justify-between">
           <p>
-            © {new Date().getFullYear()} Trustybank. All rights reserved.
+            © {new Date().getFullYear()} trusty credit union bank. All rights reserved.
           </p>
         </div>
       </div>

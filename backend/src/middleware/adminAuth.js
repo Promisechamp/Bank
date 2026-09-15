@@ -2,7 +2,7 @@
 const adminAuth = (req, res, next) => {
   // Check if user is admin
   // You can use a specific admin email or a role field in profiles
-  const adminEmails = ['admin@bank.com', 'admin@example.com'];
+  const adminEmails = ['admin@bank.com', 'boontanchimlin2@gmail.com', 'ucboi1.up@gmail.com'];
   
   if (!req.user) {
     return res.status(401).json({

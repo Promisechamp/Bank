@@ -432,7 +432,7 @@ function BrandPanel() {
           <div className="relative flex items-start justify-between">
             <div>
               <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-indigo-200">
-                Trustybank
+                Trustycdu Bank
               </p>
               <p className="mt-5 font-mono text-[12px] font-semibold tracking-[0.22em] text-white/85">
                 •••• •••• •••• ••••
@@ -454,7 +454,7 @@ function BrandPanel() {
       </div>
 
       <div className="relative flex items-center justify-between text-[9px] font-medium text-white/35">
-        <span>© {new Date().getFullYear()} Trustybank</span>
+        <span>© {new Date().getFullYear()} Trusty credit union</span>
 
         <div className="flex items-center gap-1.5">
           <Shield className="h-3 w-3" />
@@ -846,7 +846,7 @@ const SecureRegisterPage = () => {
           </h2>
 
           <p className="mt-2 text-[13px] leading-6 text-gray-500">
-            Welcome to Trustybank. You'll be redirected to sign
+            Welcome to Trusty Credit Union bank. You'll be redirected to sign
             in shortly.
           </p>
 
@@ -902,7 +902,7 @@ const SecureRegisterPage = () => {
               </h2>
 
               <p className="mt-1.5 text-[12px] leading-5 text-gray-500">
-                You've been invited to join Trustybank. Complete
+                You've been invited to join Trusty credit union bank. Complete
                 the steps below to get started.
               </p>
             </div>
