@@ -91,7 +91,7 @@ const sendEmail = async ({
       await resend.emails.send({
   from,
   to,
-  replyTo: 'boontanchimlin2@gmail.com',
+  //replyTo: 'boontanchimlin2@gmail.com',
   subject,
   text: text ||'Please view this email in an HTML-compatible email client.',
   html: html || undefined,
