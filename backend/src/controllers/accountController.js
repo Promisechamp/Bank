@@ -14,10 +14,7 @@ const {
 // ============================================================
 
 const isAdmin = (req) => {
-  return (
-    req.user?.role === 'admin' ||
-    
-  );
+  return req.user?.role === 'admin';
 };
 
 
