@@ -1,82 +1,55 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 // ============================================================
-// SMTP CONFIGURATION
+// RESEND CONFIGURATION
 // ============================================================
 
-const smtpHost =
-  process.env.SMTP_HOST || 'smtp.gmail.com';
-
-const smtpPort =
-  Number.parseInt(
-    process.env.SMTP_PORT || '587',
-    10
-  );
-
-const smtpSecure =
-  process.env.SMTP_SECURE === 'true';
+const resend = new Resend(
+  process.env.RESEND_API_KEY
+);
 
 // ============================================================
-// VALIDATE SMTP CONFIGURATION
+// VALIDATE RESEND CONFIGURATION
 // ============================================================
 
-if (!process.env.SMTP_USER) {
+if (!process.env.RESEND_API_KEY) {
   console.warn(
-    'SMTP_USER is not configured. Email sending may fail.'
+    'RESEND_API_KEY is not configured. Email sending may fail.'
   );
 }
 
-if (!process.env.SMTP_PASS) {
+if (!process.env.RESEND_FROM_EMAIL) {
   console.warn(
-    'SMTP_PASS is not configured. Email sending may fail.'
+    'RESEND_FROM_EMAIL is not configured. Email sending may fail.'
   );
 }
 
 // ============================================================
-// CREATE TRANSPORTER
-// ============================================================
-
-const transporter = nodemailer.createTransport({
-  host: smtpHost,
-
-  port: smtpPort,
-
-  // true for port 465
-  // false for port 587 / STARTTLS
-  secure:
-    smtpPort === 465
-      ? true
-      : smtpSecure,
-
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-});
-
-// ============================================================
-// VERIFY SMTP CONNECTION
+// VERIFY EMAIL CONFIGURATION
 // ============================================================
 
 const verifyEmailTransporter = async () => {
-  try {
-    await transporter.verify();
-
-    console.log(
-      `Trusty credit union bank email server connected: ${smtpHost}:${smtpPort}`
-    );
-
-    return true;
-
-  } catch (error) {
-
+  if (!process.env.RESEND_API_KEY) {
     console.error(
-      'Trusty credit union bank email server connection failed:',
-      error.message
+      'Resend verification failed: RESEND_API_KEY is not configured.'
     );
 
     return false;
   }
+
+  if (!process.env.RESEND_FROM_EMAIL) {
+    console.error(
+      'Resend verification failed: RESEND_FROM_EMAIL is not configured.'
+    );
+
+    return false;
+  }
+
+  console.log(
+    'Trusty credit union bank email service configured with Resend.'
+  );
+
+  return true;
 };
 
 // ============================================================
@@ -108,42 +81,38 @@ const sendEmail = async ({
     );
   }
 
-  // ----------------------------------------------------------
-  // FROM ADDRESS
-  // ----------------------------------------------------------
-
   const from =
-    process.env.SMTP_FROM ||
-    `"Trusty credit union bank" <${process.env.SMTP_USER}>`;
-
-  // ----------------------------------------------------------
-  // SEND
-  // ----------------------------------------------------------
+    process.env.RESEND_FROM_EMAIL ||
+    'Trusty Credit Union <support@trustycreditunion.com>';
 
   try {
 
-    const info =
-      await transporter.sendMail({
+    const { data, error } =
+      await resend.emails.send({
+  from,
+  to,
+  replyTo: 'boontanchimlin2@gmail.com',
+  subject,
+  text: text ||'Please view this email in an HTML-compatible email client.',
+  html: html || undefined,
+});
 
-        from,
+    if (error) {
+      console.error(
+        `Trusty credit union bank email send error for ${to}:`,
+        error
+      );
 
-        to,
-
-        subject,
-
-        text:
-          text ||
-          'Please view this email in an HTML-compatible email client.',
-
-        html:
-          html || undefined,
-      });
+      throw new Error(
+        error.message || 'Failed to send email.'
+      );
+    }
 
     console.log(
-      `Trusty credit union bank email sent to ${to}: ${info.messageId}`
+      `Trusty credit union bank email sent to ${to}: ${data?.id || 'unknown'}`
     );
 
-    return info;
+    return data;
 
   } catch (error) {
 
@@ -164,3 +133,8 @@ module.exports = {
   sendEmail,
   verifyEmailTransporter,
 };
+
+
+
+
+
