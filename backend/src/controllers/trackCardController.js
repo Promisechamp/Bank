@@ -70,7 +70,7 @@ const getMyCardTracking = async (req, res) => {
         shipped_at, estimated_delivery_date, delivered_at,
         tracking_history, created_at, updated_at
       `)
-      .eq('user_id', userId
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
