@@ -237,7 +237,7 @@ const EditTransactionForm = ({
       await transactionsAPI.updateTransaction(transaction.id, {
         amount: Number.parseFloat(formData.amount),
         description: formData.description,
-        date: formData.date,
+        date: formData.date ? new Date(formData.date).toISOString() : formData.date,
         status: formData.status,
       });
 
@@ -336,7 +336,7 @@ const EditTransactionForm = ({
           </label>
 
           <input
-            type="date"
+            type="datetime-local"
             name="date"
             value={formData.date}
             onChange={handleChange}
