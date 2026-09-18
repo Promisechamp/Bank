@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 import { accountsAPI } from '../api';
 import {
   formatCurrency,
@@ -11,6 +10,9 @@ import {
 import {
   Wallet,
   Plus,
+  Eye,
+  EyeOff,
+  Copy,
   XCircle,
   Loader2,
   AlertCircle,
@@ -20,11 +22,9 @@ import {
   ChevronRight,
   CheckCircle2,
   Info,
-  Eye,
-  EyeOff,
-  Copy,
 } from 'lucide-react';
 import Modal from './Modal';
+import { toast } from 'sonner';
 
 const Accounts = () => {
   const [accounts, setAccounts] = useState([]);
@@ -35,12 +35,11 @@ const Accounts = () => {
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
 
-  // Account number visibility
-  const [revealedAccounts, setRevealedAccounts] = useState({});
-
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+
+  // Track which account numbers are currently revealed
+  const [revealedAccounts, setRevealedAccounts] = useState({});
 
   const navigate = useNavigate();
 
@@ -57,7 +56,12 @@ const Accounts = () => {
       setAccounts(data.accounts || []);
     } catch (error) {
       console.error('Error fetching accounts:', error);
-      setError(error.error || 'Unable to load your accounts.');
+
+      setError(
+        error?.error ||
+          error?.message ||
+          'Unable to load your accounts.'
+      );
     } finally {
       setLoading(false);
     }
@@ -65,9 +69,21 @@ const Accounts = () => {
 
   /*
    * ------------------------------------------------------------
-   * ACCOUNT NUMBER VISIBILITY
+   * Account number helpers
    * ------------------------------------------------------------
    */
+
+  const maskAccountNumber = (accountNumber) => {
+    if (!accountNumber) return '••••';
+
+    const value = String(accountNumber);
+
+    if (value.length <= 4) {
+      return `•••• ${value}`;
+    }
+
+    return `•••• ${value.slice(-4)}`;
+  };
 
   const toggleAccountNumber = (accountId) => {
     setRevealedAccounts((prev) => ({
@@ -76,52 +92,70 @@ const Accounts = () => {
     }));
   };
 
-  /*
-   * ------------------------------------------------------------
-   * COPY ACCOUNT NUMBER
-   * ------------------------------------------------------------
-   */
-
   const copyAccountNumber = async (accountNumber) => {
-    if (!accountNumber) return;
+    if (!accountNumber) {
+      toast.error('Account number is unavailable.');
+      return;
+    }
+
+    const value = String(accountNumber);
 
     try {
-      await navigator.clipboard.writeText(String(accountNumber));
+      /*
+       * Modern clipboard API
+       */
+      if (
+        navigator.clipboard &&
+        window.isSecureContext
+      ) {
+        await navigator.clipboard.writeText(value);
+
+        toast.success('Account number copied.');
+        return;
+      }
+
+      /*
+       * Fallback for localhost / older browsers
+       */
+      const textArea =
+        document.createElement('textarea');
+
+      textArea.value = value;
+      textArea.style.position = 'fixed';
+      textArea.style.left = '-999999px';
+      textArea.style.top = '-999999px';
+
+      document.body.appendChild(textArea);
+
+      textArea.focus();
+      textArea.select();
+
+      const successful =
+        document.execCommand('copy');
+
+      document.body.removeChild(textArea);
+
+      if (!successful) {
+        throw new Error('Copy command failed');
+      }
 
       toast.success('Account number copied.');
     } catch (error) {
-      console.error('Unable to copy account number:', error);
+      console.error(
+        'Failed to copy account number:',
+        error
+      );
 
       toast.error(
-        'Unable to copy the account number. Please copy it manually.'
+        'Unable to copy account number. Please try again.'
       );
     }
   };
 
   /*
    * ------------------------------------------------------------
-   * MASK ACCOUNT NUMBER
+   * Account creation
    * ------------------------------------------------------------
-   */
-
-  const getMaskedAccountNumber = (accountNumber) => {
-    if (!accountNumber) return '••••••••••';
-
-    const value = String(accountNumber);
-
-    if (value.length <= 4) {
-      return '••••';
-    }
-
-    return `••••••${value.slice(-4)}`;
-  };
-
-  /*
-   * ------------------------------------------------------------
-   * ACCOUNT CREATION
-   * ------------------------------------------------------------
-   *
-   * Account creation is intentionally restricted.
    */
 
   const handleCreateAccountClick = () => {
@@ -130,7 +164,7 @@ const Accounts = () => {
 
   /*
    * ------------------------------------------------------------
-   * CLOSE ACCOUNT
+   * Close account
    * ------------------------------------------------------------
    */
 
@@ -142,28 +176,41 @@ const Accounts = () => {
   const handleCloseAccount = async () => {
     if (!selectedAccount) return;
 
+    const accountId = selectedAccount.id;
+
     try {
       setClosing(true);
       setError('');
 
-      await accountsAPI.close(selectedAccount.id);
+      await accountsAPI.close(accountId);
 
       setShowCloseModal(false);
       setSelectedAccount(null);
 
-      setSuccess('Account closed successfully.');
+      // Remove reveal state for the closed account
+      setRevealedAccounts((prev) => {
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
+
+      toast.success('Account closed successfully.');
 
       await fetchAccounts();
-
-      setTimeout(() => {
-        setSuccess('');
-      }, 4000);
     } catch (error) {
-      console.error('Error closing account:', error);
+      console.error(
+        'Error closing account:',
+        error
+      );
 
-      setError(error.error || 'Failed to close account.');
+      setError(
+        error?.error ||
+          error?.message ||
+          'Failed to close account.'
+      );
 
       setShowCloseModal(false);
+      setSelectedAccount(null);
     } finally {
       setClosing(false);
     }
@@ -171,13 +218,13 @@ const Accounts = () => {
 
   /*
    * ------------------------------------------------------------
-   * LOADING
+   * Loading
    * ------------------------------------------------------------
    */
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary-50">
           <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
         </div>
@@ -197,6 +244,7 @@ const Accounts = () => {
       ====================================================== */}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+
         <div>
           <p className="mb-1 text-sm font-medium text-primary-600">
             Banking
@@ -219,6 +267,7 @@ const Accounts = () => {
           <Plus className="h-4 w-4" />
           New account
         </button>
+
       </div>
 
       {/* =====================================================
@@ -227,6 +276,7 @@ const Accounts = () => {
 
       {error && (
         <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5">
+
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
             <AlertCircle className="h-4 w-4 text-rose-600" />
           </div>
@@ -248,28 +298,7 @@ const Accounts = () => {
           >
             Dismiss
           </button>
-        </div>
-      )}
 
-      {/* =====================================================
-          SUCCESS MESSAGE
-      ====================================================== */}
-
-      {success && (
-        <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-          </div>
-
-          <div>
-            <p className="text-sm font-semibold text-emerald-900">
-              Account updated
-            </p>
-
-            <p className="mt-0.5 text-sm text-emerald-700">
-              {success}
-            </p>
-          </div>
         </div>
       )}
 
@@ -279,10 +308,11 @@ const Accounts = () => {
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 
-        {/* Total accounts */}
+        {/* Total */}
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
+
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 Total accounts
@@ -296,13 +326,15 @@ const Accounts = () => {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary-50">
               <Wallet className="h-5 w-5 text-primary-600" />
             </div>
+
           </div>
         </div>
 
-        {/* Active accounts */}
+        {/* Active */}
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
+
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 Active accounts
@@ -311,7 +343,8 @@ const Accounts = () => {
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
                 {
                   accounts.filter(
-                    (account) => account.status === 'active'
+                    (account) =>
+                      account.status === 'active'
                   ).length
                 }
               </p>
@@ -320,6 +353,7 @@ const Accounts = () => {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50">
               <CheckCircle2 className="h-5 w-5 text-emerald-600" />
             </div>
+
           </div>
         </div>
 
@@ -327,6 +361,7 @@ const Accounts = () => {
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
+
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
                 Combined balance
@@ -336,7 +371,8 @@ const Accounts = () => {
                 {formatCurrency(
                   accounts.reduce(
                     (total, account) =>
-                      total + Number(account.balance || 0),
+                      total +
+                      Number(account.balance || 0),
                     0
                   )
                 )}
@@ -346,6 +382,7 @@ const Accounts = () => {
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50">
               <Wallet className="h-5 w-5 text-blue-600" />
             </div>
+
           </div>
         </div>
 
@@ -358,6 +395,7 @@ const Accounts = () => {
       <section className="space-y-4">
 
         <div className="flex items-center justify-between">
+
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
               Your accounts
@@ -374,6 +412,7 @@ const Accounts = () => {
               {accounts.length !== 1 ? 's' : ''}
             </span>
           )}
+
         </div>
 
         {accounts.length === 0 ? (
@@ -393,8 +432,9 @@ const Accounts = () => {
             </h3>
 
             <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-              You currently don't have any active accounts. Contact your
-              account manager or visit one of our branches for assistance.
+              You currently don't have any active accounts.
+              Contact your account manager or visit one of our
+              branches for assistance.
             </p>
 
             <button
@@ -405,6 +445,7 @@ const Accounts = () => {
               <Plus className="h-4 w-4" />
               Open an account
             </button>
+
           </div>
 
         ) : (
@@ -416,16 +457,16 @@ const Accounts = () => {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
 
             {accounts.map((account) => {
-              const isRevealed = !!revealedAccounts[account.id];
 
-              const displayedAccountNumber = isRevealed
-                ? formatAccountNumber(account.account_number)
-                : getMaskedAccountNumber(account.account_number);
+              const isRevealed =
+                Boolean(
+                  revealedAccounts[account.id]
+                );
 
               return (
                 <div
                   key={account.id}
-                  className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                  className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm"
                 >
 
                   {/* Account Header */}
@@ -439,37 +480,44 @@ const Accounts = () => {
                       </div>
 
                       <div className="min-w-0">
+
                         <p className="truncate text-sm font-semibold capitalize text-slate-900">
                           {account.account_type} account
                         </p>
 
-                        {/* Account number + controls */}
+                        {/* Account number */}
 
-                        <div className="mt-1 flex items-center gap-1.5">
+                        <div className="mt-1 flex min-w-0 items-center gap-1">
 
-                          <span
-                            className={`text-xs tracking-wide text-slate-500 ${
+                          <p
+                            className={`min-w-0 truncate text-xs font-mono tracking-wide ${
                               isRevealed
-                                ? 'font-mono'
-                                : 'font-medium tracking-[0.12em]'
+                                ? 'text-slate-700'
+                                : 'text-slate-500'
                             }`}
-                            aria-label={
-                              isRevealed
-                                ? `Account number ${account.account_number}`
-                                : 'Account number hidden'
-                            }
                           >
-                            {displayedAccountNumber}
-                          </span>
+                            {isRevealed
+                              ? String(
+                                  account.account_number || ''
+                                )
+                              : maskAccountNumber(
+                                  account.account_number
+                                )}
+                          </p>
 
                           {/* Reveal / hide */}
 
                           <button
                             type="button"
                             onClick={() =>
-                              toggleAccountNumber(account.id)
+                              toggleAccountNumber(
+                                account.id
+                              )
                             }
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            disabled={
+                              !account.account_number
+                            }
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label={
                               isRevealed
                                 ? 'Hide account number'
@@ -482,9 +530,9 @@ const Accounts = () => {
                             }
                           >
                             {isRevealed ? (
-                              <EyeOff className="h-3.5 w-3.5" />
+                              <EyeOff className="h-4 w-4" />
                             ) : (
-                              <Eye className="h-3.5 w-3.5" />
+                              <Eye className="h-4 w-4" />
                             )}
                           </button>
 
@@ -497,14 +545,18 @@ const Accounts = () => {
                                 account.account_number
                               )
                             }
-                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-primary-50 hover:text-primary-600"
+                            disabled={
+                              !account.account_number
+                            }
+                            className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
                             aria-label="Copy account number"
                             title="Copy account number"
                           >
-                            <Copy className="h-3.5 w-3.5" />
+                            <Copy className="h-4 w-4" />
                           </button>
 
                         </div>
+
                       </div>
 
                     </div>
@@ -528,7 +580,9 @@ const Accounts = () => {
                     </p>
 
                     <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">
-                      {formatCurrency(account.balance)}
+                      {formatCurrency(
+                        account.balance
+                      )}
                     </p>
 
                   </div>
@@ -553,7 +607,9 @@ const Accounts = () => {
                           <button
                             type="button"
                             onClick={() =>
-                              handleCloseAccountClick(account)
+                              handleCloseAccountClick(
+                                account
+                              )
                             }
                             className="inline-flex items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
                             aria-label="Close account"
@@ -577,7 +633,7 @@ const Accounts = () => {
       </section>
 
       {/* =====================================================
-          ACCOUNT HELP / INFORMATION
+          ACCOUNT HELP
       ====================================================== */}
 
       <section className="rounded-2xl border border-slate-200/80 bg-slate-50 p-5 sm:p-6">
@@ -589,15 +645,17 @@ const Accounts = () => {
           </div>
 
           <div className="flex-1">
+
             <h3 className="text-sm font-semibold text-slate-900">
               Need help with your account?
             </h3>
 
             <p className="mt-1 text-sm leading-relaxed text-slate-500">
-              For account changes, additional account types, or other
-              banking assistance, please contact your account manager
-              or visit one of our branches.
+              For account changes, additional account types, or
+              other banking assistance, please contact your account
+              manager or visit one of our branches.
             </p>
+
           </div>
 
           <button
@@ -619,13 +677,16 @@ const Accounts = () => {
 
       <Modal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        onClose={() =>
+          setShowCreateModal(false)
+        }
         title="New account"
         size="sm"
         position="bottom"
         showCloseButton={true}
         closeOnOutsideClick={false}
       >
+
         <div className="flex flex-col items-center text-center">
 
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50">
@@ -637,9 +698,9 @@ const Accounts = () => {
           </h3>
 
           <p className="mt-2 text-sm leading-relaxed text-slate-500">
-            Account creation is currently disabled for your account type.
-            Please visit any of our branches or contact your account
-            manager for assistance.
+            Account creation is currently disabled for your
+            account type. Please visit any of our branches or
+            contact your account manager for assistance.
           </p>
 
           <div className="mt-5 w-full rounded-xl border border-slate-200 bg-slate-50 p-4 text-left">
@@ -686,13 +747,16 @@ const Accounts = () => {
 
           <button
             type="button"
-            onClick={() => setShowCreateModal(false)}
+            onClick={() =>
+              setShowCreateModal(false)
+            }
             className="mt-6 w-full rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"
           >
             Understood
           </button>
 
         </div>
+
       </Modal>
 
       {/* =====================================================
@@ -713,6 +777,7 @@ const Accounts = () => {
         showCloseButton={!closing}
         closeOnOutsideClick={false}
       >
+
         <div className="flex flex-col items-center text-center">
 
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-50">
@@ -728,21 +793,22 @@ const Accounts = () => {
             <span className="font-medium text-slate-700">
               {selectedAccount?.account_type}
             </span>{' '}
-            account. This action should only be performed if you're sure
-            you no longer need this account.
+            account. This action should only be performed if
+            you're sure you no longer need this account.
           </p>
 
           {selectedAccount && (
             <div className="mt-5 w-full rounded-xl border border-slate-200 bg-slate-50 p-4">
 
               <div className="flex items-center justify-between">
+
                 <div className="text-left">
 
                   <p className="text-sm font-semibold capitalize text-slate-900">
                     {selectedAccount.account_type} account
                   </p>
 
-                  <p className="mt-0.5 font-mono text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs font-mono text-slate-500">
                     {formatAccountNumber(
                       selectedAccount.account_number
                     )}
@@ -751,7 +817,9 @@ const Accounts = () => {
                 </div>
 
                 <p className="text-sm font-semibold text-slate-900">
-                  {formatCurrency(selectedAccount.balance)}
+                  {formatCurrency(
+                    selectedAccount.balance
+                  )}
                 </p>
 
               </div>
@@ -779,16 +847,21 @@ const Accounts = () => {
               onClick={handleCloseAccount}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
             >
+
               {closing && (
                 <Loader2 className="h-4 w-4 animate-spin" />
               )}
 
-              {closing ? 'Closing…' : 'Close account'}
+              {closing
+                ? 'Closing…'
+                : 'Close account'}
+
             </button>
 
           </div>
 
         </div>
+
       </Modal>
 
     </div>
@@ -796,4 +869,3 @@ const Accounts = () => {
 };
 
 export default Accounts;
-

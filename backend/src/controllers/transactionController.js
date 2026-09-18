@@ -299,11 +299,11 @@ const sendOtpEmail = async (
 </html>
   `;
 
-  await sendEmail({
-    to: toEmail,
-    subject: 'Trusty credit union bank — Transaction Verification Code',
-    html
-  });
+  return await sendEmail({
+  to: toEmail,
+  subject: 'Trusty credit union bank — Transaction Verification Code',
+  html
+});
 };
 
 // ============================================================
@@ -575,23 +575,73 @@ const initiateTransfer = async (req, res, next) => {
     // SEND OTP EMAIL
     // --------------------------------------------------------
 
-    const senderEmail =
-      req.user.email ||
-      sourceAccount.profiles?.email;
+    // --------------------------------------------------------
+// SEND OTP EMAIL
+// --------------------------------------------------------
 
-    if (senderEmail) {
-      await sendOtpEmail(
-        senderEmail,
-        otp,
-        reference,
-        amount,
-        confirmedRecipientName
-      );
-    } else {
-      console.warn(
-        'No sender email available. OTP email was not sent.'
-      );
-    }
+const senderEmail =
+  req.user?.email ||
+  sourceAccount.profiles?.email;
+
+console.log('=================================');
+console.log('📧 OTP EMAIL DEBUG');
+console.log('User ID:', req.user?.id);
+console.log('User email:', req.user?.email);
+console.log('Profile email:', sourceAccount.profiles?.email);
+console.log('Final OTP recipient:', senderEmail);
+console.log('OTP:', otp);
+console.log('Reference:', reference);
+console.log('=================================');
+
+if (!senderEmail) {
+  console.error(
+    '❌ OTP email NOT sent: no sender email was found.'
+  );
+
+  return res.status(500).json({
+    success: false,
+    error:
+      'Unable to send verification code because your registered email could not be found.'
+  });
+}
+
+try {
+  const emailResult = await sendOtpEmail(
+    senderEmail,
+    otp,
+    reference,
+    amount,
+    confirmedRecipientName
+  );
+
+  console.log('=================================');
+  console.log('✅ OTP EMAIL SENT');
+  console.log('To:', senderEmail);
+  console.log(
+    'Message ID:',
+    emailResult?.messageId || 'unknown'
+  );
+  console.log('=================================');
+
+} catch (emailError) {
+
+  console.error('=================================');
+  console.error('❌ OTP EMAIL FAILED');
+  console.error('To:', senderEmail);
+  console.error('Error:', emailError);
+  console.error('Message:', emailError?.message);
+  console.error('Code:', emailError?.code);
+  console.error('Response:', emailError?.response);
+  console.error('=================================');
+
+  return res.status(500).json({
+    success: false,
+    error:
+      'The verification code could not be sent to your email. Please try again.'
+  });
+}
+
+
 
     // --------------------------------------------------------
     // RESPONSE

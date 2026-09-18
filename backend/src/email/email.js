@@ -5,21 +5,31 @@ const nodemailer = require('nodemailer');
 // ============================================================
 
 const smtpPort = Number(process.env.SMTP_PORT) || 587;
+
 const smtpSecure =
   process.env.SMTP_SECURE === 'true' ||
   smtpPort === 465;
+
+const hasSmtpUser = Boolean(process.env.SMTP_USER);
+const hasSmtpPass = Boolean(process.env.SMTP_PASS);
+
+const hasCompleteSmtpAuth =
+  hasSmtpUser && hasSmtpPass;
+
+const hasPartialSmtpAuth =
+  hasSmtpUser !== hasSmtpPass;
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: smtpPort,
   secure: smtpSecure,
-  auth:
-    process.env.SMTP_USER || process.env.SMTP_PASS
-      ? {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        }
-      : undefined,
+
+  auth: hasCompleteSmtpAuth
+    ? {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      }
+    : undefined,
 });
 
 // ============================================================
@@ -34,16 +44,13 @@ if (!process.env.SMTP_HOST) {
 
 if (!process.env.SMTP_FROM_EMAIL) {
   console.warn(
-    'SMTP_FROM_EMAIL is not configured. Email sending may fail.'
+    'SMTP_FROM_EMAIL is not configured. Using the default sender address.'
   );
 }
 
-if (
-  (process.env.SMTP_USER && !process.env.SMTP_PASS) ||
-  (!process.env.SMTP_USER && process.env.SMTP_PASS)
-) {
+if (hasPartialSmtpAuth) {
   console.warn(
-    'SMTP_USER and SMTP_PASS should both be configured together.'
+    'SMTP_USER and SMTP_PASS must both be configured together.'
   );
 }
 
@@ -60,20 +67,9 @@ const verifyEmailTransporter = async () => {
     return false;
   }
 
-  if (!process.env.SMTP_FROM_EMAIL) {
+  if (hasPartialSmtpAuth) {
     console.error(
-      'SMTP verification failed: SMTP_FROM_EMAIL is not configured.'
-    );
-
-    return false;
-  }
-
-  if (
-    (process.env.SMTP_USER && !process.env.SMTP_PASS) ||
-    (!process.env.SMTP_USER && process.env.SMTP_PASS)
-  ) {
-    console.error(
-      'SMTP verification failed: both SMTP_USER and SMTP_PASS must be configured together.'
+      'SMTP verification failed: SMTP_USER and SMTP_PASS must both be configured together.'
     );
 
     return false;
@@ -83,7 +79,7 @@ const verifyEmailTransporter = async () => {
     await transporter.verify();
 
     console.log(
-      'Trusty credit union bank email service configured with SMTP.'
+      'Trusty Credit Union email service configured successfully with SMTP.'
     );
 
     return true;
@@ -105,7 +101,7 @@ const sendEmail = async ({
   to,
   subject,
   html,
-  text
+  text,
 }) => {
   if (!to) {
     throw new Error(
@@ -132,8 +128,8 @@ const sendEmail = async ({
   const mailOptions = {
     from,
     to,
-    // replyTo: process.env.SMTP_REPLY_TO,
     subject,
+
     text:
       text ||
       'Please view this email in an HTML-compatible email client.',
@@ -144,10 +140,12 @@ const sendEmail = async ({
   }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail(
+      mailOptions
+    );
 
     console.log(
-      `Trusty credit union bank email sent to ${to}: ${
+      `Trusty Credit Union email sent to ${to}: ${
         info.messageId || 'unknown'
       }`
     );
@@ -155,7 +153,7 @@ const sendEmail = async ({
     return info;
   } catch (error) {
     console.error(
-      `Trusty credit union bank email send error for ${to}:`,
+      `Trusty Credit Union email send error for ${to}:`,
       error.message
     );
 
