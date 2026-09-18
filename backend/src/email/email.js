@@ -1,26 +1,49 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
 // ============================================================
-// RESEND CONFIGURATION
+// SMTP CONFIGURATION
 // ============================================================
 
-const resend = new Resend(
-  process.env.RESEND_API_KEY
-);
+const smtpPort = Number(process.env.SMTP_PORT) || 587;
+const smtpSecure =
+  process.env.SMTP_SECURE === 'true' ||
+  smtpPort === 465;
+
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: smtpPort,
+  secure: smtpSecure,
+  auth:
+    process.env.SMTP_USER || process.env.SMTP_PASS
+      ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        }
+      : undefined,
+});
 
 // ============================================================
-// VALIDATE RESEND CONFIGURATION
+// VALIDATE SMTP CONFIGURATION
 // ============================================================
 
-if (!process.env.RESEND_API_KEY) {
+if (!process.env.SMTP_HOST) {
   console.warn(
-    'RESEND_API_KEY is not configured. Email sending may fail.'
+    'SMTP_HOST is not configured. Email sending may fail.'
   );
 }
 
-if (!process.env.RESEND_FROM_EMAIL) {
+if (!process.env.SMTP_FROM_EMAIL) {
   console.warn(
-    'RESEND_FROM_EMAIL is not configured. Email sending may fail.'
+    'SMTP_FROM_EMAIL is not configured. Email sending may fail.'
+  );
+}
+
+if (
+  (process.env.SMTP_USER && !process.env.SMTP_PASS) ||
+  (!process.env.SMTP_USER && process.env.SMTP_PASS)
+) {
+  console.warn(
+    'SMTP_USER and SMTP_PASS should both be configured together.'
   );
 }
 
@@ -29,27 +52,49 @@ if (!process.env.RESEND_FROM_EMAIL) {
 // ============================================================
 
 const verifyEmailTransporter = async () => {
-  if (!process.env.RESEND_API_KEY) {
+  if (!process.env.SMTP_HOST) {
     console.error(
-      'Resend verification failed: RESEND_API_KEY is not configured.'
+      'SMTP verification failed: SMTP_HOST is not configured.'
     );
 
     return false;
   }
 
-  if (!process.env.RESEND_FROM_EMAIL) {
+  if (!process.env.SMTP_FROM_EMAIL) {
     console.error(
-      'Resend verification failed: RESEND_FROM_EMAIL is not configured.'
+      'SMTP verification failed: SMTP_FROM_EMAIL is not configured.'
     );
 
     return false;
   }
 
-  console.log(
-    'Trusty credit union bank email service configured with Resend.'
-  );
+  if (
+    (process.env.SMTP_USER && !process.env.SMTP_PASS) ||
+    (!process.env.SMTP_USER && process.env.SMTP_PASS)
+  ) {
+    console.error(
+      'SMTP verification failed: both SMTP_USER and SMTP_PASS must be configured together.'
+    );
 
-  return true;
+    return false;
+  }
+
+  try {
+    await transporter.verify();
+
+    console.log(
+      'Trusty credit union bank email service configured with SMTP.'
+    );
+
+    return true;
+  } catch (error) {
+    console.error(
+      'SMTP verification failed:',
+      error.message
+    );
+
+    return false;
+  }
 };
 
 // ============================================================
@@ -62,7 +107,6 @@ const sendEmail = async ({
   html,
   text
 }) => {
-
   if (!to) {
     throw new Error(
       'Email recipient is required.'
@@ -82,40 +126,34 @@ const sendEmail = async ({
   }
 
   const from =
-    process.env.RESEND_FROM_EMAIL ||
+    process.env.SMTP_FROM_EMAIL ||
     'Trusty Credit Union <support@trustycreditunion.com>';
 
+  const mailOptions = {
+    from,
+    to,
+    // replyTo: process.env.SMTP_REPLY_TO,
+    subject,
+    text:
+      text ||
+      'Please view this email in an HTML-compatible email client.',
+  };
+
+  if (html) {
+    mailOptions.html = html;
+  }
+
   try {
-
-    const { data, error } =
-      await resend.emails.send({
-  from,
-  to,
-  //replyTo: 'boontanchimlin2@gmail.com',
-  subject,
-  text: text ||'Please view this email in an HTML-compatible email client.',
-  html: html || undefined,
-});
-
-    if (error) {
-      console.error(
-        `Trusty credit union bank email send error for ${to}:`,
-        error
-      );
-
-      throw new Error(
-        error.message || 'Failed to send email.'
-      );
-    }
+    const info = await transporter.sendMail(mailOptions);
 
     console.log(
-      `Trusty credit union bank email sent to ${to}: ${data?.id || 'unknown'}`
+      `Trusty credit union bank email sent to ${to}: ${
+        info.messageId || 'unknown'
+      }`
     );
 
-    return data;
-
+    return info;
   } catch (error) {
-
     console.error(
       `Trusty credit union bank email send error for ${to}:`,
       error.message
@@ -133,8 +171,3 @@ module.exports = {
   sendEmail,
   verifyEmailTransporter,
 };
-
-
-
-
-

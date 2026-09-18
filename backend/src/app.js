@@ -19,8 +19,6 @@ const allowedOrigins = process.env.CORS_ORIGIN
       'http://localhost:5173',
       'http://localhost:3000',
       'https://bank-tzkw.onrender.com',
-      'https://trustycreditunion.com',
-      'https://www.trustycreditunion.com',
     ];
 
 app.use(cors({
