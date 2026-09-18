@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { authAPI, accountsAPI } from '../api';
 import {
@@ -652,7 +653,8 @@ const Profile = () => {
                     </div>
                   </div>
 
-                  <button
+                  <Link
+																		 to="/chat"
                     type="button"
                     className="group mt-4 flex w-full items-center justify-between rounded-2xl bg-primary-600 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-primary-200 transition-all hover:-translate-y-0.5 hover:bg-primary-500 hover:shadow-xl hover:shadow-primary-200"
                   >
@@ -662,7 +664,7 @@ const Profile = () => {
                     </span>
 
                     <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                  </button>
+                  </Link>
 
                 </div>
               ) : (

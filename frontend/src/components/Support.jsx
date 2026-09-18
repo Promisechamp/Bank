@@ -23,9 +23,9 @@ const SUPPORT_INFO = {
     hours: 'Monday – Friday · 8:00 AM – 5:00 PM',
   },
   accountOfficer: {
-    name: 'Your Account Officer',
+    name: 'Complain desk officer',
     role: 'Relationship Manager',
-    email: 'JamesAnderson@trustycreditunion.com',
+    email: 'Trustycrediunionbank.net@gmail.com',
     phone: '+1(323) 212-0135',
   },
   business: {
