@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { accountsAPI } from '../api';
 import {
   formatCurrency,
@@ -10,7 +11,6 @@ import {
 import {
   Wallet,
   Plus,
-  Eye,
   XCircle,
   Loader2,
   AlertCircle,
@@ -20,6 +20,9 @@ import {
   ChevronRight,
   CheckCircle2,
   Info,
+  Eye,
+  EyeOff,
+  Copy,
 } from 'lucide-react';
 import Modal from './Modal';
 
@@ -31,6 +34,9 @@ const Accounts = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState(null);
+
+  // Account number visibility
+  const [revealedAccounts, setRevealedAccounts] = useState({});
 
   const [closing, setClosing] = useState(false);
   const [error, setError] = useState('');
@@ -58,14 +64,75 @@ const Accounts = () => {
   };
 
   /*
-   * Account creation is intentionally restricted.
-   *
-   * Instead of showing an account creation form, clicking
-   * "New Account" opens the professional restriction modal.
+   * ------------------------------------------------------------
+   * ACCOUNT NUMBER VISIBILITY
+   * ------------------------------------------------------------
    */
+
+  const toggleAccountNumber = (accountId) => {
+    setRevealedAccounts((prev) => ({
+      ...prev,
+      [accountId]: !prev[accountId],
+    }));
+  };
+
+  /*
+   * ------------------------------------------------------------
+   * COPY ACCOUNT NUMBER
+   * ------------------------------------------------------------
+   */
+
+  const copyAccountNumber = async (accountNumber) => {
+    if (!accountNumber) return;
+
+    try {
+      await navigator.clipboard.writeText(String(accountNumber));
+
+      toast.success('Account number copied.');
+    } catch (error) {
+      console.error('Unable to copy account number:', error);
+
+      toast.error(
+        'Unable to copy the account number. Please copy it manually.'
+      );
+    }
+  };
+
+  /*
+   * ------------------------------------------------------------
+   * MASK ACCOUNT NUMBER
+   * ------------------------------------------------------------
+   */
+
+  const getMaskedAccountNumber = (accountNumber) => {
+    if (!accountNumber) return '••••••••••';
+
+    const value = String(accountNumber);
+
+    if (value.length <= 4) {
+      return '••••';
+    }
+
+    return `••••••${value.slice(-4)}`;
+  };
+
+  /*
+   * ------------------------------------------------------------
+   * ACCOUNT CREATION
+   * ------------------------------------------------------------
+   *
+   * Account creation is intentionally restricted.
+   */
+
   const handleCreateAccountClick = () => {
     setShowCreateModal(true);
   };
+
+  /*
+   * ------------------------------------------------------------
+   * CLOSE ACCOUNT
+   * ------------------------------------------------------------
+   */
 
   const handleCloseAccountClick = (account) => {
     setSelectedAccount(account);
@@ -88,7 +155,6 @@ const Accounts = () => {
 
       await fetchAccounts();
 
-      // Automatically remove success message after a short delay
       setTimeout(() => {
         setSuccess('');
       }, 4000);
@@ -102,6 +168,12 @@ const Accounts = () => {
       setClosing(false);
     }
   };
+
+  /*
+   * ------------------------------------------------------------
+   * LOADING
+   * ------------------------------------------------------------
+   */
 
   if (loading) {
     return (
@@ -118,22 +190,23 @@ const Accounts = () => {
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-8 pb-10">
+    <div className="mx-auto max-w-6xl space-y-8 pb-10">
 
       {/* =====================================================
           HEADER
       ====================================================== */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-primary-600 mb-1">
+          <p className="mb-1 text-sm font-medium text-primary-600">
             Banking
           </p>
 
-          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
             Your accounts
           </h1>
 
-          <p className="text-slate-500 mt-1">
+          <p className="mt-1 text-slate-500">
             Manage your accounts and view your available balances.
           </p>
         </div>
@@ -151,6 +224,7 @@ const Accounts = () => {
       {/* =====================================================
           ERROR MESSAGE
       ====================================================== */}
+
       {error && (
         <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
@@ -180,6 +254,7 @@ const Accounts = () => {
       {/* =====================================================
           SUCCESS MESSAGE
       ====================================================== */}
+
       {success && (
         <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
@@ -201,7 +276,10 @@ const Accounts = () => {
       {/* =====================================================
           ACCOUNT SUMMARY
       ====================================================== */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+
+        {/* Total accounts */}
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -221,6 +299,8 @@ const Accounts = () => {
           </div>
         </div>
 
+        {/* Active accounts */}
+
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -229,9 +309,11 @@ const Accounts = () => {
               </p>
 
               <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
-                {accounts.filter(
-                  (account) => account.status === 'active'
-                ).length}
+                {
+                  accounts.filter(
+                    (account) => account.status === 'active'
+                  ).length
+                }
               </p>
             </div>
 
@@ -240,6 +322,8 @@ const Accounts = () => {
             </div>
           </div>
         </div>
+
+        {/* Combined balance */}
 
         <div className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between">
@@ -270,6 +354,7 @@ const Accounts = () => {
       {/* =====================================================
           ACCOUNTS
       ====================================================== */}
+
       <section className="space-y-4">
 
         <div className="flex items-center justify-between">
@@ -278,14 +363,15 @@ const Accounts = () => {
               Your accounts
             </h2>
 
-            <p className="text-sm text-slate-500 mt-0.5">
+            <p className="mt-0.5 text-sm text-slate-500">
               View balances and account details.
             </p>
           </div>
 
           {accounts.length > 0 && (
-            <span className="hidden sm:inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
-              {accounts.length} account{accounts.length !== 1 ? 's' : ''}
+            <span className="hidden items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600 sm:inline-flex">
+              {accounts.length} account
+              {accounts.length !== 1 ? 's' : ''}
             </span>
           )}
         </div>
@@ -295,6 +381,7 @@ const Accounts = () => {
           /* =================================================
              EMPTY STATE
           ================================================== */
+
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-16 text-center shadow-sm">
 
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100">
@@ -325,105 +412,164 @@ const Accounts = () => {
           /* =================================================
              ACCOUNT GRID
           ================================================== */
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
 
-            {accounts.map((account) => (
-              <div
-                key={account.id}
-                className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
-              >
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
 
-                {/* Account Header */}
-                <div className="flex items-start justify-between gap-4">
+            {accounts.map((account) => {
+              const isRevealed = !!revealedAccounts[account.id];
 
-                  <div className="flex items-center gap-3 min-w-0">
+              const displayedAccountNumber = isRevealed
+                ? formatAccountNumber(account.account_number)
+                : getMaskedAccountNumber(account.account_number);
 
-                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50">
-                      <Wallet className="h-5 w-5 text-primary-600" />
+              return (
+                <div
+                  key={account.id}
+                  className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-md"
+                >
+
+                  {/* Account Header */}
+
+                  <div className="flex items-start justify-between gap-4">
+
+                    <div className="flex min-w-0 items-center gap-3">
+
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-50">
+                        <Wallet className="h-5 w-5 text-primary-600" />
+                      </div>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold capitalize text-slate-900">
+                          {account.account_type} account
+                        </p>
+
+                        {/* Account number + controls */}
+
+                        <div className="mt-1 flex items-center gap-1.5">
+
+                          <span
+                            className={`text-xs tracking-wide text-slate-500 ${
+                              isRevealed
+                                ? 'font-mono'
+                                : 'font-medium tracking-[0.12em]'
+                            }`}
+                            aria-label={
+                              isRevealed
+                                ? `Account number ${account.account_number}`
+                                : 'Account number hidden'
+                            }
+                          >
+                            {displayedAccountNumber}
+                          </span>
+
+                          {/* Reveal / hide */}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              toggleAccountNumber(account.id)
+                            }
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                            aria-label={
+                              isRevealed
+                                ? 'Hide account number'
+                                : 'Reveal account number'
+                            }
+                            title={
+                              isRevealed
+                                ? 'Hide account number'
+                                : 'Reveal account number'
+                            }
+                          >
+                            {isRevealed ? (
+                              <EyeOff className="h-3.5 w-3.5" />
+                            ) : (
+                              <Eye className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+
+                          {/* Copy */}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              copyAccountNumber(
+                                account.account_number
+                              )
+                            }
+                            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-primary-50 hover:text-primary-600"
+                            aria-label="Copy account number"
+                            title="Copy account number"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+
+                        </div>
+                      </div>
+
                     </div>
 
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900 capitalize truncate">
-                        {account.account_type} account
-                      </p>
-
-                      <p className="mt-0.5 text-xs font-mono tracking-wide text-slate-500">
-                        {formatAccountNumber(account.account_number)}
-                      </p>
-                    </div>
-
-                  </div>
-
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${getAccountTypeColor(
-                      account.account_type
-                    )}`}
-                  >
-                    {account.account_type}
-                  </span>
-
-                </div>
-
-                {/* Balance */}
-                <div className="mt-7">
-
-                  <p className="text-xs font-medium text-slate-400">
-                    Available balance
-                  </p>
-
-                  <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">
-                    {formatCurrency(account.balance)}
-                  </p>
-
-                </div>
-
-                {/* Footer */}
-                <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
-
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${getStatusColor(
-                      account.status
-                    )}`}
-                  >
-                    <span className="h-1.5 w-1.5 rounded-full bg-current" />
-                    {account.status}
-                  </span>
-
-                  <div className="flex items-center gap-1">
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        navigate(`/accounts/${account.id}`)
-                      }
-                      className="inline-flex items-center gap-1 rounded-lg px-2.5 py-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-primary-50 hover:text-primary-600"
-                      aria-label={`View ${account.account_type} account`}
+                    <span
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${getAccountTypeColor(
+                        account.account_type
+                      )}`}
                     >
-                      <Eye className="h-4 w-4" />
-                      <span>View</span>
-                    </button>
+                      {account.account_type}
+                    </span>
 
-                    {account.status === 'active' &&
-                      Number(account.balance) === 0 && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleCloseAccountClick(account)
-                          }
-                          className="inline-flex items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
-                          aria-label="Close account"
-                          title="Close account"
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </button>
-                      )}
+                  </div>
+
+                  {/* Balance */}
+
+                  <div className="mt-7">
+
+                    <p className="text-xs font-medium text-slate-400">
+                      Available balance
+                    </p>
+
+                    <p className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 tabular-nums">
+                      {formatCurrency(account.balance)}
+                    </p>
+
+                  </div>
+
+                  {/* Footer */}
+
+                  <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
+
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${getStatusColor(
+                        account.status
+                      )}`}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-current" />
+                      {account.status}
+                    </span>
+
+                    <div className="flex items-center gap-1">
+
+                      {account.status === 'active' &&
+                        Number(account.balance) === 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCloseAccountClick(account)
+                            }
+                            className="inline-flex items-center justify-center rounded-lg p-2 text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600"
+                            aria-label="Close account"
+                            title="Close account"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </button>
+                        )}
+
+                    </div>
 
                   </div>
 
                 </div>
-
-              </div>
-            ))}
+              );
+            })}
 
           </div>
         )}
@@ -433,11 +579,12 @@ const Accounts = () => {
       {/* =====================================================
           ACCOUNT HELP / INFORMATION
       ====================================================== */}
+
       <section className="rounded-2xl border border-slate-200/80 bg-slate-50 p-5 sm:p-6">
 
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
 
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white border border-slate-200">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white">
             <Info className="h-5 w-5 text-slate-500" />
           </div>
 
@@ -469,6 +616,7 @@ const Accounts = () => {
       {/* =====================================================
           CREATE ACCOUNT RESTRICTION MODAL
       ====================================================== */}
+
       <Modal
         isOpen={showCreateModal}
         onClose={() => setShowCreateModal(false)}
@@ -498,7 +646,7 @@ const Accounts = () => {
 
             <div className="flex items-start gap-3">
 
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white">
                 <Building2 className="h-4 w-4 text-slate-600" />
               </div>
 
@@ -517,7 +665,7 @@ const Accounts = () => {
 
             <div className="mt-4 flex items-start gap-3">
 
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-slate-200">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white">
                 <Phone className="h-4 w-4 text-slate-600" />
               </div>
 
@@ -550,6 +698,7 @@ const Accounts = () => {
       {/* =====================================================
           CLOSE ACCOUNT CONFIRMATION MODAL
       ====================================================== */}
+
       <Modal
         isOpen={showCloseModal}
         onClose={() => {
@@ -579,9 +728,8 @@ const Accounts = () => {
             <span className="font-medium text-slate-700">
               {selectedAccount?.account_type}
             </span>{' '}
-            account.
-            This action should only be performed if you're sure you
-            no longer need this account.
+            account. This action should only be performed if you're sure
+            you no longer need this account.
           </p>
 
           {selectedAccount && (
@@ -589,18 +737,23 @@ const Accounts = () => {
 
               <div className="flex items-center justify-between">
                 <div className="text-left">
+
                   <p className="text-sm font-semibold capitalize text-slate-900">
                     {selectedAccount.account_type} account
                   </p>
 
-                  <p className="mt-0.5 text-xs font-mono text-slate-500">
-                    {formatAccountNumber(selectedAccount.account_number)}
+                  <p className="mt-0.5 font-mono text-xs text-slate-500">
+                    {formatAccountNumber(
+                      selectedAccount.account_number
+                    )}
                   </p>
+
                 </div>
 
                 <p className="text-sm font-semibold text-slate-900">
                   {formatCurrency(selectedAccount.balance)}
                 </p>
+
               </div>
 
             </div>
@@ -624,7 +777,7 @@ const Accounts = () => {
               type="button"
               disabled={closing}
               onClick={handleCloseAccount}
-              className="flex-1 inline-flex items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-rose-700 disabled:opacity-50"
             >
               {closing && (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -643,3 +796,4 @@ const Accounts = () => {
 };
 
 export default Accounts;
+
