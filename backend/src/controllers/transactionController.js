@@ -13,11 +13,22 @@ const {
 } = require('../utils/notifications');
 
 // ============================================================
-// SMALL SERVER-SIDE DELAY
+// TIMEOUT HELPER
 // ============================================================
 
-const delay = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const withTimeout = (promise, ms, message) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) =>
+      setTimeout(
+        () =>
+          reject(
+            new Error(message || 'Operation timed out')
+          ),
+        ms
+      )
+    )
+  ]);
 
 // ============================================================
 // PIN HELPERS
@@ -337,7 +348,6 @@ const sendOtpEmail = async (
     html
   });
 };
-
 
 // ============================================================
 // INITIATE SAME-BANK TRANSFER
@@ -839,6 +849,7 @@ const initiateTransfer = async (req, res, next) => {
       });
 
     if (otpError) {
+      // Roll back the pending transaction; the user can try again.
       await supabase
         .from('transactions')
         .delete()
@@ -867,16 +878,18 @@ const initiateTransfer = async (req, res, next) => {
           reference
         );
 
+      // Keep the transaction pending but enable PIN fallback.
       await supabase
         .from('transactions')
         .update({
-          status: 'failed',
-
           metadata: {
             ...transactionMetadata,
-
-            failureReason:
-              'Registered email could not be found.'
+            pinRequired: true,
+            otpRequired: false,
+            otpSendFailed: true,
+            otpFailureReason:
+              'Registered email could not be found.',
+            otpSendFailedAt: new Date().toISOString()
           }
         })
         .eq(
@@ -884,56 +897,73 @@ const initiateTransfer = async (req, res, next) => {
           pendingTransaction.id
         );
 
-      return res.status(500).json({
-        success: false,
-        error:
-          'Unable to send verification code because your registered email could not be found.'
+      return res.json({
+        success: true,
+        requiresPin: true,
+        otpSendFailed: true,
+        reference,
+        status: 'pending_review',
+        recipient: {
+          accountNumber: recipient.account_number,
+          name: confirmedRecipientName
+        },
+        message:
+          'We could not send the verification code to your email. Please verify this transfer with your PIN instead.'
       });
     }
 
     try {
-      await sendOtpEmail(
-        senderEmail,
-        otp,
-        reference,
-        transferAmount,
-        confirmedRecipientName
+      await withTimeout(
+        sendOtpEmail(
+          senderEmail,
+          otp,
+          reference,
+          transferAmount,
+          confirmedRecipientName
+        ),
+        12000, // hard cap so we never hang the request
+        'OTP email delivery timed out'
       );
     } catch (emailError) {
-      console.error(
-        'OTP email failed:',
-        emailError
-      );
+      console.error('OTP email failed:', emailError);
 
+      // The OTP never reached the user — remove the invalid OTP record.
       await supabase
         .from('otp_verifications')
         .delete()
-        .eq(
-          'reference',
-          reference
-        );
+        .eq('reference', reference);
 
+      // CRITICAL: keep the pending transaction alive and allow PIN
+      // fallback with the SAME reference so the user does not have to
+      // start over.
       await supabase
         .from('transactions')
         .update({
-          status: 'failed',
-
           metadata: {
             ...transactionMetadata,
-
-            failureReason:
-              'OTP email delivery failed.'
+            pinRequired: true,
+            otpRequired: false,
+            otpSendFailed: true,
+            otpFailureReason:
+              emailError?.message ||
+              'OTP email delivery failed.',
+            otpSendFailedAt: new Date().toISOString()
           }
         })
-        .eq(
-          'id',
-          pendingTransaction.id
-        );
+        .eq('id', pendingTransaction.id);
 
-      return res.status(500).json({
-        success: false,
-        error:
-          'The verification code could not be sent to your email. Please try again.'
+      return res.json({
+        success: true,
+        requiresPin: true,
+        otpSendFailed: true,
+        reference,
+        status: 'pending_review',
+        recipient: {
+          accountNumber: recipient.account_number,
+          name: confirmedRecipientName
+        },
+        message:
+          'We could not send the verification code. You can verify this transfer with your PIN instead.'
       });
     }
 
@@ -973,7 +1003,6 @@ const initiateTransfer = async (req, res, next) => {
     next(error);
   }
 };
-
 
 // ============================================================
 // VERIFY OTP AND COMPLETE TRANSFER
@@ -1246,7 +1275,6 @@ const verifyOtpAndComplete = async (
     // ========================================================
 
     if (senderRestricted) {
-
       const {
         error: verifyError
       } = await supabase
@@ -1310,21 +1338,7 @@ const verifyOtpAndComplete = async (
         throw reviewError;
       }
 
-      const io =
-        req.app.get('io');
-
-      await createAndSendNotification(
-        io,
-        req.user.id,
-        'system',
-        'Transfer Pending Review',
-        `Your transfer of ${formatCurrency(
-          transferData.amount
-        )} is pending bank review due to account restrictions.`,
-        cleanReference
-      );
-
-      return res.json({
+      res.json({
         success: true,
 
         reference:
@@ -1336,13 +1350,37 @@ const verifyOtpAndComplete = async (
         message:
           'OTP verified. Transfer has been submitted for bank review.'
       });
+
+      // Fire notification in the background.
+      setImmediate(async () => {
+        try {
+          const io =
+            req.app.get('io');
+
+          await createAndSendNotification(
+            io,
+            req.user.id,
+            'system',
+            'Transfer Pending Review',
+            `Your transfer of ${formatCurrency(
+              transferData.amount
+            )} is pending bank review due to account restrictions.`,
+            cleanReference
+          );
+        } catch (notifyError) {
+          console.error(
+            'Pending review notification failed:',
+            notifyError
+          );
+        }
+      });
+
+      return;
     }
 
     // ========================================================
     // NORMAL TRANSFER — ATOMIC RPC
     // ========================================================
-
-    await delay(250);
 
     const {
       data: transferResult,
@@ -1570,138 +1608,10 @@ const verifyOtpAndComplete = async (
       );
 
     // ========================================================
-    // NOTIFICATIONS
+    // SEND RESPONSE FIRST
     // ========================================================
 
-    const io =
-      req.app.get('io');
-
-    try {
-      await createAndSendNotification(
-        io,
-
-        finalSourceAccount.user_id,
-
-        'debit',
-
-        `Transfer Debited – ${formatCurrency(
-          amount
-        )}`,
-
-        `You transferred ${formatCurrency(
-          amount
-        )} to ${recipientName}.`,
-
-        cleanReference,
-
-        {
-          userName:
-            senderName,
-
-          userEmail:
-            finalSourceAccount.profiles?.email ||
-            req.user.email,
-
-          accountNumber:
-            finalSourceAccount.account_number,
-
-          amount:
-            formatCurrency(amount),
-
-          newBalance:
-            formatCurrency(
-              newSourceBalance
-            ),
-
-          description,
-
-          reference:
-            cleanReference,
-
-          transferType:
-            'same_bank',
-
-          direction:
-            'sent',
-
-          recipientName,
-
-          recipientAccountNumber:
-            finalDestinationAccount.account_number
-        }
-      );
-    } catch (notificationError) {
-      console.error(
-        'Sender notification failed:',
-        notificationError
-      );
-    }
-
-    try {
-      await createAndSendNotification(
-        io,
-
-        finalDestinationAccount.user_id,
-
-        'credit',
-
-        `Transfer Credited – ${formatCurrency(
-          amount
-        )}`,
-
-        `You received ${formatCurrency(
-          amount
-        )} from ${senderName}.`,
-
-        cleanReference,
-
-        {
-          userName:
-            recipientName,
-
-          userEmail:
-            finalDestinationAccount.profiles?.email,
-
-          accountNumber:
-            finalDestinationAccount.account_number,
-
-          amount:
-            formatCurrency(amount),
-
-          newBalance:
-            formatCurrency(
-              newDestinationBalance
-            ),
-
-          description,
-
-          reference:
-            cleanReference,
-
-          transferType:
-            'same_bank',
-
-          direction:
-            'received',
-
-          senderName,
-
-          senderAccountNumber:
-            finalSourceAccount.account_number
-        }
-      );
-    } catch (notificationError) {
-      console.error(
-        'Recipient notification failed:',
-        notificationError
-      );
-    }
-
-    // ========================================================
-    // SUCCESS
-    // ========================================================
-
-    return res.json({
+    res.json({
       success:
         true,
 
@@ -1734,6 +1644,138 @@ const verifyOtpAndComplete = async (
         completedTransaction
     });
 
+    // ========================================================
+    // NOTIFICATIONS (BACKGROUND)
+    // ========================================================
+
+    setImmediate(async () => {
+      const io =
+        req.app.get('io');
+
+      try {
+        await createAndSendNotification(
+          io,
+
+          finalSourceAccount.user_id,
+
+          'debit',
+
+          `Transfer Debited – ${formatCurrency(
+            amount
+          )}`,
+
+          `You transferred ${formatCurrency(
+            amount
+          )} to ${recipientName}.`,
+
+          cleanReference,
+
+          {
+            userName:
+              senderName,
+
+            userEmail:
+              finalSourceAccount.profiles?.email ||
+              req.user.email,
+
+            accountNumber:
+              finalSourceAccount.account_number,
+
+            amount:
+              formatCurrency(amount),
+
+            newBalance:
+              formatCurrency(
+                newSourceBalance
+              ),
+
+            description,
+
+            reference:
+              cleanReference,
+
+            transferType:
+              'same_bank',
+
+            direction:
+              'sent',
+
+            recipientName,
+
+            recipientAccountNumber:
+              finalDestinationAccount.account_number
+          }
+        );
+      } catch (notificationError) {
+        console.error(
+          'Sender notification failed:',
+          notificationError
+        );
+      }
+
+      try {
+        await createAndSendNotification(
+          io,
+
+          finalDestinationAccount.user_id,
+
+          'credit',
+
+          `Transfer Credited – ${formatCurrency(
+            amount
+          )}`,
+
+          `You received ${formatCurrency(
+            amount
+          )} from ${senderName}.`,
+
+          cleanReference,
+
+          {
+            userName:
+              recipientName,
+
+            userEmail:
+              finalDestinationAccount.profiles?.email,
+
+            accountNumber:
+              finalDestinationAccount.account_number,
+
+            amount:
+              formatCurrency(amount),
+
+            newBalance:
+              formatCurrency(
+                newDestinationBalance
+              ),
+
+            description,
+
+            reference:
+              cleanReference,
+
+            transferType:
+              'same_bank',
+
+            direction:
+              'received',
+
+            senderName,
+
+            senderAccountNumber:
+              finalSourceAccount.account_number
+          }
+        );
+      } catch (notificationError) {
+        console.error(
+          'Recipient notification failed:',
+          notificationError
+        );
+      }
+    });
+
+    return;
+
   } catch (error) {
     console.error(
       'Verify OTP Error:',
@@ -1743,7 +1785,6 @@ const verifyOtpAndComplete = async (
     next(error);
   }
 };
-
 
 // ============================================================
 // VERIFY TRANSFER PIN AND COMPLETE TRANSFER
@@ -1897,18 +1938,6 @@ const verifyPinAndComplete = async (
       } catch {
         metadata = {};
       }
-    }
-
-    // --------------------------------------------------------
-    // MUST BE A PIN-AUTHORIZED TRANSACTION
-    // --------------------------------------------------------
-
-    if (!metadata.pinRequired) {
-      return res.status(400).json({
-        success: false,
-        error:
-          'This transaction is not set up for PIN verification.'
-      });
     }
 
     // --------------------------------------------------------
@@ -2117,21 +2146,7 @@ const verifyPinAndComplete = async (
         throw reviewError;
       }
 
-      const io =
-        req.app.get('io');
-
-      await createAndSendNotification(
-        io,
-        req.user.id,
-        'system',
-        'Transfer Pending Review',
-        `Your transfer of ${formatCurrency(
-          transaction.amount
-        )} is pending bank review due to account restrictions.`,
-        cleanReference
-      );
-
-      return res.json({
+      res.json({
         success: true,
 
         reference:
@@ -2143,13 +2158,36 @@ const verifyPinAndComplete = async (
         message:
           'PIN verified. Transfer has been submitted for bank review.'
       });
+
+      setImmediate(async () => {
+        try {
+          const io =
+            req.app.get('io');
+
+          await createAndSendNotification(
+            io,
+            req.user.id,
+            'system',
+            'Transfer Pending Review',
+            `Your transfer of ${formatCurrency(
+              transaction.amount
+            )} is pending bank review due to account restrictions.`,
+            cleanReference
+          );
+        } catch (notifyError) {
+          console.error(
+            'Pending review notification failed:',
+            notifyError
+          );
+        }
+      });
+
+      return;
     }
 
     // ========================================================
     // ATOMIC TRANSFER VIA RPC
     // ========================================================
-
-    await delay(250);
 
     const {
       data: transferResult,
@@ -2376,138 +2414,10 @@ const verifyPinAndComplete = async (
       );
 
     // ========================================================
-    // NOTIFICATIONS
+    // SEND RESPONSE FIRST
     // ========================================================
 
-    const io =
-      req.app.get('io');
-
-    try {
-      await createAndSendNotification(
-        io,
-
-        finalSourceAccount.user_id,
-
-        'debit',
-
-        `Transfer Debited – ${formatCurrency(
-          amount
-        )}`,
-
-        `You transferred ${formatCurrency(
-          amount
-        )} to ${recipientName}.`,
-
-        cleanReference,
-
-        {
-          userName:
-            senderName,
-
-          userEmail:
-            finalSourceAccount.profiles?.email ||
-            req.user.email,
-
-          accountNumber:
-            finalSourceAccount.account_number,
-
-          amount:
-            formatCurrency(amount),
-
-          newBalance:
-            formatCurrency(
-              newSourceBalance
-            ),
-
-          description,
-
-          reference:
-            cleanReference,
-
-          transferType:
-            'same_bank',
-
-          direction:
-            'sent',
-
-          recipientName,
-
-          recipientAccountNumber:
-            finalDestinationAccount.account_number
-        }
-      );
-    } catch (notificationError) {
-      console.error(
-        'Sender notification failed:',
-        notificationError
-      );
-    }
-
-    try {
-      await createAndSendNotification(
-        io,
-
-        finalDestinationAccount.user_id,
-
-        'credit',
-
-        `Transfer Credited – ${formatCurrency(
-          amount
-        )}`,
-
-        `You received ${formatCurrency(
-          amount
-        )} from ${senderName}.`,
-
-        cleanReference,
-
-        {
-          userName:
-            recipientName,
-
-          userEmail:
-            finalDestinationAccount.profiles?.email,
-
-          accountNumber:
-            finalDestinationAccount.account_number,
-
-          amount:
-            formatCurrency(amount),
-
-          newBalance:
-            formatCurrency(
-              newDestinationBalance
-            ),
-
-          description,
-
-          reference:
-            cleanReference,
-
-          transferType:
-            'same_bank',
-
-          direction:
-            'received',
-
-          senderName,
-
-          senderAccountNumber:
-            finalSourceAccount.account_number
-        }
-      );
-    } catch (notificationError) {
-      console.error(
-        'Recipient notification failed:',
-        notificationError
-      );
-    }
-
-    // ========================================================
-    // SUCCESS
-    // ========================================================
-
-    return res.json({
+    res.json({
       success: true,
 
       reference:
@@ -2539,6 +2449,138 @@ const verifyPinAndComplete = async (
         completedTransaction
     });
 
+    // ========================================================
+    // NOTIFICATIONS (BACKGROUND)
+    // ========================================================
+
+    setImmediate(async () => {
+      const io =
+        req.app.get('io');
+
+      try {
+        await createAndSendNotification(
+          io,
+
+          finalSourceAccount.user_id,
+
+          'debit',
+
+          `Transfer Debited – ${formatCurrency(
+            amount
+          )}`,
+
+          `You transferred ${formatCurrency(
+            amount
+          )} to ${recipientName}.`,
+
+          cleanReference,
+
+          {
+            userName:
+              senderName,
+
+            userEmail:
+              finalSourceAccount.profiles?.email ||
+              req.user.email,
+
+            accountNumber:
+              finalSourceAccount.account_number,
+
+            amount:
+              formatCurrency(amount),
+
+            newBalance:
+              formatCurrency(
+                newSourceBalance
+              ),
+
+            description,
+
+            reference:
+              cleanReference,
+
+            transferType:
+              'same_bank',
+
+            direction:
+              'sent',
+
+            recipientName,
+
+            recipientAccountNumber:
+              finalDestinationAccount.account_number
+          }
+        );
+      } catch (notificationError) {
+        console.error(
+          'Sender notification failed:',
+          notificationError
+        );
+      }
+
+      try {
+        await createAndSendNotification(
+          io,
+
+          finalDestinationAccount.user_id,
+
+          'credit',
+
+          `Transfer Credited – ${formatCurrency(
+            amount
+          )}`,
+
+          `You received ${formatCurrency(
+            amount
+          )} from ${senderName}.`,
+
+          cleanReference,
+
+          {
+            userName:
+              recipientName,
+
+            userEmail:
+              finalDestinationAccount.profiles?.email,
+
+            accountNumber:
+              finalDestinationAccount.account_number,
+
+            amount:
+              formatCurrency(amount),
+
+            newBalance:
+              formatCurrency(
+                newDestinationBalance
+              ),
+
+            description,
+
+            reference:
+              cleanReference,
+
+            transferType:
+              'same_bank',
+
+            direction:
+              'received',
+
+            senderName,
+
+            senderAccountNumber:
+              finalSourceAccount.account_number
+          }
+        );
+      } catch (notificationError) {
+        console.error(
+          'Recipient notification failed:',
+          notificationError
+        );
+      }
+    });
+
+    return;
+
   } catch (error) {
     console.error(
       'Verify PIN Error:',
@@ -2548,7 +2590,6 @@ const verifyPinAndComplete = async (
     next(error);
   }
 };
-
 
 // ============================================================
 // TRANSACTION HISTORY
@@ -2569,10 +2610,6 @@ const getTransactionHistory = async (
       offset = 0
     } = req.query;
 
-    // --------------------------------------------------------
-    // NORMALIZE PAGINATION
-    // --------------------------------------------------------
-
     const parsedLimit =
       Math.min(
         Math.max(
@@ -2587,10 +2624,6 @@ const getTransactionHistory = async (
         parseInt(offset, 10) || 0,
         0
       );
-
-    // --------------------------------------------------------
-    // VERIFY ACCOUNT OWNERSHIP
-    // --------------------------------------------------------
 
     const {
       data: account,
@@ -2619,10 +2652,6 @@ const getTransactionHistory = async (
       });
     }
 
-    // --------------------------------------------------------
-    // GET TRANSACTIONS
-    // --------------------------------------------------------
-
     const {
       data: transactions,
       error: txError
@@ -2650,10 +2679,6 @@ const getTransactionHistory = async (
       throw txError;
     }
 
-    // --------------------------------------------------------
-    // COUNT
-    // --------------------------------------------------------
-
     const {
       count,
       error: countError
@@ -2676,10 +2701,6 @@ const getTransactionHistory = async (
     if (countError) {
       throw countError;
     }
-
-    // --------------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------------
 
     return res.json({
       success:
@@ -2710,7 +2731,6 @@ const getTransactionHistory = async (
   }
 };
 
-
 // ============================================================
 // GET TRANSACTION BY REFERENCE
 // PUBLIC RECEIPT ENDPOINT
@@ -2726,10 +2746,6 @@ const getTransactionByReference = async (
       referenceId
     } = req.params;
 
-    // --------------------------------------------------------
-    // VALIDATE REFERENCE
-    // --------------------------------------------------------
-
     if (
       !referenceId ||
       referenceId.trim() === ''
@@ -2740,10 +2756,6 @@ const getTransactionByReference = async (
           'Reference ID is required.'
       });
     }
-
-    // --------------------------------------------------------
-    // GET TRANSACTION
-    // --------------------------------------------------------
 
     const {
       data: transaction,
@@ -2785,10 +2797,6 @@ const getTransactionByReference = async (
       });
     }
 
-    // --------------------------------------------------------
-    // PARSE METADATA
-    // --------------------------------------------------------
-
     let metadata =
       transaction.metadata || {};
 
@@ -2803,10 +2811,6 @@ const getTransactionByReference = async (
         metadata = {};
       }
     }
-
-    // --------------------------------------------------------
-    // PUBLIC RECEIPT RESPONSE
-    // --------------------------------------------------------
 
     return res.json({
       success:
@@ -2856,7 +2860,6 @@ const getTransactionByReference = async (
     });
   }
 };
-
 
 // ============================================================
 // EXPORTS

@@ -1,7 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useNavigate } from 'react-router-dom';
 import { transactionsAPI, accountsAPI } from '../api';
-import { formatCurrency, validateAmount } from '../utils/helpers';
+import {
+  formatCurrency,
+  validateAmount,
+} from '../utils/helpers';
 import Modal from './Modal';
 import Receipt from './Receipt';
 import { toast } from 'sonner';
@@ -31,9 +39,6 @@ import {
   ExternalLink,
   KeyRound,
 } from 'lucide-react';
-
-const sleep = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
 
 /* -------------------------------------------------------------------------- */
 /* Custom Select                                                              */
@@ -585,12 +590,25 @@ const Transfer = () => {
     setAutoRedirectCountdown,
   ] = useState(0);
 
+  /* Slow-OTP warning */
+  const [otpSlowWarning, setOtpSlowWarning] =
+    useState(false);
+
+  const requestTimerRef = useRef(null);
+
   /* ---------------------------------------------------------------------- */
   /* Fetch accounts                                                         */
   /* ---------------------------------------------------------------------- */
 
   useEffect(() => {
     fetchAccounts();
+  }, []);
+
+  /* Cleanup timers on unmount */
+  useEffect(() => {
+    return () => {
+      clearTimeout(requestTimerRef.current);
+    };
   }, []);
 
   /* ---------------------------------------------------------------------- */
@@ -797,6 +815,9 @@ const Transfer = () => {
     setPinStep('idle');
 
     setAutoRedirectCountdown(0);
+
+    setOtpSlowWarning(false);
+    clearTimeout(requestTimerRef.current);
   };
 
   /* ---------------------------------------------------------------------- */
@@ -896,6 +917,7 @@ const Transfer = () => {
     setReference('');
     setResultStatus('');
     setVerificationError('');
+    setOtpSlowWarning(false);
 
     if (!validateTransfer()) {
       return;
@@ -916,51 +938,41 @@ const Transfer = () => {
   /* Start selected verification method                                     */
   /* ---------------------------------------------------------------------- */
 
-  const startVerification = async (
-    method
-  ) => {
+  const startVerification = async (method) => {
     setVerificationMethod(method);
     setVerificationChoiceOpen(false);
     setVerificationError('');
     setSubmitError('');
+    setOtpSlowWarning(false);
+
+    // Hard cap: if the request takes too long, unlock the UI so the
+    // user can fall back to PIN without losing the transaction.
+    clearTimeout(requestTimerRef.current);
+    requestTimerRef.current = setTimeout(() => {
+      setOtpSlowWarning(true);
+    }, 12000);
 
     setLoading(true);
-    setInitializationStep('preparing');
+    setInitializationStep(
+      method === 'otp'
+        ? 'sending_otp'
+        : 'creating_transfer'
+    );
 
     try {
-      await sleep(500);
-
-      setInitializationStep(
-        'verifying_recipient'
-      );
-
-      await sleep(700);
-
-      setInitializationStep(
-        'creating_transfer'
-      );
-
-      /*
-       * Backend receives the selected verification
-       * method.
-       *
-       * For PIN:
-       *   verificationMethod = "pin"
-       *
-       * For OTP:
-       *   verificationMethod = "otp"
-       */
       const response =
         await transactionsAPI.initiateTransfer({
           fromAccountId: fromAccount,
           amount: Number(amount),
           description:
-            description ||
-            'Same bank transfer',
+            description || 'Same bank transfer',
           recipientAccountNumber,
           recipientName,
           verificationMethod: method,
         });
+
+      clearTimeout(requestTimerRef.current);
+      setOtpSlowWarning(false);
 
       if (!response?.success) {
         throw new Error(
@@ -969,16 +981,11 @@ const Transfer = () => {
         );
       }
 
-      /*
-       * PIN FLOW
-       *
-       * If backend says PIN is required,
-       * open PIN modal.
-       */
-      if (
-        method === 'pin' ||
-        response.requiresPin
-      ) {
+      // -------- PIN FLOW --------
+      // Also covers OTP-failed-on-backend: backend returns
+      // { requiresPin: true, otpSendFailed: true, reference } and
+      // keeps the pending transaction alive.
+      if (method === 'pin' || response.requiresPin) {
         setOtpReference(response.reference || '');
         setPinStep('entry');
         setPinError('');
@@ -989,25 +996,20 @@ const Transfer = () => {
 
         setPinModalOpen(true);
 
+        if (response.otpSendFailed) {
+          toast.error('Switched to PIN verification', {
+            description:
+              response.message ||
+              'We could not send the verification code. Please use your transfer PIN instead.',
+          });
+        }
+
         return;
       }
 
-      /*
-       * OTP FLOW
-       */
-      setInitializationStep(
-        'sending_otp'
-      );
-
-      await sleep(700);
-
-      /*
-       * If backend successfully sent OTP.
-       */
+      // -------- OTP FLOW --------
       if (response.requiresOtp) {
-        setOtpReference(
-          response.reference || ''
-        );
+        setOtpReference(response.reference || '');
 
         setOtpCode('');
         setOtpError('');
@@ -1019,30 +1021,22 @@ const Transfer = () => {
 
         setOtpModalOpen(true);
 
-        toast.success(
-          'Verification code sent'
-        );
+        toast.success('Verification code sent');
 
         return;
       }
 
-      /*
-       * Some backend implementations may return
-       * completed directly.
-       */
+      // Some backends return completed directly.
       if (response.status === 'completed') {
-        setReference(
-          response.reference || ''
-        );
-
+        setReference(response.reference || '');
         setResultStatus('completed');
-
         setSuccess(
           response.message ||
             'Transfer completed successfully.'
         );
 
         setLoading(false);
+        setInitializationStep('idle');
         setAutoRedirectCountdown(5);
 
         await fetchAccounts();
@@ -1054,51 +1048,29 @@ const Transfer = () => {
         'The transfer returned an unexpected response.'
       );
     } catch (err) {
-      /*
-       * IMPORTANT:
-       *
-       * If the user selected OTP and OTP could not
-       * be sent, do NOT simply fail the transfer.
-       *
-       * Give the user PIN as the fallback.
-       */
+      clearTimeout(requestTimerRef.current);
+      setOtpSlowWarning(false);
+      setLoading(false);
+      setInitializationStep('idle');
+
+      // OTP flow: fall back to PIN using the SAME reference.
       if (method === 'otp') {
-        setLoading(false);
-        setInitializationStep('idle');
+        setVerificationMethod('pin');
+        setPinStep('entry');
+        setPinError('');
+        setTransferPin('');
 
-        // Only fall back to PIN if we actually have a reference
-        if (otpReference) {
-          setVerificationMethod('pin');
-          setPinStep('entry');
-          setPinError('');
-          setTransferPin('');
-          setPinModalOpen(true);
-
-          toast.error(
-            'We could not send the verification code. You can verify this transfer with your PIN instead.'
-          );
-
-          return;
+        if (err?.reference) {
+          setOtpReference(err.reference);
         }
 
-        // Show inline prompt near the submit button + sonner toast with action
-        const message =
-          'Unable to send a verification code. Please try again.';
+        setPinModalOpen(true);
 
-        setSubmitError(message);
-
-        // Pre-select PIN so the next modal opens on the PIN option
-        setVerificationMethod('pin');
-
-        toast.error('Could not send verification code', {
+        toast.error('Switched to PIN verification', {
           description:
-            'Please verify this transfer using your transfer PIN instead.',
-          duration: 8000,
-          action: {
-            label: 'Use PIN',
-            onClick: () =>
-              setVerificationChoiceOpen(true),
-          },
+            err?.error ||
+            err?.message ||
+            'We could not send the verification code. Please use your transfer PIN instead.',
         });
 
         return;
@@ -1109,10 +1081,23 @@ const Transfer = () => {
           err?.message ||
           'Transfer initiation failed.'
       );
-
-      setInitializationStep('idle');
-      setLoading(false);
     }
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /* Cancel slow OTP request and switch to PIN                              */
+  /* ---------------------------------------------------------------------- */
+
+  const cancelSlowRequestAndUsePin = () => {
+    clearTimeout(requestTimerRef.current);
+    setOtpSlowWarning(false);
+    setLoading(false);
+    setInitializationStep('idle');
+
+    setSubmitError(
+      'Verification email is taking too long to send.'
+    );
+    setVerificationMethod('pin');
   };
 
   /* ---------------------------------------------------------------------- */
@@ -1138,8 +1123,6 @@ const Transfer = () => {
     setOtpStep('verifying');
 
     try {
-      await sleep(700);
-
       const response =
         await transactionsAPI.verifyTransferOtp({
           reference: otpReference,
@@ -1179,8 +1162,6 @@ const Transfer = () => {
       }
 
       setOtpStep('processing');
-
-      await sleep(1500);
 
       await finishTransferResponse(
         response
@@ -1242,19 +1223,6 @@ const Transfer = () => {
     setPinStep('verifying');
 
     try {
-      await sleep(700);
-
-      /*
-       * This method will be added/adjusted in the
-       * backend API next.
-       *
-       * Expected request:
-       *
-       * {
-       *   reference,
-       *   pin
-       * }
-       */
       const response =
         await transactionsAPI.verifyTransferPin({
           reference: otpReference,
@@ -1274,8 +1242,6 @@ const Transfer = () => {
       }
 
       setPinStep('processing');
-
-      await sleep(1500);
 
       await finishTransferResponse(
         response
@@ -2109,7 +2075,42 @@ const Transfer = () => {
                   </div>
                 )}
 
-                {/* Inline submit error - shown close to the button */}
+                {/* Slow OTP warning */}
+                {otpSlowWarning &&
+                  !submitError && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                      <div className="flex gap-3">
+                        <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold text-amber-900">
+                            This is taking longer than
+                            usual
+                          </p>
+
+                          <p className="mt-1 text-xs leading-5 text-amber-800">
+                            We're still waiting for
+                            the verification email. You
+                            can cancel and use your
+                            transfer PIN instead.
+                          </p>
+
+                          <button
+                            type="button"
+                            onClick={
+                              cancelSlowRequestAndUsePin
+                            }
+                            className="mt-3 inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                          >
+                            <KeyRound className="h-3.5 w-3.5" />
+                            Use PIN instead
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                {/* Inline submit error — right above the button */}
                 {submitError && (
                   <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
                     <div className="flex gap-3">
