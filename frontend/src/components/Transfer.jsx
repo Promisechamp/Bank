@@ -518,6 +518,7 @@ const Transfer = () => {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [submitError, setSubmitError] = useState('');
   const [success, setSuccess] = useState('');
   const [reference, setReference] = useState('');
   const [resultStatus, setResultStatus] =
@@ -775,6 +776,7 @@ const Transfer = () => {
     setAccountCheckError('');
 
     setError('');
+    setSubmitError('');
     setSuccess('');
     setReference('');
     setResultStatus('');
@@ -889,6 +891,7 @@ const Transfer = () => {
     e.preventDefault();
 
     setError('');
+    setSubmitError('');
     setSuccess('');
     setReference('');
     setResultStatus('');
@@ -919,6 +922,7 @@ const Transfer = () => {
     setVerificationMethod(method);
     setVerificationChoiceOpen(false);
     setVerificationError('');
+    setSubmitError('');
 
     setLoading(true);
     setInitializationStep('preparing');
@@ -975,7 +979,7 @@ const Transfer = () => {
         method === 'pin' ||
         response.requiresPin
       ) {
-							 setOtpReference(response.reference || '');
+        setOtpReference(response.reference || '');
         setPinStep('entry');
         setPinError('');
         setTransferPin('');
@@ -987,9 +991,6 @@ const Transfer = () => {
 
         return;
       }
-						
-						
-					
 
       /*
        * OTP FLOW
@@ -1062,31 +1063,46 @@ const Transfer = () => {
        * Give the user PIN as the fallback.
        */
       if (method === 'otp') {
-  setLoading(false);
-  setInitializationStep('idle');
+        setLoading(false);
+        setInitializationStep('idle');
 
-  // Only fall back to PIN if we actually have a reference
-  if (otpReference) {
-    setVerificationMethod('pin');
-    setPinStep('entry');
-    setPinError('');
-    setTransferPin('');
-    setPinModalOpen(true);
+        // Only fall back to PIN if we actually have a reference
+        if (otpReference) {
+          setVerificationMethod('pin');
+          setPinStep('entry');
+          setPinError('');
+          setTransferPin('');
+          setPinModalOpen(true);
 
-    toast.error(
-      'We could not send the verification code. You can verify this transfer with your PIN instead.'
-    );
+          toast.error(
+            'We could not send the verification code. You can verify this transfer with your PIN instead.'
+          );
 
-    return;
-  }
+          return;
+        }
 
-  // Otherwise show a real error
-  setError(
-    'Unable to send a verification code. Please try again.'
-  );
+        // Show inline prompt near the submit button + sonner toast with action
+        const message =
+          'Unable to send a verification code. Please try again.';
 
-  return;
-}
+        setSubmitError(message);
+
+        // Pre-select PIN so the next modal opens on the PIN option
+        setVerificationMethod('pin');
+
+        toast.error('Could not send verification code', {
+          description:
+            'Please verify this transfer using your transfer PIN instead.',
+          duration: 8000,
+          action: {
+            label: 'Use PIN',
+            onClick: () =>
+              setVerificationChoiceOpen(true),
+          },
+        });
+
+        return;
+      }
 
       setError(
         err?.error ||
@@ -2093,6 +2109,27 @@ const Transfer = () => {
                   </div>
                 )}
 
+                {/* Inline submit error - shown close to the button */}
+                {submitError && (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex gap-3">
+                      <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-amber-900">
+                          Transfer could not be started
+                        </p>
+
+                        <p className="mt-1 text-xs leading-5 text-amber-800">
+                          {submitError} You can use your
+                          transfer PIN to verify this
+                          transfer instead.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <button
                   type="submit"
                   disabled={
@@ -2103,13 +2140,17 @@ const Transfer = () => {
                 >
                   {loading ? (
                     <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : submitError ? (
+                    <KeyRound className="h-5 w-5" />
                   ) : (
                     <ShieldCheck className="h-5 w-5" />
                   )}
 
                   {loading
                     ? 'Preparing transfer...'
-                    : 'Continue to verification'}
+                    : submitError
+                      ? 'Continue with PIN'
+                      : 'Continue to verification'}
                 </button>
               </div>
             </div>
