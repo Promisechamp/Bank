@@ -19,17 +19,21 @@ const hasCompleteSmtpAuth =
 const hasPartialSmtpAuth =
   hasSmtpUser !== hasSmtpPass;
 
+
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: smtpPort,
   secure: smtpSecure,
 
-  auth: hasCompleteSmtpAuth
-    ? {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      }
-    : undefined,
+  family: 4,
+
+  auth:
+    process.env.SMTP_USER || process.env.SMTP_PASS
+      ? {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        }
+      : undefined,
 });
 
 // ============================================================

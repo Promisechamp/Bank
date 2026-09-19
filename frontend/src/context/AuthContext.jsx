@@ -34,8 +34,7 @@ export const AuthProvider = ({ children }) => {
 
     return (
       userData.isAdmin === true ||
-      userData.role === 'admin' ||
-      userData.email === 'admin@bank.com'
+      userData.role === 'admin' 
     );
   }, []);
 
@@ -48,9 +47,6 @@ export const AuthProvider = ({ children }) => {
         const storedToken = localStorage.getItem('token');
         const storedUser = localStorage.getItem('user');
 
-        console.log('🔐 Restoring authentication...');
-        console.log('Token exists:', !!storedToken);
-        console.log('User exists:', !!storedUser);
 
         if (!storedToken || !storedUser) {
           console.log('⚠️ No stored authentication found');
@@ -96,10 +92,7 @@ export const AuthProvider = ({ children }) => {
         setToken(storedToken);
         setUser(parsedUser);
         setIsAdmin(adminStatus);
-
-        console.log('✅ Authentication restored');
-        console.log('👤 User:', parsedUser.email);
-        console.log('👑 Admin:', adminStatus);
+        
       } catch (err) {
         console.error('❌ Authentication restore failed:', err);
 
@@ -205,11 +198,8 @@ export const AuthProvider = ({ children }) => {
       setUser(userData);
       setIsAdmin(adminStatus);
 
-      console.log('✅ Login complete');
-      console.log('👤 User:', userData.email);
-      console.log('🔑 Token stored:', true);
-      console.log('👑 Admin:', adminStatus);
-
+      console.log('👤 User:', userData);
+						
       return {
         success: true,
         isAdmin: adminStatus,

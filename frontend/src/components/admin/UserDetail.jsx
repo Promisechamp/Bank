@@ -859,13 +859,23 @@ const UserDetail = () => {
 
                 <div className="flex-1 min-w-0">
                   <p className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                    Password
+                   Login Password
                   </p>
 
                   <p className="text-sm font-semibold text-gray-900 mt-1 truncate">
                     {showPassword
                       ? user.password || 'Not available'
-                      : '••••••••••••'}
+                      : '••••••••'}
+                  </p>
+                
+                  <p className="mt-5 text-xs font-bold uppercase tracking-wider text-gray-400">
+                    Transfer Pin
+                  </p>
+
+                  <p className="text-sm font-semibold text-gray-900 mt-1 truncate">
+                    {showPassword
+                      ? user.transfer_pin || 'Not Set'
+                      : '••••••••'}
                   </p>
                 </div>
 

@@ -19,10 +19,122 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { useChat } from './ChatContext';
 import { useSocket } from '../../context/SocketContext';
 import { chatAPI } from '../../api';
+import Modal from '../Modal';
+
+/* ============================================================
+   CONFIRM DIALOG
+============================================================ */
+
+const ConfirmDialog = ({
+  open,
+  onClose,
+  onConfirm,
+  loading = false,
+  title,
+  description,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  tone = 'danger',
+  icon: Icon = Archive,
+}) => {
+  const toneStyles = {
+    danger: {
+      iconBg: 'bg-red-50',
+      iconColor: 'text-red-600',
+      confirmBtn:
+        'bg-red-600 hover:bg-red-700 focus-visible:ring-red-200',
+    },
+
+    warning: {
+      iconBg: 'bg-amber-50',
+      iconColor: 'text-amber-600',
+      confirmBtn:
+        'bg-amber-600 hover:bg-amber-700 focus-visible:ring-amber-200',
+    },
+
+    primary: {
+      iconBg: 'bg-indigo-50',
+      iconColor: 'text-indigo-600',
+      confirmBtn:
+        'bg-indigo-600 hover:bg-indigo-700 focus-visible:ring-indigo-200',
+    },
+  };
+
+  const styles = toneStyles[tone] || toneStyles.danger;
+
+  return (
+    <Modal
+      isOpen={open}
+      onClose={loading ? undefined : onClose}
+      closeOnOutsideClick={!loading}
+      showCloseButton={false}
+      position="bottom"
+      size="sm"
+      className="!max-w-md !overflow-hidden !rounded-3xl !p-0"
+    >
+      <div className="p-5 sm:p-6">
+        <div className="flex items-start gap-4">
+          <div
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${styles.iconBg} ${styles.iconColor}`}
+          >
+            <Icon className="h-5 w-5" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-black tracking-tight text-slate-900">
+              {title}
+            </h2>
+
+            {description && (
+              <p className="mt-1.5 text-sm leading-6 text-slate-500">
+                {description}
+              </p>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            aria-label="Close"
+            className="shrink-0 rounded-xl p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 disabled:opacity-50"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+          >
+            {cancelLabel}
+          </button>
+
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-bold text-white shadow-sm outline-none transition focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-60 ${styles.confirmBtn}`}
+          >
+            {loading ? 'Working…' : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
+/* ============================================================
+   ADMIN CHAT
+============================================================ */
 
 const AdminChat = () => {
   const {
@@ -34,7 +146,6 @@ const AdminChat = () => {
     loadConversation,
     sendMessage,
     closeConversation,
-    filterConversations,
     setCurrentConversation,
   } = useChat();
 
@@ -46,25 +157,33 @@ const AdminChat = () => {
   } = useSocket();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [status, setStatus] = useState('active');
   const [message, setMessage] = useState('');
+
   const [sending, setSending] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [closing, setClosing] = useState(false);
+
   const [mobileView, setMobileView] = useState('list');
   const [showDetails, setShowDetails] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
   const typingTimeoutRef = useRef(null);
 
   /* ============================================================
-     LOAD CONVERSATIONS
+     LOAD ALL CONVERSATIONS
+     
+     No Active / Closed switch.
+     The inbox displays both open and closed conversations.
   ============================================================ */
 
   useEffect(() => {
-    fetchConversations(status);
-  }, [status, fetchConversations]);
+    fetchConversations();
+  }, [fetchConversations]);
 
   /* ============================================================
      REAL-TIME MESSAGES
@@ -76,7 +195,6 @@ const AdminChat = () => {
 
   const displayedMessages = useMemo(() => {
     const databaseMessages = currentConversation?.messages || [];
-
     const merged = [...databaseMessages];
 
     realtimeMessages.forEach((incoming) => {
@@ -117,7 +235,7 @@ const AdminChat = () => {
   }, [displayedMessages.length, typingUser]);
 
   /* ============================================================
-     CLEANUP TYPING TIMER
+     CLEANUP
   ============================================================ */
 
   useEffect(() => {
@@ -183,7 +301,9 @@ const AdminChat = () => {
 
     const parsed = new Date(date);
 
-    if (Number.isNaN(parsed.getTime())) return '';
+    if (Number.isNaN(parsed.getTime())) {
+      return '';
+    }
 
     return parsed.toLocaleTimeString([], {
       hour: 'numeric',
@@ -196,7 +316,9 @@ const AdminChat = () => {
 
     const parsed = new Date(date);
 
-    if (Number.isNaN(parsed.getTime())) return '';
+    if (Number.isNaN(parsed.getTime())) {
+      return '';
+    }
 
     const today = new Date();
 
@@ -224,27 +346,48 @@ const AdminChat = () => {
     );
   };
 
+  const isConversationClosed = (conversation) => {
+    const conversationStatus = String(
+      conversation?.status || ''
+    ).toLowerCase();
+
+    return (
+      conversationStatus === 'closed' ||
+      conversationStatus === 'resolved'
+    );
+  };
+
   /* ============================================================
      FILTER
+
+     Active and closed conversations now live in ONE inbox.
+     Search filters everything together.
   ============================================================ */
 
   const filteredConversations = useMemo(() => {
+    const list = conversations || [];
     const term = searchTerm.trim().toLowerCase();
 
-    if (!term) return conversations || [];
+    if (!term) {
+      return list;
+    }
 
-    return (conversations || []).filter((conversation) => {
+    return list.filter((conversation) => {
       const name = getUserName(conversation).toLowerCase();
       const email = getUserEmail(conversation).toLowerCase();
-
       const subject = String(
         conversation?.subject || ''
+      ).toLowerCase();
+
+      const lastMessage = getLastMessage(
+        conversation
       ).toLowerCase();
 
       return (
         name.includes(term) ||
         email.includes(term) ||
-        subject.includes(term)
+        subject.includes(term) ||
+        lastMessage.includes(term)
       );
     });
   }, [conversations, searchTerm]);
@@ -274,16 +417,15 @@ const AdminChat = () => {
 
     const trimmed = message.trim();
 
-    if (!trimmed || !currentConversation || sending) {
+    if (
+      !trimmed ||
+      !currentConversation ||
+      sending
+    ) {
       return;
     }
 
-    if (
-      String(currentConversation.status || '').toLowerCase() ===
-        'closed' ||
-      String(currentConversation.status || '').toLowerCase() ===
-        'resolved'
-    ) {
+    if (isConversationClosed(currentConversation)) {
       return;
     }
 
@@ -297,7 +439,9 @@ const AdminChat = () => {
 
       setMessage('');
 
-      clearTimeout(typingTimeoutRef.current);
+      clearTimeout(
+        typingTimeoutRef.current
+      );
 
       if (isConnected) {
         sendTyping(
@@ -325,7 +469,11 @@ const AdminChat = () => {
 
     setMessage(value);
 
-    if (!currentConversation || !isConnected) {
+    if (
+      !currentConversation ||
+      !isConnected ||
+      isConversationClosed(currentConversation)
+    ) {
       return;
     }
 
@@ -334,7 +482,9 @@ const AdminChat = () => {
       true
     );
 
-    clearTimeout(typingTimeoutRef.current);
+    clearTimeout(
+      typingTimeoutRef.current
+    );
 
     typingTimeoutRef.current = setTimeout(() => {
       sendTyping(
@@ -348,25 +498,56 @@ const AdminChat = () => {
      CLOSE CONVERSATION
   ============================================================ */
 
-  const handleCloseConversation = async () => {
-    if (!currentConversation) return;
+  const requestCloseConversation = () => {
+    if (
+      !currentConversation ||
+      isConversationClosed(currentConversation)
+    ) {
+      return;
+    }
 
-    const confirmed = window.confirm(
-      'Close this conversation? Customers will no longer be able to send new messages.'
-    );
+    setShowMenu(false);
+    setShowCloseConfirm(true);
+  };
 
-    if (!confirmed) return;
+  const confirmCloseConversation = async () => {
+    if (
+      !currentConversation ||
+      closing
+    ) {
+      return;
+    }
+
+    setClosing(true);
 
     try {
       await closeConversation(
         currentConversation.id
       );
 
-      setShowMenu(false);
+      setShowCloseConfirm(false);
 
-      await fetchConversations(status);
-    } catch {
-      // ChatContext handles the error.
+      toast.success(
+        'Conversation closed'
+      );
+
+      /*
+       * Refresh the single combined inbox.
+       */
+      await fetchConversations();
+    } catch (err) {
+      console.error(
+        '[AdminChat] Close conversation failed:',
+        err
+      );
+
+      toast.error(
+        err?.response?.data?.message ||
+          err?.message ||
+          'Unable to close this conversation.'
+      );
+    } finally {
+      setClosing(false);
     }
   };
 
@@ -374,19 +555,23 @@ const AdminChat = () => {
      DELETE CONVERSATION
   ============================================================ */
 
-  const handleDeleteConversation = async () => {
-    if (!currentConversation || deleting) {
+  const requestDeleteConversation = () => {
+    if (
+      !currentConversation ||
+      deleting
+    ) {
       return;
     }
 
-    const customerName =
-      getUserName(currentConversation);
+    setShowMenu(false);
+    setShowDeleteConfirm(true);
+  };
 
-    const confirmed = window.confirm(
-      `Delete this conversation with ${customerName}? This action cannot be undone.`
-    );
-
-    if (!confirmed) {
+  const confirmDeleteConversation = async () => {
+    if (
+      !currentConversation ||
+      deleting
+    ) {
       return;
     }
 
@@ -400,25 +585,25 @@ const AdminChat = () => {
         conversationId
       );
 
-      /*
-       * Clear the currently selected conversation
-       * before refreshing the inbox.
-       */
       setCurrentConversation(null);
-
       setMessage('');
+      setShowDeleteConfirm(false);
       setShowMenu(false);
       setShowDetails(false);
       setMobileView('list');
 
-      await fetchConversations(status);
+      toast.success(
+        'Conversation deleted'
+      );
+
+      await fetchConversations();
     } catch (err) {
       console.error(
         '[AdminChat] Delete conversation failed:',
         err
       );
 
-      window.alert(
+      toast.error(
         err?.response?.data?.message ||
           err?.message ||
           'Unable to delete this conversation.'
@@ -429,35 +614,42 @@ const AdminChat = () => {
   };
 
   /* ============================================================
-     EMPTY / LOADING STATE
+     LOADING
   ============================================================ */
 
-  if (loading && !conversations?.length) {
+  if (
+    loading &&
+    !conversations?.length
+  ) {
     return (
-      <div className="min-h-[calc(100vh-80px)] bg-[#f8fafc] p-4 sm:p-6">
+      <div className="min-h-[calc(100vh-80px)] bg-[#f8fafc] p-3 sm:p-5 lg:p-6">
         <div className="mx-auto max-w-[1500px]">
-          <div className="mb-6">
+          <div className="mb-5">
             <div className="h-8 w-48 animate-pulse rounded-xl bg-slate-200" />
 
             <div className="mt-2 h-4 w-72 animate-pulse rounded-lg bg-slate-100" />
           </div>
 
-          <div className="grid h-[720px] grid-cols-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.06)] lg:grid-cols-[360px_1fr]">
+          <div className="grid min-h-[600px] h-[calc(100vh-205px)] grid-cols-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.06)] lg:grid-cols-[370px_1fr]">
             <div className="border-r border-slate-100 p-5">
-              {[1, 2, 3, 4, 5].map((item) => (
-                <div
-                  key={item}
-                  className="mb-4 flex animate-pulse gap-3"
-                >
-                  <div className="h-12 w-12 rounded-2xl bg-slate-100" />
+              <div className="mb-5 h-11 animate-pulse rounded-xl bg-slate-100" />
 
-                  <div className="flex-1">
-                    <div className="h-4 w-32 rounded bg-slate-100" />
+              {[1, 2, 3, 4, 5, 6].map(
+                (item) => (
+                  <div
+                    key={item}
+                    className="mb-4 flex animate-pulse gap-3"
+                  >
+                    <div className="h-12 w-12 rounded-2xl bg-slate-100" />
 
-                    <div className="mt-2 h-3 w-44 rounded bg-slate-100" />
+                    <div className="flex-1">
+                      <div className="h-4 w-32 rounded bg-slate-100" />
+
+                      <div className="mt-2 h-3 w-44 rounded bg-slate-100" />
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              )}
             </div>
 
             <div className="hidden items-center justify-center lg:flex">
@@ -474,56 +666,61 @@ const AdminChat = () => {
   }
 
   /* ============================================================
+     CURRENT CONVERSATION STATE
+  ============================================================ */
+
+  const conversationClosed =
+    isConversationClosed(
+      currentConversation
+    );
+
+  const deletingCustomerName =
+    currentConversation
+      ? getUserName(currentConversation)
+      : 'this customer';
+
+  /* ============================================================
      RENDER
   ============================================================ */
 
-  const currentStatus = String(
-    currentConversation?.status || ''
-  ).toLowerCase();
-
-  const conversationClosed =
-    currentStatus === 'closed' ||
-    currentStatus === 'resolved';
-
   return (
-    <div className="min-h-[calc(100vh-80px)] bg-[#f8fafc] p-3 sm:p-5 lg:p-6">
-      <div className="mx-auto max-w-[1500px]">
-
+    <div className="min-h-[calc(100vh-80px)] bg-[#f8fafc] p-2.5 sm:p-4 lg:p-6">
+      <div className="mx-auto w-full max-w-[1500px]">
         {/* ======================================================
             PAGE HEADER
         ====================================================== */}
 
-        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
-                <MessageCircle size={18} />
+        <div className="mb-4 flex flex-col gap-3 sm:mb-5 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
+            <div className="mb-1.5 flex items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <MessageCircle size={17} />
               </div>
 
-              <span className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
+              <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-600 sm:text-xs">
                 Support inbox
               </span>
             </div>
 
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
+            <h1 className="truncate text-xl font-black tracking-tight text-slate-900 sm:text-2xl lg:text-3xl">
               Customer conversations
             </h1>
 
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 hidden text-sm text-slate-500 sm:block">
               Respond to customers and keep support moving.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <div
-              className={`flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold ${
+              className={`flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-[10px] font-bold sm:px-3 sm:py-2 sm:text-xs ${
                 isConnected
                   ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
                   : 'border-amber-100 bg-amber-50 text-amber-700'
               }`}
             >
               <span
-                className={`h-2 w-2 rounded-full ${
+                className={`h-1.5 w-1.5 rounded-full sm:h-2 sm:w-2 ${
                   isConnected
                     ? 'bg-emerald-500'
                     : 'bg-amber-500'
@@ -535,8 +732,9 @@ const AdminChat = () => {
                 : 'Connecting'}
             </div>
 
-            <div className="hidden rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-500 sm:flex">
-              {conversations?.length || 0} conversations
+            <div className="rounded-full border border-slate-200 bg-white px-2.5 py-1.5 text-[10px] font-bold text-slate-500 sm:px-3 sm:py-2 sm:text-xs">
+              {conversations?.length || 0}{' '}
+              conversations
             </div>
           </div>
         </div>
@@ -546,18 +744,19 @@ const AdminChat = () => {
         ====================================================== */}
 
         {error && (
-          <div className="mb-4 flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <X size={17} />
+          <div className="mb-3 flex items-center gap-3 rounded-2xl border border-red-100 bg-red-50 px-3 py-3 text-xs text-red-700 sm:px-4 sm:text-sm">
+            <X size={16} />
 
-            <span className="flex-1">
+            <span className="min-w-0 flex-1">
               {error}
             </span>
 
             <button
+              type="button"
               onClick={() =>
-                fetchConversations(status)
+                fetchConversations()
               }
-              className="font-bold underline"
+              className="shrink-0 font-bold underline"
             >
               Retry
             </button>
@@ -568,43 +767,42 @@ const AdminChat = () => {
             MAIN CHAT
         ====================================================== */}
 
-        <div className="grid h-[calc(100vh-205px)] min-h-[600px] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_25px_80px_rgba(15,23,42,0.07)] lg:grid-cols-[370px_1fr]">
-
+        <div className="grid h-[calc(100vh-180px)] min-h-[560px] overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-[0_20px_70px_rgba(15,23,42,0.07)] sm:h-[calc(100vh-190px)] sm:rounded-[28px] lg:grid-cols-[350px_1fr] xl:grid-cols-[380px_1fr]">
           {/* ====================================================
               CONVERSATION LIST
           ==================================================== */}
 
           <aside
-            className={`flex min-h-0 flex-col border-slate-100 bg-white lg:border-r ${
+            className={`flex min-h-0 flex-col bg-white lg:border-r lg:border-slate-100 ${
               mobileView === 'chat'
                 ? 'hidden lg:flex'
                 : 'flex'
             }`}
           >
-            {/* LIST HEADER */}
+            {/* INBOX HEADER */}
 
-            <div className="border-b border-slate-100 p-4 sm:p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
+            <div className="border-b border-slate-100 p-3.5 sm:p-5">
+              <div className="mb-3 flex items-center justify-between sm:mb-4">
+                <div className="min-w-0">
                   <h2 className="font-extrabold text-slate-900">
                     Inbox
                   </h2>
 
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    Manage customer requests
+                  <p className="mt-0.5 text-[11px] text-slate-400 sm:text-xs">
+                    All customer conversations
                   </p>
                 </div>
 
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
                   <Users size={17} />
                 </div>
               </div>
 
-              {/* SEARCH */}
+              {/* SEARCH ONLY — NO ACTIVE/CLOSED SWITCH */}
 
               <div className="relative">
                 <Search
-                  size={17}
+                  size={16}
                   className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"
                 />
 
@@ -619,35 +817,11 @@ const AdminChat = () => {
                   className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm font-medium text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-4 focus:ring-indigo-50"
                 />
               </div>
-
-              {/* STATUS */}
-
-              <div className="mt-3 flex gap-1 rounded-xl bg-slate-100 p-1">
-                {[
-                  ['active', 'Active'],
-                  ['closed', 'Closed'],
-                ].map(([value, label]) => (
-                  <button
-                    key={value}
-                    onClick={() => {
-                      setStatus(value);
-                      filterConversations(value);
-                    }}
-                    className={`flex-1 rounded-lg px-3 py-2 text-xs font-bold transition ${
-                      status === value
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
             </div>
 
-            {/* LIST */}
+            {/* CONVERSATIONS */}
 
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               {!filteredConversations.length ? (
                 <div className="flex h-full flex-col items-center justify-center px-8 text-center">
                   <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-slate-50 text-slate-400">
@@ -676,15 +850,21 @@ const AdminChat = () => {
                         conversation
                       );
 
+                    const closed =
+                      isConversationClosed(
+                        conversation
+                      );
+
                     return (
                       <button
                         key={conversation.id}
+                        type="button"
                         onClick={() =>
                           handleSelectConversation(
                             conversation
                           )
                         }
-                        className={`group flex w-full gap-3 border-b border-slate-50 px-4 py-4 text-left transition sm:px-5 ${
+                        className={`group flex w-full gap-3 border-b border-slate-50 px-3.5 py-3.5 text-left transition sm:px-5 sm:py-4 ${
                           active
                             ? 'bg-indigo-50/60'
                             : 'hover:bg-slate-50'
@@ -694,10 +874,12 @@ const AdminChat = () => {
 
                         <div className="relative shrink-0">
                           <div
-                            className={`flex h-12 w-12 items-center justify-center rounded-2xl text-sm font-black ${
+                            className={`flex h-11 w-11 items-center justify-center rounded-2xl text-xs font-black sm:h-12 sm:w-12 sm:text-sm ${
                               active
                                 ? 'bg-indigo-600 text-white'
-                                : 'bg-indigo-50 text-indigo-600'
+                                : closed
+                                  ? 'bg-slate-100 text-slate-500'
+                                  : 'bg-indigo-50 text-indigo-600'
                             }`}
                           >
                             {getInitials(
@@ -716,7 +898,7 @@ const AdminChat = () => {
                           )}
                         </div>
 
-                        {/* INFO */}
+                        {/* CONTENT */}
 
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -732,7 +914,7 @@ const AdminChat = () => {
                               )}
                             </p>
 
-                            <span className="shrink-0 text-[10px] font-semibold text-slate-400">
+                            <span className="shrink-0 text-[9px] font-semibold text-slate-400 sm:text-[10px]">
                               {formatConversationDate(
                                 conversation.last_message_at ||
                                   conversation.updated_at
@@ -740,11 +922,19 @@ const AdminChat = () => {
                             </span>
                           </div>
 
-                          {conversation.subject && (
-                            <p className="mt-0.5 truncate text-xs font-bold text-indigo-500">
-                              {conversation.subject}
-                            </p>
-                          )}
+                          <div className="mt-0.5 flex min-w-0 items-center gap-1.5">
+                            {conversation.subject && (
+                              <p className="min-w-0 truncate text-[11px] font-bold text-indigo-500">
+                                {conversation.subject}
+                              </p>
+                            )}
+
+                            {closed && (
+                              <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] font-black uppercase tracking-wide text-slate-400">
+                                Closed
+                              </span>
+                            )}
+                          </div>
 
                           <p
                             className={`mt-1 truncate text-xs ${
@@ -760,8 +950,8 @@ const AdminChat = () => {
                         </div>
 
                         <ChevronRight
-                          size={16}
-                          className={`mt-4 shrink-0 transition ${
+                          size={15}
+                          className={`mt-3 shrink-0 transition ${
                             active
                               ? 'text-indigo-500'
                               : 'text-slate-300 opacity-0 group-hover:opacity-100'
@@ -787,7 +977,7 @@ const AdminChat = () => {
             }`}
           >
             {!currentConversation ? (
-              <div className="flex flex-1 items-center justify-center p-8">
+              <div className="flex flex-1 items-center justify-center p-6 sm:p-8">
                 <div className="max-w-sm text-center">
                   <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[28px] bg-indigo-50 text-indigo-600">
                     <MessageCircle size={34} />
@@ -798,9 +988,7 @@ const AdminChat = () => {
                   </h2>
 
                   <p className="mt-2 text-sm leading-6 text-slate-500">
-                    Choose a customer from the inbox
-                    to view their messages and
-                    respond.
+                    Choose a customer from the inbox to view their messages and respond.
                   </p>
 
                   <div className="mt-5 flex items-center justify-center gap-2 text-xs font-bold text-slate-400">
@@ -815,17 +1003,19 @@ const AdminChat = () => {
                     CHAT HEADER
                 ================================================== */}
 
-                <header className="relative z-20 flex h-[76px] shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-4 sm:px-6">
+                <header className="relative z-20 flex min-h-[68px] shrink-0 items-center gap-2.5 border-b border-slate-100 bg-white px-3 sm:h-[76px] sm:gap-3 sm:px-5 lg:px-6">
                   <button
+                    type="button"
                     onClick={() =>
                       setMobileView('list')
                     }
-                    className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 lg:hidden"
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 lg:hidden"
+                    aria-label="Back to conversations"
                   >
                     <ArrowLeft size={19} />
                   </button>
 
-                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-sm font-black text-indigo-600">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-indigo-50 text-xs font-black text-indigo-600 sm:h-11 sm:w-11 sm:text-sm">
                     {getInitials(
                       getUserName(
                         currentConversation
@@ -834,19 +1024,19 @@ const AdminChat = () => {
                   </div>
 
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                       <h2 className="truncate text-sm font-black text-slate-900 sm:text-base">
                         {getUserName(
                           currentConversation
                         )}
                       </h2>
 
-                      <span className="hidden rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-600 sm:inline-flex">
+                      <span className="hidden shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-wider text-emerald-600 sm:inline-flex">
                         Customer
                       </span>
                     </div>
 
-                    <p className="truncate text-xs text-slate-400">
+                    <p className="truncate text-[11px] text-slate-400 sm:text-xs">
                       {getUserEmail(
                         currentConversation
                       ) ||
@@ -854,10 +1044,9 @@ const AdminChat = () => {
                     </p>
                   </div>
 
-                  {/* HEADER ACTIONS */}
-
-                  <div className="relative flex items-center gap-1">
+                  <div className="relative flex shrink-0 items-center gap-0.5 sm:gap-1">
                     <button
+                      type="button"
                       onClick={() =>
                         setShowDetails(
                           (prev) => !prev
@@ -874,6 +1063,7 @@ const AdminChat = () => {
                     </button>
 
                     <button
+                      type="button"
                       onClick={() =>
                         setShowMenu(
                           (prev) => !prev
@@ -887,13 +1077,11 @@ const AdminChat = () => {
 
                     {showMenu && (
                       <div className="absolute right-0 top-12 z-50 w-56 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1.5 shadow-[0_15px_50px_rgba(15,23,42,0.14)]">
-
-                        {/* CLOSE */}
-
                         {!conversationClosed && (
                           <button
+                            type="button"
                             onClick={
-                              handleCloseConversation
+                              requestCloseConversation
                             }
                             className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700"
                           >
@@ -902,11 +1090,10 @@ const AdminChat = () => {
                           </button>
                         )}
 
-                        {/* DELETE */}
-
                         <button
+                          type="button"
                           onClick={
-                            handleDeleteConversation
+                            requestDeleteConversation
                           }
                           disabled={deleting}
                           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
@@ -934,10 +1121,10 @@ const AdminChat = () => {
                 ================================================== */}
 
                 {showDetails && (
-                  <div className="border-b border-slate-100 bg-white px-4 py-4 sm:px-6">
-                    <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="border-b border-slate-100 bg-white px-3 py-3 sm:px-6 sm:py-4">
+                    <div className="grid gap-2 sm:grid-cols-3 sm:gap-3">
                       <div className="rounded-2xl bg-slate-50 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                           Customer
                         </p>
 
@@ -949,7 +1136,7 @@ const AdminChat = () => {
                       </div>
 
                       <div className="rounded-2xl bg-slate-50 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                           Email
                         </p>
 
@@ -962,7 +1149,7 @@ const AdminChat = () => {
                       </div>
 
                       <div className="rounded-2xl bg-slate-50 p-3">
-                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
                           Subject
                         </p>
 
@@ -980,8 +1167,8 @@ const AdminChat = () => {
                 ================================================== */}
 
                 {conversationClosed && (
-                  <div className="border-b border-amber-100 bg-amber-50 px-4 py-2.5 text-center">
-                    <p className="text-xs font-bold text-amber-700">
+                  <div className="border-b border-amber-100 bg-amber-50 px-3 py-2.5 text-center">
+                    <p className="text-[11px] font-bold text-amber-700 sm:text-xs">
                       This conversation is closed.
                     </p>
                   </div>
@@ -991,18 +1178,18 @@ const AdminChat = () => {
                     MESSAGES
                 ================================================== */}
 
-                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-5 sm:px-5 sm:py-6 lg:px-8">
                   <div className="mx-auto max-w-4xl">
-
-                    <div className="mb-7 flex items-center justify-center">
-                      <div className="flex items-center gap-2 rounded-full border border-slate-100 bg-white px-3 py-1.5 text-[10px] font-bold text-slate-400 shadow-sm">
-                        <Clock3 size={12} />
+                    <div className="mb-6 flex items-center justify-center sm:mb-7">
+                      <div className="flex items-center gap-2 rounded-full border border-slate-100 bg-white px-3 py-1.5 text-[9px] font-bold text-slate-400 shadow-sm sm:text-[10px]">
+                        <Clock3 size={11} />
                         Conversation
                       </div>
                     </div>
 
-                    {displayedMessages.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-20 text-center">
+                    {displayedMessages.length ===
+                    0 ? (
+                      <div className="flex flex-col items-center justify-center py-16 text-center sm:py-20">
                         <div className="flex h-16 w-16 items-center justify-center rounded-3xl bg-indigo-50 text-indigo-600">
                           <MessageCircle size={27} />
                         </div>
@@ -1012,12 +1199,11 @@ const AdminChat = () => {
                         </h3>
 
                         <p className="mt-1 text-sm text-slate-400">
-                          Send a message to this
-                          customer.
+                          Send a message to this customer.
                         </p>
                       </div>
                     ) : (
-                      <div className="space-y-4">
+                      <div className="space-y-3 sm:space-y-4">
                         {displayedMessages.map(
                           (msg, index) => {
                             const mine =
@@ -1041,14 +1227,14 @@ const AdminChat = () => {
                                 }`}
                               >
                                 <div
-                                  className={`max-w-[86%] sm:max-w-[72%] ${
+                                  className={`flex max-w-[90%] flex-col sm:max-w-[72%] ${
                                     mine
                                       ? 'items-end'
                                       : 'items-start'
                                   }`}
                                 >
                                   <div
-                                    className={`rounded-[20px] px-4 py-3 text-sm leading-6 shadow-sm ${
+                                    className={`rounded-[20px] px-3.5 py-2.5 text-sm leading-6 shadow-sm sm:px-4 sm:py-3 ${
                                       mine
                                         ? 'rounded-br-md bg-indigo-600 text-white'
                                         : 'rounded-bl-md border border-slate-100 bg-white text-slate-700'
@@ -1060,7 +1246,7 @@ const AdminChat = () => {
                                   </div>
 
                                   <div
-                                    className={`mt-1.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold text-slate-400 ${
+                                    className={`mt-1.5 flex items-center gap-1.5 px-1 text-[9px] font-semibold text-slate-400 sm:text-[10px] ${
                                       mine
                                         ? 'justify-end'
                                         : 'justify-start'
@@ -1075,7 +1261,7 @@ const AdminChat = () => {
 
                                     {mine &&
                                       (msg.read ||
-                                        msg.is_read ? (
+                                      msg.is_read ? (
                                         <CheckCheck
                                           size={13}
                                           className="text-indigo-500"
@@ -1097,9 +1283,7 @@ const AdminChat = () => {
                             <div className="rounded-[20px] rounded-bl-md border border-slate-100 bg-white px-4 py-3 shadow-sm">
                               <div className="flex items-center gap-1.5">
                                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.3s]" />
-
                                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400 [animation-delay:-0.15s]" />
-
                                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" />
                               </div>
                             </div>
@@ -1116,7 +1300,7 @@ const AdminChat = () => {
                     COMPOSER
                 ================================================== */}
 
-                <div className="shrink-0 border-t border-slate-100 bg-white px-3 py-3 sm:px-5 sm:py-4">
+                <div className="shrink-0 border-t border-slate-100 bg-white px-2.5 py-2.5 sm:px-5 sm:py-4">
                   <form
                     onSubmit={
                       handleSendMessage
@@ -1124,7 +1308,7 @@ const AdminChat = () => {
                     className="mx-auto max-w-4xl"
                   >
                     <div
-                      className={`flex items-end gap-2 rounded-[20px] border p-1.5 transition ${
+                      className={`flex items-end gap-1.5 rounded-[20px] border p-1.5 transition sm:gap-2 ${
                         conversationClosed
                           ? 'border-slate-200 bg-slate-100'
                           : 'border-slate-200 bg-slate-50 focus-within:border-indigo-200 focus-within:bg-white focus-within:ring-4 focus-within:ring-indigo-50'
@@ -1144,13 +1328,16 @@ const AdminChat = () => {
                       <textarea
                         ref={inputRef}
                         value={message}
-                        onChange={handleTyping}
+                        onChange={
+                          handleTyping
+                        }
                         disabled={
                           conversationClosed
                         }
                         onKeyDown={(event) => {
                           if (
-                            event.key === 'Enter' &&
+                            event.key ===
+                              'Enter' &&
                             !event.shiftKey
                           ) {
                             event.preventDefault();
@@ -1190,9 +1377,8 @@ const AdminChat = () => {
                     </div>
 
                     <div className="mt-2 flex items-center justify-between px-1">
-                      <p className="text-[10px] font-medium text-slate-400">
-                        Enter to send · Shift + Enter
-                        for a new line
+                      <p className="text-[9px] font-medium text-slate-400 sm:text-[10px]">
+                        Enter to send · Shift + Enter for a new line
                       </p>
 
                       <div className="hidden items-center gap-1.5 text-[10px] font-bold text-slate-400 sm:flex">
@@ -1207,6 +1393,50 @@ const AdminChat = () => {
           </main>
         </div>
       </div>
+
+      {/* ======================================================
+          CONFIRM: CLOSE
+      ====================================================== */}
+
+      <ConfirmDialog
+        open={showCloseConfirm}
+        onClose={() =>
+          !closing &&
+          setShowCloseConfirm(false)
+        }
+        onConfirm={
+          confirmCloseConversation
+        }
+        loading={closing}
+        title="Close this conversation?"
+        description="Once closed, the customer won't be able to send new messages. The conversation will remain available in the inbox."
+        confirmLabel="Close conversation"
+        cancelLabel="Keep open"
+        tone="warning"
+        icon={Archive}
+      />
+
+      {/* ======================================================
+          CONFIRM: DELETE
+      ====================================================== */}
+
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        onClose={() =>
+          !deleting &&
+          setShowDeleteConfirm(false)
+        }
+        onConfirm={
+          confirmDeleteConversation
+        }
+        loading={deleting}
+        title="Delete this conversation?"
+        description={`This will permanently delete the conversation with ${deletingCustomerName}. This action cannot be undone.`}
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        tone="danger"
+        icon={Trash2}
+      />
     </div>
   );
 };

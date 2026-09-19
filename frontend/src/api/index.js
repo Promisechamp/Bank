@@ -72,16 +72,19 @@ api.interceptors.response.use(
 // ------------------- API exports (unchanged) -------------------
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
-		selfRegister: (data) => api.post('/auth/self-register', data),
+  selfRegister: (data) => api.post('/auth/self-register', data),
   login: (data) => api.post('/auth/login', data),
   getProfile: () => api.get('/auth/profile'),
   updateProfile: (data) => api.put('/auth/profile', data),
+  getSecuritySettings: () => api.get('/auth/security'),
+  createSecuritySettings: (data) => api.post('/auth/security', data),
+  updateSecuritySettings: (data) => api.put('/auth/security', data),
+  verifyTransferPin: (data) => api.post('/auth/security/verify-transfer-pin', data),
   getAllUsers: () => api.get('/admin/users'),
   getUserById: (userId) => api.get(`/admin/users/${userId}`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
   deleteUser: (userId) => api.delete(`/admin/users/${userId}`),
   updateUserStatus: (userId, status) => api.patch(`/admin/users/${userId}/status`, { status }),
-
 };
 
 export const accountsAPI = {
@@ -101,7 +104,8 @@ export const transactionsAPI = {
   getHistory: (accountId, params) => api.get(`/transactions/history/${accountId}`, { params }),
   getByReference: (referenceId) => api.get(`/transactions/reference/${referenceId}`),
   initiateTransfer: (data) => api.post('/transactions/transfer/initiate', data),
-  verifyTransfer: (data) => api.post('/transactions/transfer/verify', data),
+  verifyTransferOtp: (data) => api.post('/transactions/transfer/verify-otp', data),
+  verifyTransferPin: (data) => api.post('/transactions/transfer/verify-pin', data),
   adminGetAll: (params) => api.get('/admin/transactions', { params }),
   adminGetById: (txId) => api.get(`/admin/transactions/${txId}`),
   adminApprove: (txId) => api.patch(`/admin/transactions/${txId}/approve`),
@@ -129,6 +133,7 @@ export const adminAPI = {
 		generateRegisterToken: (expiresAt) => api.post('/admin/tokens/generate', { expiresAt }),
   getRegisterTokens: () => api.get('/admin/tokens'),
   revokeRegisterToken: (token) => api.delete(`/admin/tokens/${token}`),
+		
 
   adminCredit: (data) => api.post(`/admin/users/${data.userId}/credit`, {
     accountId: data.accountId,
@@ -152,8 +157,6 @@ export const adminAPI = {
     receiverBank: data.receiverBank,
     receiverAccountNo: data.receiverAccountNo
   }),
-
-
 };
 
 export const chatAPI = {

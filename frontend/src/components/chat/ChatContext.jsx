@@ -6,6 +6,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -127,8 +128,7 @@ const mergeMessages = (
       return;
     }
 
-    const id =
-      getMessageId(message);
+    const id = getMessageId(message);
 
     if (!id) {
       return;
@@ -163,11 +163,10 @@ const mergeConversationMessages = (
     return conversation;
   }
 
-  const messages =
-    mergeMessages(
-      conversation.messages,
-      incomingMessages
-    );
+  const messages = mergeMessages(
+    conversation.messages,
+    incomingMessages
+  );
 
   const lastMessage =
     messages[messages.length - 1];
@@ -250,6 +249,24 @@ export const ChatProvider = ({
     setIsAdmin,
   ] = useState(false);
 
+  /*
+   * Prevent stale requests from replacing newer data.
+   */
+  const conversationsRequestRef =
+    useRef(0);
+
+  /*
+   * Keep latest socket messages available without
+   * making fetchConversations depend on chatMessages.
+   */
+  const chatMessagesRef =
+    useRef(chatMessages);
+
+  useEffect(() => {
+    chatMessagesRef.current =
+      chatMessages;
+  }, [chatMessages]);
+
   /* ==========================================================
      ROLE
   ========================================================== */
@@ -269,6 +286,8 @@ export const ChatProvider = ({
       return;
     }
 
+    conversationsRequestRef.current += 1;
+
     setConversations([]);
     setCurrentConversation(null);
     setError(null);
@@ -279,16 +298,36 @@ export const ChatProvider = ({
 
   /* ==========================================================
      FETCH CONVERSATIONS
-  ========================================================== */
+========================================================== */
 
   const fetchConversations =
     useCallback(
-      async (status = 'active') => {
+      async (
+        status = 'active',
+        options = {}
+      ) => {
         if (!user) {
           return [];
         }
 
-        setLoading(true);
+        const {
+          silent = false,
+        } = options;
+
+        const requestId =
+          ++conversationsRequestRef.current;
+
+        /*
+         * IMPORTANT:
+         *
+         * Silent refresh does NOT blank the existing list.
+         *
+         * This is what prevents the flashing.
+         */
+        if (!silent) {
+          setLoading(true);
+        }
+
         setError(null);
 
         try {
@@ -298,20 +337,33 @@ export const ChatProvider = ({
               )
             : await chatAPI.getUserConversations();
 
+          /*
+           * Ignore stale responses.
+           */
+          if (
+            requestId !==
+            conversationsRequestRef.current
+          ) {
+            return [];
+          }
+
           const next =
             safeArray(
               response?.conversations
             );
 
+          const latestChatMessages =
+            chatMessagesRef.current;
+
           /*
-           * Preserve realtime messages already held
-           * by SocketContext when refreshing the list.
+           * Merge socket messages without making
+           * chatMessages a dependency of this callback.
            */
           const mergedNext =
             next.map((conversation) => {
               const realtime =
                 safeArray(
-                  chatMessages?.[
+                  latestChatMessages?.[
                     conversation.id
                   ]
                 );
@@ -327,9 +379,57 @@ export const ChatProvider = ({
             });
 
           setConversations(
-            mergedNext
+            (previous) => {
+              /*
+               * Preserve local realtime messages that
+               * may have arrived while REST was loading.
+               */
+              const previousMap =
+                new Map(
+                  previous.map(
+                    (item) => [
+                      item.id,
+                      item,
+                    ]
+                  )
+                );
+
+              return mergedNext.map(
+                (conversation) => {
+                  const previousConversation =
+                    previousMap.get(
+                      conversation.id
+                    );
+
+                  if (
+                    !previousConversation
+                  ) {
+                    return conversation;
+                  }
+
+                  const realtime =
+                    safeArray(
+                      latestChatMessages?.[
+                        conversation.id
+                      ]
+                    );
+
+                  return mergeConversationMessages(
+                    {
+                      ...previousConversation,
+                      ...conversation,
+                    },
+                    realtime
+                  );
+                }
+              );
+            }
           );
 
+          /*
+           * Keep currently selected conversation
+           * synchronized without replacing it unnecessarily.
+           */
           setCurrentConversation(
             (current) => {
               if (!current?.id) {
@@ -339,8 +439,8 @@ export const ChatProvider = ({
               const updated =
                 mergedNext.find(
                   (item) =>
-                    item.id ===
-                    current.id
+                    String(item.id) ===
+                    String(current.id)
                 );
 
               if (!updated) {
@@ -352,13 +452,27 @@ export const ChatProvider = ({
                   ...current,
                   ...updated,
                 },
-                updated.messages
+                safeArray(
+                  latestChatMessages?.[
+                    current.id
+                  ]
+                )
               );
             }
           );
 
           return mergedNext;
         } catch (err) {
+          /*
+           * Ignore stale request errors.
+           */
+          if (
+            requestId !==
+            conversationsRequestRef.current
+          ) {
+            return [];
+          }
+
           const message =
             getErrorMessage(
               err,
@@ -369,13 +483,17 @@ export const ChatProvider = ({
 
           throw err;
         } finally {
-          setLoading(false);
+          if (
+            requestId ===
+            conversationsRequestRef.current
+          ) {
+            setLoading(false);
+          }
         }
       },
       [
         user,
         isAdmin,
-        chatMessages,
       ]
     );
 
@@ -406,6 +524,12 @@ export const ChatProvider = ({
       return;
     }
 
+    /*
+     * Do NOT fetch conversations here.
+     *
+     * Only merge incoming realtime messages into
+     * the existing list.
+     */
     setConversations(
       (previous) =>
         previous.map(
@@ -484,10 +608,6 @@ export const ChatProvider = ({
             );
           }
 
-          /*
-           * Merge messages already received through
-           * Socket.IO with the REST response.
-           */
           const realtimeMessages =
             safeArray(
               getMessages?.(
@@ -506,10 +626,7 @@ export const ChatProvider = ({
           );
 
           /*
-           * Mark conversation as read.
-           *
-           * This is deliberately non-blocking from
-           * the perspective of opening the chat.
+           * Mark read without blocking chat opening.
            */
           try {
             if (
@@ -525,15 +642,9 @@ export const ChatProvider = ({
               );
             }
           } catch {
-            /*
-             * Read status should never prevent
-             * a conversation from opening.
-             */
+            // Read state must never prevent opening chat.
           }
 
-          /*
-           * Reset unread counters locally.
-           */
           setConversations(
             (previous) =>
               previous.map(
@@ -682,17 +793,7 @@ export const ChatProvider = ({
 
   /* ==========================================================
      SEND MESSAGE
-     
-     IMPORTANT:
-     
-     1. Socket.IO is preferred whenever connected.
-     2. Assignment DOES NOT determine permission.
-     3. Admin can reply to ANY active conversation.
-     4. Client can send even when admin_id is NULL.
-     5. No optimistic messages.
-     6. We wait for the server ACK.
-     7. The canonical server message is inserted.
-     ========================================================== */
+  ========================================================== */
 
   const sendMessage =
     useCallback(
@@ -727,23 +828,6 @@ export const ChatProvider = ({
                     conversationId
                 );
 
-          /*
-           * ----------------------------------------------------
-           * SOCKET
-           * ----------------------------------------------------
-           *
-           * Assignment is intentionally NOT checked here.
-           *
-           * Admin:
-           *   can reply to any active conversation.
-           *
-           * Client:
-           *   can send whether admin_id is NULL or assigned.
-           *
-           * The backend socket handler is responsible for
-           * determining the actual recipient(s).
-           */
-
           const canUseSocket =
             Boolean(
               socket &&
@@ -753,11 +837,6 @@ export const ChatProvider = ({
             );
 
           if (canUseSocket) {
-            /*
-             * sendChatMessage now returns a Promise and
-             * resolves only after the server confirms the
-             * message.
-             */
             const result =
               await sendChatMessage(
                 conversationId,
@@ -769,17 +848,6 @@ export const ChatProvider = ({
                 result?.message
               );
 
-            /*
-             * The socket server returns the canonical DB
-             * message. Insert it here immediately so the UI
-             * doesn't have to wait for another event.
-             *
-             * SocketContext will also receive its own
-             * chat:message:sent / chat:message event.
-             *
-             * mergeMessages() deduplicates using the UUID,
-             * so this does NOT create duplicates.
-             */
             if (
               canonicalMessage?.id
             ) {
@@ -813,21 +881,12 @@ export const ChatProvider = ({
                   )
               );
 
-              /*
-               * Keep SocketContext's message cache
-               * synchronized with the canonical message.
-               */
               addMessage?.(
                 conversationId,
                 canonicalMessage
               );
             }
 
-            /*
-             * Merge any conversation metadata returned
-             * by the server, such as unread counters
-             * or last_message_at.
-             */
             if (
               result?.conversation
             ) {
@@ -905,21 +964,6 @@ export const ChatProvider = ({
               }
             );
 
-          /*
-           * IMPORTANT:
-           *
-           * Backend returns:
-           *
-           * {
-           *   success: true,
-           *   message: "Message sent successfully.",
-           *   chatMessage: {...},
-           *   conversation: {...}
-           * }
-           *
-           * Therefore response.message is NOT the actual
-           * chat message.
-           */
           const sentMessage =
             normalizeMessage(
               response?.chatMessage ||
@@ -960,20 +1004,12 @@ export const ChatProvider = ({
                 )
             );
 
-            /*
-             * If REST caused the backend to emit the
-             * same message through Socket.IO, the UUID
-             * prevents a duplicate.
-             */
             addMessage?.(
               conversationId,
               sentMessage
             );
           }
 
-          /*
-           * Also merge the returned conversation metadata.
-           */
           if (
             response?.conversation
           ) {
@@ -1023,13 +1059,10 @@ export const ChatProvider = ({
 
           return {
             ...response,
-
             success:
               response?.success !==
               false,
-
             via: 'rest',
-
             chatMessage:
               sentMessage,
           };
@@ -1245,76 +1278,6 @@ export const ChatProvider = ({
     );
 
   /* ==========================================================
-     CLAIM
-     
-     Claiming is completely separate from messaging.
-     
-     An admin may claim a conversation, but claiming is
-     NOT required before replying.
-  ========================================================== */
-
-  const claimConversation =
-    useCallback(
-      async (conversationId) => {
-        if (!conversationId) {
-          return null;
-        }
-
-        setError(null);
-
-        try {
-          const response =
-            await chatAPI.claimConversation(
-              conversationId
-            );
-
-          const claimed =
-            response?.conversation;
-
-          if (claimed) {
-            setConversations(
-              (previous) =>
-                previous.map(
-                  (item) =>
-                    item.id ===
-                    conversationId
-                      ? {
-                          ...item,
-                          ...claimed,
-                        }
-                      : item
-                )
-            );
-
-            setCurrentConversation(
-              (current) =>
-                current?.id ===
-                conversationId
-                  ? {
-                      ...current,
-                      ...claimed,
-                    }
-                  : current
-            );
-          }
-
-          return claimed || response;
-        } catch (err) {
-          const message =
-            getErrorMessage(
-              err,
-              'Failed to claim conversation'
-            );
-
-          setError(message);
-
-          throw err;
-        }
-      },
-      []
-    );
-
-  /* ==========================================================
      FILTER
   ========================================================== */
 
@@ -1325,6 +1288,10 @@ export const ChatProvider = ({
           return [];
         }
 
+        /*
+         * Filtering is an intentional refresh,
+         * so loading is allowed here.
+         */
         return fetchConversations(
           status
         );
@@ -1336,7 +1303,7 @@ export const ChatProvider = ({
     );
 
   /* ==========================================================
-     UPDATE
+     UPDATE CONVERSATION
   ========================================================== */
 
   const updateConversation =
@@ -1430,7 +1397,10 @@ export const ChatProvider = ({
       startNewConversation,
 
       closeConversation,
-      claimConversation,
+
+      /*
+       * CLAIMING HAS BEEN REMOVED.
+       */
 
       filterConversations,
 
@@ -1470,7 +1440,6 @@ export const ChatProvider = ({
       startNewConversation,
 
       closeConversation,
-      claimConversation,
 
       filterConversations,
 

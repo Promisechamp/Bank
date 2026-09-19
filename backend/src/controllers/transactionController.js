@@ -1,4 +1,5 @@
 const { supabase } = require('../db/supabase');
+
 const {
   generateReference,
   validateAmount,
@@ -6,6 +7,7 @@ const {
 } = require('../utils/helpers');
 
 const { sendEmail } = require('../email/email');
+
 const {
   createAndSendNotification
 } = require('../utils/notifications');
@@ -16,6 +18,31 @@ const {
 
 const delay = (ms) =>
   new Promise((resolve) => setTimeout(resolve, ms));
+
+// ============================================================
+// PIN HELPERS
+// ============================================================
+
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LENGTH = 4; // change to 6 if your PINs are 6 digits
+
+/**
+ * Normalize a stored or submitted PIN to a comparable string.
+ *
+ * Postgres `numeric`/`integer` columns drop leading zeros, so a
+ * PIN of "0000" comes back as 0. We left-pad to PIN_LENGTH so
+ * both sides line up regardless of the underlying column type.
+ */
+const normalizePin = (value) => {
+  if (value === null || value === undefined) return '';
+
+  const raw = String(value).trim();
+
+  if (!/^\d+$/.test(raw)) return raw;
+  if (raw.length >= PIN_LENGTH) return raw;
+
+  return raw.padStart(PIN_LENGTH, '0');
+};
 
 // ============================================================
 // OTP EMAIL
@@ -39,7 +66,10 @@ const sendOtpEmail = async (
 <html>
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
 
   <title>Transaction Verification</title>
 </head>
@@ -123,8 +153,8 @@ const sendOtpEmail = async (
           line-height:1.7;
           color:#667085;
         ">
-          A transfer has been initiated from your Trusty credit union bank account.
-          Enter the verification code below to continue.
+          A transfer has been initiated from your Trusty credit union
+          bank account. Enter the verification code below to continue.
         </p>
 
         <!-- TRANSFER DETAILS -->
@@ -266,7 +296,8 @@ const sendOtpEmail = async (
           color:#667085;
         ">
           If you did not initiate this transfer, do not share this
-          verification code and contact Trusty credit union bank support immediately.
+          verification code and contact Trusty credit union bank
+          support immediately.
         </p>
 
       </div>
@@ -299,16 +330,14 @@ const sendOtpEmail = async (
 </html>
   `;
 
-  return await sendEmail({
-  to: toEmail,
-  subject: 'Trusty credit union bank — Transaction Verification Code',
-  html
-});
+  return sendEmail({
+    to: toEmail,
+    subject:
+      'Trusty credit union bank — Transaction Verification Code',
+    html
+  });
 };
 
-// ============================================================
-// INITIATE SAME-BANK TRANSFER
-// ============================================================
 
 // ============================================================
 // INITIATE SAME-BANK TRANSFER
@@ -321,8 +350,30 @@ const initiateTransfer = async (req, res, next) => {
       amount,
       description,
       recipientAccountNumber,
-      recipientName
+      recipientName,
+      verificationMethod: rawVerificationMethod
     } = req.body;
+
+    // --------------------------------------------------------
+    // NORMALIZE VERIFICATION METHOD
+    // --------------------------------------------------------
+
+    const verificationMethod =
+      String(rawVerificationMethod || 'otp')
+        .toLowerCase() === 'pin'
+        ? 'pin'
+        : 'otp';
+
+    // --------------------------------------------------------
+    // AUTH
+    // --------------------------------------------------------
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.'
+      });
+    }
 
     // --------------------------------------------------------
     // VALIDATE AMOUNT
@@ -332,6 +383,40 @@ const initiateTransfer = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         error: 'Invalid transfer amount.'
+      });
+    }
+
+    const transferAmount = Number(amount);
+
+    if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transfer amount must be greater than zero.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // VALIDATE SOURCE ACCOUNT ID
+    // --------------------------------------------------------
+
+    if (!fromAccountId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Source account is required.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // VALIDATE RECIPIENT ACCOUNT NUMBER
+    // --------------------------------------------------------
+
+    if (
+      !recipientAccountNumber ||
+      String(recipientAccountNumber).trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Recipient account number is required.'
       });
     }
 
@@ -345,7 +430,13 @@ const initiateTransfer = async (req, res, next) => {
     } = await supabase
       .from('accounts')
       .select(`
-        *,
+        id,
+        user_id,
+        account_number,
+        account_type,
+        balance,
+        currency,
+        status,
         profiles!user_id(
           status,
           email,
@@ -368,7 +459,7 @@ const initiateTransfer = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // CHECK ACCOUNT RESTRICTION
+    // CHECK SOURCE ACCOUNT STATUS
     // --------------------------------------------------------
 
     const accountStatus =
@@ -378,14 +469,25 @@ const initiateTransfer = async (req, res, next) => {
       String(sourceAccount.profiles?.status || '').toLowerCase();
 
     const senderRestricted =
-      ['frozen', 'banned'].includes(accountStatus) ||
-      ['frozen', 'banned'].includes(profileStatus);
+      accountStatus === 'frozen' ||
+      profileStatus === 'frozen' ||
+      profileStatus === 'banned';
+
+    if (accountStatus === 'closed') {
+      return res.status(400).json({
+        success: false,
+        error: 'This account is closed and cannot send transfers.'
+      });
+    }
 
     // --------------------------------------------------------
     // CHECK BALANCE
     // --------------------------------------------------------
 
-    if (Number(sourceAccount.balance) < Number(amount)) {
+    if (
+      Number(sourceAccount.balance) <
+      transferAmount
+    ) {
       return res.status(400).json({
         success: false,
         error:
@@ -396,15 +498,8 @@ const initiateTransfer = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // VALIDATE RECIPIENT ACCOUNT
+    // GET RECIPIENT
     // --------------------------------------------------------
-
-    if (!recipientAccountNumber) {
-      return res.status(400).json({
-        success: false,
-        error: 'Recipient account number is required.'
-      });
-    }
 
     const {
       data: recipient,
@@ -412,13 +507,23 @@ const initiateTransfer = async (req, res, next) => {
     } = await supabase
       .from('accounts')
       .select(`
-        *,
+        id,
+        user_id,
+        account_number,
+        account_type,
+        balance,
+        currency,
+        status,
         profiles!user_id(
           full_name,
-          email
+          email,
+          status
         )
       `)
-      .eq('account_number', recipientAccountNumber)
+      .eq(
+        'account_number',
+        String(recipientAccountNumber).trim()
+      )
       .maybeSingle();
 
     if (recipientError) {
@@ -433,13 +538,46 @@ const initiateTransfer = async (req, res, next) => {
     }
 
     // --------------------------------------------------------
-    // SAME ACCOUNT CHECK
+    // SAME ACCOUNT
     // --------------------------------------------------------
 
     if (recipient.id === sourceAccount.id) {
       return res.status(400).json({
         success: false,
-        error: 'You cannot transfer money to the same account.'
+        error:
+          'You cannot transfer money to the same account.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // RECIPIENT ACCOUNT STATUS
+    // --------------------------------------------------------
+
+    if (
+      String(recipient.status || '').toLowerCase() !==
+      'active'
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'The recipient account is not available for transfers.'
+      });
+    }
+
+    const recipientProfileStatus =
+      String(
+        recipient.profiles?.status || ''
+      ).toLowerCase();
+
+    if (
+      ['banned', 'frozen'].includes(
+        recipientProfileStatus
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'The recipient account is not available for transfers.'
       });
     }
 
@@ -447,93 +585,209 @@ const initiateTransfer = async (req, res, next) => {
     // VERIFY RECIPIENT NAME
     // --------------------------------------------------------
 
+    const actualRecipientName =
+      recipient.profiles?.full_name ||
+      '';
+
     if (
       recipientName &&
-      recipient.profiles?.full_name &&
-      recipientName.trim().toLowerCase() !==
-        recipient.profiles.full_name.trim().toLowerCase()
+      actualRecipientName &&
+      String(recipientName)
+        .trim()
+        .toLowerCase() !==
+        actualRecipientName
+          .trim()
+          .toLowerCase()
     ) {
       return res.status(400).json({
         success: false,
-        error: 'Recipient name does not match the account.'
+        error:
+          'Recipient name does not match the account.'
       });
     }
 
     const confirmedRecipientName =
-      recipient.profiles?.full_name ||
+      actualRecipientName ||
       recipientName ||
       'Recipient';
 
     // --------------------------------------------------------
-    // GENERATE REFERENCE + OTP
+    // GENERATE REFERENCE
     // --------------------------------------------------------
 
-    const reference = generateReference();
-
-    const otp = Math.floor(
-      100000 + Math.random() * 900000
-    ).toString();
+    const reference =
+      generateReference();
 
     const transferDescription =
-      description || 'Same bank transfer';
+      description?.trim() ||
+      'Same bank transfer';
 
     // --------------------------------------------------------
-    // SENDER INFO (for metadata)
+    // SENDER INFO
     // --------------------------------------------------------
 
     const senderName =
-      sourceAccount.profiles?.full_name || 'User';
+      sourceAccount.profiles?.full_name ||
+      'User';
 
     const senderBank =
-      sourceAccount.bank_name || 'Trusty credit union bank';
+      'Trusty credit union bank';
+
+    // --------------------------------------------------------
+    // BUILD TRANSACTION METADATA
+    // --------------------------------------------------------
+
+    const transactionMetadata = {
+      transferType:
+        'same_bank',
+
+      direction:
+        'debit',
+
+      receiverName:
+        confirmedRecipientName,
+
+      receiverBank:
+        'Trusty credit union bank',
+
+      receiverAccountNo:
+        recipient.account_number,
+
+      recipientAccountNumber:
+        recipient.account_number,
+
+      recipientName:
+        confirmedRecipientName,
+
+      recipientAccountId:
+        recipient.id,
+
+      senderName,
+
+      senderAccountNumber:
+        sourceAccount.account_number,
+
+      senderBank,
+
+      paymentMethod:
+        'Bank Transfer',
+
+      channel:
+        'Online Banking',
+
+      senderRestricted,
+
+      verificationMethod,
+
+      otpRequired:
+        verificationMethod === 'otp',
+
+      otpVerified:
+        false,
+
+      pinRequired:
+        verificationMethod === 'pin',
+
+      pinVerified:
+        false,
+
+      pinAttempts:
+        0,
+
+      fromAccountId:
+        sourceAccount.id,
+
+      toAccountId:
+        recipient.id
+    };
 
     // --------------------------------------------------------
     // CREATE PENDING TRANSACTION
     // --------------------------------------------------------
 
     const {
+      data: pendingTransaction,
       error: transactionError
     } = await supabase
       .from('transactions')
       .insert([{
-        account_id: sourceAccount.id,
-        transaction_type: 'transfer',
-        amount,
-        description: transferDescription,
-        reference_id: reference,
-        counterparty_account: recipient.id,
-        status: 'pending_review',
+        account_id:
+          sourceAccount.id,
 
-        metadata: {
-										transferType: 'same_bank',
-										direction: 'debit',
-								
-										// Canonical for Receipt.jsx
-										receiverName: confirmedRecipientName,
-										receiverBank: 'Trusty credit union bank',
-										receiverAccountNo: recipient.account_number,
-								
-										// Kept for backward compatibility
-										recipientAccountNumber,
-										recipientName: confirmedRecipientName,
-										recipientAccountId: recipient.id,
-								
-										// Sender info (used for display on recipient's receipt)
-										senderName,
-										senderAccountNumber: sourceAccount.account_number,
-										senderBank,
-								
-										paymentMethod: 'Bank Transfer',
-										channel: 'Online Banking',
-								
-										senderRestricted,
-										otpRequired: true
-								}
-      }]);
+        transaction_type:
+          'transfer',
+
+        amount:
+          transferAmount,
+
+        description:
+          transferDescription,
+
+        reference_id:
+          reference,
+
+        counterparty_account:
+          recipient.id,
+
+        status:
+          'pending_review',
+
+        metadata:
+          transactionMetadata
+      }])
+      .select('id')
+      .single();
 
     if (transactionError) {
       throw transactionError;
     }
+
+    // ========================================================
+    // PIN FLOW
+    // ========================================================
+    //
+    // We do NOT generate an OTP and we do NOT send an email.
+    // The frontend will open the PIN modal and call
+    // verifyPinAndComplete with { reference, pin }.
+    // ========================================================
+
+    if (verificationMethod === 'pin') {
+      return res.json({
+        success: true,
+
+        requiresPin: true,
+
+        reference,
+
+        status:
+          'pending_review',
+
+        recipient: {
+          accountNumber:
+            recipient.account_number,
+
+          name:
+            confirmedRecipientName
+        },
+
+        message:
+          'Transfer initiated. Enter your transfer PIN to authorize.'
+      });
+    }
+
+    // ========================================================
+    // OTP FLOW
+    // ========================================================
+
+    // --------------------------------------------------------
+    // GENERATE OTP
+    // --------------------------------------------------------
+
+    const otp =
+      Math.floor(
+        100000 +
+        Math.random() * 900000
+      ).toString();
 
     // --------------------------------------------------------
     // STORE OTP
@@ -545,29 +799,54 @@ const initiateTransfer = async (req, res, next) => {
       .from('otp_verifications')
       .insert({
         reference,
+
         otp,
-        user_id: req.user.id,
-        verified: false,
+
+        user_id:
+          req.user.id,
+
+        verified:
+          false,
 
         expires_at:
           new Date(
-            Date.now() + 10 * 60 * 1000
+            Date.now() +
+            10 * 60 * 1000
           ).toISOString(),
 
         data: {
-          fromAccountId: sourceAccount.id,
-          toAccountId: recipient.id,
+          transactionId:
+            pendingTransaction.id,
 
-          amount,
+          fromAccountId:
+            sourceAccount.id,
 
-          description: transferDescription,
+          toAccountId:
+            recipient.id,
 
-          recipientAccountNumber,
-          recipientName: confirmedRecipientName
+          amount:
+            transferAmount,
+
+          description:
+            transferDescription,
+
+          recipientAccountNumber:
+            recipient.account_number,
+
+          recipientName:
+            confirmedRecipientName
         }
       });
 
     if (otpError) {
+      await supabase
+        .from('transactions')
+        .delete()
+        .eq(
+          'id',
+          pendingTransaction.id
+        );
+
       throw otpError;
     }
 
@@ -575,73 +854,88 @@ const initiateTransfer = async (req, res, next) => {
     // SEND OTP EMAIL
     // --------------------------------------------------------
 
-    // --------------------------------------------------------
-// SEND OTP EMAIL
-// --------------------------------------------------------
+    const senderEmail =
+      req.user?.email ||
+      sourceAccount.profiles?.email;
 
-const senderEmail =
-  req.user?.email ||
-  sourceAccount.profiles?.email;
+    if (!senderEmail) {
+      await supabase
+        .from('otp_verifications')
+        .delete()
+        .eq(
+          'reference',
+          reference
+        );
 
-console.log('=================================');
-console.log('📧 OTP EMAIL DEBUG');
-console.log('User ID:', req.user?.id);
-console.log('User email:', req.user?.email);
-console.log('Profile email:', sourceAccount.profiles?.email);
-console.log('Final OTP recipient:', senderEmail);
-console.log('OTP:', otp);
-console.log('Reference:', reference);
-console.log('=================================');
+      await supabase
+        .from('transactions')
+        .update({
+          status: 'failed',
 
-if (!senderEmail) {
-  console.error(
-    '❌ OTP email NOT sent: no sender email was found.'
-  );
+          metadata: {
+            ...transactionMetadata,
 
-  return res.status(500).json({
-    success: false,
-    error:
-      'Unable to send verification code because your registered email could not be found.'
-  });
-}
+            failureReason:
+              'Registered email could not be found.'
+          }
+        })
+        .eq(
+          'id',
+          pendingTransaction.id
+        );
 
-try {
-  const emailResult = await sendOtpEmail(
-    senderEmail,
-    otp,
-    reference,
-    amount,
-    confirmedRecipientName
-  );
+      return res.status(500).json({
+        success: false,
+        error:
+          'Unable to send verification code because your registered email could not be found.'
+      });
+    }
 
-  console.log('=================================');
-  console.log('✅ OTP EMAIL SENT');
-  console.log('To:', senderEmail);
-  console.log(
-    'Message ID:',
-    emailResult?.messageId || 'unknown'
-  );
-  console.log('=================================');
+    try {
+      await sendOtpEmail(
+        senderEmail,
+        otp,
+        reference,
+        transferAmount,
+        confirmedRecipientName
+      );
+    } catch (emailError) {
+      console.error(
+        'OTP email failed:',
+        emailError
+      );
 
-} catch (emailError) {
+      await supabase
+        .from('otp_verifications')
+        .delete()
+        .eq(
+          'reference',
+          reference
+        );
 
-  console.error('=================================');
-  console.error('❌ OTP EMAIL FAILED');
-  console.error('To:', senderEmail);
-  console.error('Error:', emailError);
-  console.error('Message:', emailError?.message);
-  console.error('Code:', emailError?.code);
-  console.error('Response:', emailError?.response);
-  console.error('=================================');
+      await supabase
+        .from('transactions')
+        .update({
+          status: 'failed',
 
-  return res.status(500).json({
-    success: false,
-    error:
-      'The verification code could not be sent to your email. Please try again.'
-  });
-}
+          metadata: {
+            ...transactionMetadata,
 
+            failureReason:
+              'OTP email delivery failed.'
+          }
+        })
+        .eq(
+          'id',
+          pendingTransaction.id
+        );
 
+      return res.status(500).json({
+        success: false,
+        error:
+          'The verification code could not be sent to your email. Please try again.'
+      });
+    }
 
     // --------------------------------------------------------
     // RESPONSE
@@ -649,13 +943,21 @@ try {
 
     return res.json({
       success: true,
-      requiresOtp: true,
+
+      requiresOtp:
+        true,
+
       reference,
-      status: 'pending_review',
+
+      status:
+        'pending_review',
 
       recipient: {
-        accountNumber: recipient.account_number,
-        name: confirmedRecipientName
+        accountNumber:
+          recipient.account_number,
+
+        name:
+          confirmedRecipientName
       },
 
       message:
@@ -673,21 +975,15 @@ try {
 };
 
 
-
-
-
-
-
-
-
-
-
-
 // ============================================================
 // VERIFY OTP AND COMPLETE TRANSFER
 // ============================================================
 
-const verifyOtpAndComplete = async (req, res, next) => {
+const verifyOtpAndComplete = async (
+  req,
+  res,
+  next
+) => {
   try {
     const {
       reference,
@@ -695,15 +991,45 @@ const verifyOtpAndComplete = async (req, res, next) => {
     } = req.body;
 
     // --------------------------------------------------------
+    // AUTH
+    // --------------------------------------------------------
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.'
+      });
+    }
+
+    // --------------------------------------------------------
     // VALIDATE INPUT
     // --------------------------------------------------------
 
-    if (!reference || !otp) {
+    if (
+      !reference ||
+      String(reference).trim() === ''
+    ) {
       return res.status(400).json({
         success: false,
-        error: 'Reference and OTP are required.'
+        error: 'Transaction reference is required.'
       });
     }
+
+    if (
+      !otp ||
+      String(otp).trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Verification code is required.'
+      });
+    }
+
+    const cleanReference =
+      String(reference).trim();
+
+    const cleanOtp =
+      String(otp).trim();
 
     // --------------------------------------------------------
     // GET OTP
@@ -715,19 +1041,26 @@ const verifyOtpAndComplete = async (req, res, next) => {
     } = await supabase
       .from('otp_verifications')
       .select('*')
-      .eq('reference', reference)
-      .eq('user_id', req.user.id)
-      .single();
+      .eq(
+        'reference',
+        cleanReference
+      )
+      .eq(
+        'user_id',
+        req.user.id
+      )
+      .maybeSingle();
 
     if (otpError) {
-      if (otpError.code === 'PGRST116') {
-        return res.status(404).json({
-          success: false,
-          error: 'Invalid transaction reference.'
-        });
-      }
-
       throw otpError;
+    }
+
+    if (!otpRecord) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Invalid transaction reference.'
+      });
     }
 
     // --------------------------------------------------------
@@ -737,21 +1070,25 @@ const verifyOtpAndComplete = async (req, res, next) => {
     if (otpRecord.verified) {
       return res.status(400).json({
         success: false,
-        error: 'This verification code has already been used.'
+        error:
+          'This verification code has already been used.'
       });
     }
 
     // --------------------------------------------------------
-    // OTP EXPIRED
+    // OTP EXPIRATION
     // --------------------------------------------------------
 
     if (
-      new Date(otpRecord.expires_at) <
-      new Date()
+      !otpRecord.expires_at ||
+      new Date(
+        otpRecord.expires_at
+      ).getTime() <= Date.now()
     ) {
       return res.status(400).json({
         success: false,
-        error: 'This verification code has expired.'
+        error:
+          'This verification code has expired.'
       });
     }
 
@@ -761,15 +1098,33 @@ const verifyOtpAndComplete = async (req, res, next) => {
 
     if (
       String(otpRecord.otp) !==
-      String(otp)
+      cleanOtp
     ) {
       return res.status(400).json({
         success: false,
-        error: 'Invalid verification code.'
+        error:
+          'Invalid verification code.'
       });
     }
 
-    const transferData = otpRecord.data || {};
+    const transferData =
+      otpRecord.data || {};
+
+    // --------------------------------------------------------
+    // REQUIRED OTP DATA
+    // --------------------------------------------------------
+
+    if (
+      !transferData.fromAccountId ||
+      !transferData.toAccountId ||
+      !transferData.amount
+    ) {
+      return res.status(500).json({
+        success: false,
+        error:
+          'This transfer verification record is incomplete.'
+      });
+    }
 
     // --------------------------------------------------------
     // GET PENDING TRANSACTION
@@ -781,25 +1136,40 @@ const verifyOtpAndComplete = async (req, res, next) => {
     } = await supabase
       .from('transactions')
       .select('*')
-      .eq('reference_id', reference)
-      .eq('account_id', transferData.fromAccountId)
-      .single();
+      .eq(
+        'reference_id',
+        cleanReference
+      )
+      .eq(
+        'account_id',
+        transferData.fromAccountId
+      )
+      .maybeSingle();
 
     if (transactionError) {
-      if (transactionError.code === 'PGRST116') {
-        return res.status(404).json({
-          success: false,
-          error: 'Transaction record not found.'
-        });
-      }
-
       throw transactionError;
     }
 
-    if (transaction.status !== 'pending_review') {
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Transaction record not found.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // TRANSACTION ALREADY PROCESSED
+    // --------------------------------------------------------
+
+    if (
+      transaction.status !==
+      'pending_review'
+    ) {
       return res.status(400).json({
         success: false,
-        error: 'This transaction has already been processed.'
+        error:
+          'This transaction has already been processed.'
       });
     }
 
@@ -813,34 +1183,63 @@ const verifyOtpAndComplete = async (req, res, next) => {
     } = await supabase
       .from('accounts')
       .select(`
-        *,
+        id,
+        user_id,
+        account_number,
+        account_type,
+        balance,
+        currency,
+        status,
         profiles!user_id(
           status,
           email,
           full_name
         )
       `)
-      .eq('id', transferData.fromAccountId)
-      .eq('user_id', req.user.id)
+      .eq(
+        'id',
+        transferData.fromAccountId
+      )
+      .eq(
+        'user_id',
+        req.user.id
+      )
       .single();
 
     if (sourceError) {
+      if (
+        sourceError.code ===
+        'PGRST116'
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'Source account not found.'
+        });
+      }
+
       throw sourceError;
     }
 
     // --------------------------------------------------------
-    // CHECK CURRENT RESTRICTION
+    // CURRENT ACCOUNT STATUS
     // --------------------------------------------------------
 
     const accountStatus =
-      String(sourceAccount.status || '').toLowerCase();
+      String(
+        sourceAccount.status || ''
+      ).toLowerCase();
 
     const profileStatus =
-      String(sourceAccount.profiles?.status || '').toLowerCase();
+      String(
+        sourceAccount.profiles?.status ||
+        ''
+      ).toLowerCase();
 
     const senderRestricted =
-      ['frozen', 'banned'].includes(accountStatus) ||
-      ['frozen', 'banned'].includes(profileStatus);
+      accountStatus === 'frozen' ||
+      profileStatus === 'frozen' ||
+      profileStatus === 'banned';
 
     // ========================================================
     // RESTRICTED ACCOUNT
@@ -848,7 +1247,6 @@ const verifyOtpAndComplete = async (req, res, next) => {
 
     if (senderRestricted) {
 
-      // Mark OTP verified
       const {
         error: verifyError
       } = await supabase
@@ -856,49 +1254,64 @@ const verifyOtpAndComplete = async (req, res, next) => {
         .update({
           verified: true
         })
-        .eq('reference', reference)
-        .eq('user_id', req.user.id);
+        .eq(
+          'reference',
+          cleanReference
+        )
+        .eq(
+          'user_id',
+          req.user.id
+        )
+        .eq(
+          'verified',
+          false
+        );
 
       if (verifyError) {
         throw verifyError;
       }
 
-      // Keep transaction pending
       const {
         error: reviewError
       } = await supabase
         .from('transactions')
         .update({
-          status: 'pending_review',
+          status:
+            'pending_review',
 
           metadata: {
             ...(transaction.metadata || {}),
 
-            senderRestricted: true,
+            senderRestricted:
+              true,
 
             restrictionStatus:
-              accountStatus === 'banned'
+              profileStatus === 'banned'
                 ? 'banned'
                 : 'frozen',
 
-            otpVerified: true,
+            otpVerified:
+              true,
 
             reviewSubmittedAt:
               new Date().toISOString()
           }
         })
-        .eq('id', transaction.id)
-        .eq('status', 'pending_review');
+        .eq(
+          'id',
+          transaction.id
+        )
+        .eq(
+          'status',
+          'pending_review'
+        );
 
       if (reviewError) {
         throw reviewError;
       }
 
-      // ------------------------------------------------------
-      // IN-APP ONLY
-      // ------------------------------------------------------
-
-      const io = req.app.get('io');
+      const io =
+        req.app.get('io');
 
       await createAndSendNotification(
         io,
@@ -908,13 +1321,17 @@ const verifyOtpAndComplete = async (req, res, next) => {
         `Your transfer of ${formatCurrency(
           transferData.amount
         )} is pending bank review due to account restrictions.`,
-        reference
+        cleanReference
       );
 
       return res.json({
         success: true,
-        reference,
-        status: 'pending_review',
+
+        reference:
+          cleanReference,
+
+        status:
+          'pending_review',
 
         message:
           'OTP verified. Transfer has been submitted for bank review.'
@@ -922,81 +1339,219 @@ const verifyOtpAndComplete = async (req, res, next) => {
     }
 
     // ========================================================
-    // ACTIVE / UNRESTRICTED ACCOUNT
+    // NORMAL TRANSFER — ATOMIC RPC
     // ========================================================
 
-    // --------------------------------------------------------
-    // CHECK BALANCE AGAIN
-    // --------------------------------------------------------
+    await delay(250);
 
-    if (
-      Number(sourceAccount.balance) <
-      Number(transferData.amount)
-    ) {
-      return res.status(400).json({
-        success: false,
-        error: 'Insufficient funds to complete this transfer.'
-      });
+    const {
+      data: transferResult,
+      error: transferError
+    } = await supabase.rpc(
+      'complete_same_bank_transfer',
+      {
+        p_reference:
+          cleanReference,
+
+        p_user_id:
+          req.user.id,
+
+        p_transaction_id:
+          transaction.id,
+
+        p_source_account_id:
+          transferData.fromAccountId,
+
+        p_destination_account_id:
+          transferData.toAccountId,
+
+        p_amount:
+          Number(transferData.amount)
+      }
+    );
+
+    if (transferError) {
+      console.error(
+        'Atomic transfer RPC error:',
+        transferError
+      );
+
+      if (
+        transferError.message?.includes(
+          'INSUFFICIENT_FUNDS'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Insufficient funds to complete this transfer.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'SOURCE_ACCOUNT_NOT_ACTIVE'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Your account is not available for this transfer.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'DESTINATION_ACCOUNT_NOT_ACTIVE'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'The recipient account is no longer available.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'TRANSACTION_ALREADY_PROCESSED'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'This transaction has already been processed.'
+        });
+      }
+
+      throw transferError;
+    }
+
+    if (!transferResult) {
+      throw new Error(
+        'Transfer completed without a database result.'
+      );
     }
 
     // --------------------------------------------------------
-    // GET DESTINATION ACCOUNT
+    // MARK OTP VERIFIED
     // --------------------------------------------------------
 
     const {
-      data: destination,
-      error: destinationError
+      error: verifyError
+    } = await supabase
+      .from('otp_verifications')
+      .update({
+        verified:
+          true
+      })
+      .eq(
+        'reference',
+        cleanReference
+      )
+      .eq(
+        'user_id',
+        req.user.id
+      )
+      .eq(
+        'verified',
+        false
+      );
+
+    if (verifyError) {
+      console.error(
+        'OTP verification flag update failed after completed transfer:',
+        verifyError
+      );
+    }
+
+    // --------------------------------------------------------
+    // GET FINAL TRANSACTION DATA
+    // --------------------------------------------------------
+
+    const {
+      data: completedTransaction,
+      error: completedTransactionError
+    } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq(
+        'id',
+        transaction.id
+      )
+      .single();
+
+    if (completedTransactionError) {
+      throw completedTransactionError;
+    }
+
+    // --------------------------------------------------------
+    // FINAL ACCOUNT DATA
+    // --------------------------------------------------------
+
+    const {
+      data: finalSourceAccount,
+      error: finalSourceError
     } = await supabase
       .from('accounts')
       .select(`
-        *,
+        id,
+        user_id,
+        account_number,
+        balance,
         profiles!user_id(
           full_name,
           email
         )
       `)
-      .eq('id', transferData.toAccountId)
-      .eq('status', 'active')
+      .eq(
+        'id',
+        transferData.fromAccountId
+      )
       .single();
 
-    if (destinationError) {
-      if (destinationError.code === 'PGRST116') {
-        return res.status(404).json({
-          success: false,
-          error: 'Recipient account is no longer available.'
-        });
-      }
+    if (finalSourceError) {
+      throw finalSourceError;
+    }
 
-      throw destinationError;
+    const {
+      data: finalDestinationAccount,
+      error: finalDestinationError
+    } = await supabase
+      .from('accounts')
+      .select(`
+        id,
+        user_id,
+        account_number,
+        balance,
+        profiles!user_id(
+          full_name,
+          email
+        )
+      `)
+      .eq(
+        'id',
+        transferData.toAccountId
+      )
+      .single();
+
+    if (finalDestinationError) {
+      throw finalDestinationError;
     }
 
     // --------------------------------------------------------
-    // DELAY
-    // --------------------------------------------------------
-
-    await delay(1000);
-
-    // --------------------------------------------------------
-    // CALCULATE BALANCES
+    // DISPLAY DATA
     // --------------------------------------------------------
 
     const amount =
       Number(transferData.amount);
 
-    const newSourceBalance =
-      Number(sourceAccount.balance) -
-      amount;
-
-    const newDestinationBalance =
-      Number(destination.balance) +
-      amount;
-
     const senderName =
-      sourceAccount.profiles?.full_name ||
+      finalSourceAccount.profiles?.full_name ||
       'User';
 
     const recipientName =
-      destination.profiles?.full_name ||
+      finalDestinationAccount.profiles?.full_name ||
       transferData.recipientName ||
       'Recipient';
 
@@ -1004,279 +1559,182 @@ const verifyOtpAndComplete = async (req, res, next) => {
       transferData.description ||
       'Same bank transfer';
 
-    // ========================================================
-    // DEBIT SOURCE
-    // ========================================================
+    const newSourceBalance =
+      Number(
+        finalSourceAccount.balance
+      );
 
-    const {
-      error: debitError
-    } = await supabase
-      .from('accounts')
-      .update({
-        balance: newSourceBalance
-      })
-      .eq('id', sourceAccount.id);
-
-    if (debitError) {
-      throw debitError;
-    }
+    const newDestinationBalance =
+      Number(
+        finalDestinationAccount.balance
+      );
 
     // ========================================================
-    // CREDIT DESTINATION
+    // NOTIFICATIONS
     // ========================================================
 
-    const {
-      error: creditError
-    } = await supabase
-      .from('accounts')
-      .update({
-        balance: newDestinationBalance
-      })
-      .eq('id', destination.id);
+    const io =
+      req.app.get('io');
 
-    if (creditError) {
+    try {
+      await createAndSendNotification(
+        io,
 
-      // Restore source balance
-      await supabase
-        .from('accounts')
-        .update({
-          balance: sourceAccount.balance
-        })
-        .eq('id', sourceAccount.id);
+        finalSourceAccount.user_id,
 
-      throw creditError;
-    }
+        'debit',
 
-    // ========================================================
-    // MARK OTP VERIFIED
-    // ========================================================
+        `Transfer Debited – ${formatCurrency(
+          amount
+        )}`,
 
-    const {
-      error: verifyError
-    } = await supabase
-      .from('otp_verifications')
-      .update({
-        verified: true
-      })
-      .eq('reference', reference)
-      .eq('user_id', req.user.id);
+        `You transferred ${formatCurrency(
+          amount
+        )} to ${recipientName}.`,
 
-    if (verifyError) {
-      throw verifyError;
-    }
+        cleanReference,
 
-    // ========================================================
-    // COMPLETE SENDER TRANSACTION
-    // ========================================================
+        {
+          userName:
+            senderName,
 
-    const {
-      error: senderTransactionError
-    } = await supabase
-      .from('transactions')
-      .update({
-        status: 'completed',
+          userEmail:
+            finalSourceAccount.profiles?.email ||
+            req.user.email,
 
-        metadata: {
-          ...(transaction.metadata || {}),
+          accountNumber:
+            finalSourceAccount.account_number,
 
-          transferType: 'same_bank',
-          direction: 'debit',
+          amount:
+            formatCurrency(amount),
 
-          otpVerified: true,
+          newBalance:
+            formatCurrency(
+              newSourceBalance
+            ),
 
-          completedAt:
-            new Date().toISOString()
+          description,
+
+          reference:
+            cleanReference,
+
+          transferType:
+            'same_bank',
+
+          direction:
+            'sent',
+
+          recipientName,
+
+          recipientAccountNumber:
+            finalDestinationAccount.account_number
         }
-      })
-      .eq('id', transaction.id)
-      .eq('status', 'pending_review');
-
-    if (senderTransactionError) {
-      throw senderTransactionError;
+      );
+    } catch (notificationError) {
+      console.error(
+        'Sender notification failed:',
+        notificationError
+      );
     }
 
-    // ========================================================
-    // CREATE RECIPIENT TRANSACTION
-    // ========================================================
+    try {
+      await createAndSendNotification(
+        io,
 
-    const recipientReference =
-      `${reference}-CR`;
+        finalDestinationAccount.user_id,
 
-    const {
-      error: recipientTransactionError
-    } = await supabase
-      .from('transactions')
-      .insert([{
-        account_id: destination.id,
+        'credit',
 
-        transaction_type: 'transfer',
+        `Transfer Credited – ${formatCurrency(
+          amount
+        )}`,
 
-        amount,
+        `You received ${formatCurrency(
+          amount
+        )} from ${senderName}.`,
 
-        description,
+        cleanReference,
 
-        reference_id: recipientReference,
+        {
+          userName:
+            recipientName,
 
-        counterparty_account:
-          sourceAccount.id,
+          userEmail:
+            finalDestinationAccount.profiles?.email,
 
-        status: 'completed',
+          accountNumber:
+            finalDestinationAccount.account_number,
 
-        metadata: {
-          transferType: 'same_bank',
+          amount:
+            formatCurrency(amount),
 
-          transferReference: reference,
+          newBalance:
+            formatCurrency(
+              newDestinationBalance
+            ),
 
-          direction: 'credit',
+          description,
 
-          fromAccountId:
-            sourceAccount.id,
+          reference:
+            cleanReference,
+
+          transferType:
+            'same_bank',
+
+          direction:
+            'received',
 
           senderName,
 
           senderAccountNumber:
-            sourceAccount.account_number
+            finalSourceAccount.account_number
         }
-      }]);
-
-    if (recipientTransactionError) {
-      throw recipientTransactionError;
+      );
+    } catch (notificationError) {
+      console.error(
+        'Recipient notification failed:',
+        notificationError
+      );
     }
-
-    // ========================================================
-    // SEND EMAIL + IN-APP NOTIFICATIONS
-    // ========================================================
-
-    const io = req.app.get('io');
-
-    // --------------------------------------------------------
-    // SENDER
-    // debitEmail template
-    // --------------------------------------------------------
-
-    await createAndSendNotification(
-      io,
-
-      sourceAccount.user_id,
-
-      'debit',
-
-      `Transfer Debited – ${formatCurrency(amount)}`,
-
-      `You transferred ${formatCurrency(
-        amount
-      )} to ${recipientName}.`,
-
-      reference,
-
-      {
-        userName: senderName,
-
-        userEmail:
-          sourceAccount.profiles?.email ||
-          req.user.email,
-
-        accountNumber:
-          sourceAccount.account_number,
-
-        amount:
-          formatCurrency(amount),
-
-        newBalance:
-          formatCurrency(newSourceBalance),
-
-        description,
-
-        reference,
-
-        transferType: 'same_bank',
-
-        direction: 'sent',
-
-        recipientName,
-
-        recipientAccountNumber:
-          destination.account_number
-      }
-    );
-
-    // --------------------------------------------------------
-    // RECIPIENT
-    // creditEmail template
-    // --------------------------------------------------------
-
-    await createAndSendNotification(
-      io,
-
-      destination.user_id,
-
-      'credit',
-
-      `Transfer Credited – ${formatCurrency(amount)}`,
-
-      `You received ${formatCurrency(
-        amount
-      )} from ${senderName}.`,
-
-      reference,
-
-      {
-        userName: recipientName,
-
-        userEmail:
-          destination.profiles?.email,
-
-        accountNumber:
-          destination.account_number,
-
-        amount:
-          formatCurrency(amount),
-
-        newBalance:
-          formatCurrency(newDestinationBalance),
-
-        description,
-
-        reference,
-
-        transferType: 'same_bank',
-
-        direction: 'received',
-
-        senderName,
-
-        senderAccountNumber:
-          sourceAccount.account_number
-      }
-    );
 
     // ========================================================
     // SUCCESS
     // ========================================================
 
     return res.json({
-      success: true,
+      success:
+        true,
 
-      reference,
+      reference:
+        cleanReference,
 
-      status: 'completed',
+      status:
+        'completed',
 
       message:
         'Transfer completed successfully.',
 
       from_account: {
-        id: sourceAccount.id,
-        new_balance: newSourceBalance
+        id:
+          finalSourceAccount.id,
+
+        new_balance:
+          newSourceBalance
       },
 
       to_account: {
-        id: destination.id,
-        new_balance: newDestinationBalance
-      }
+        id:
+          finalDestinationAccount.id,
+
+        new_balance:
+          newDestinationBalance
+      },
+
+      transaction:
+        completedTransaction
     });
 
   } catch (error) {
-
     console.error(
       'Verify OTP Error:',
       error
@@ -1285,6 +1743,812 @@ const verifyOtpAndComplete = async (req, res, next) => {
     next(error);
   }
 };
+
+
+// ============================================================
+// VERIFY TRANSFER PIN AND COMPLETE TRANSFER
+// ============================================================
+
+const verifyPinAndComplete = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      reference,
+      pin
+    } = req.body;
+
+    // --------------------------------------------------------
+    // AUTH
+    // --------------------------------------------------------
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // VALIDATE INPUT
+    // --------------------------------------------------------
+
+    if (
+      !reference ||
+      String(reference).trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transaction reference is required.'
+      });
+    }
+
+    if (
+      !pin ||
+      String(pin).trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: 'Transfer PIN is required.'
+      });
+    }
+
+    const cleanReference =
+      String(reference).trim();
+
+    const cleanPin =
+      String(pin).trim();
+
+    if (!/^\d+$/.test(cleanPin)) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'Transfer PIN must contain only digits.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // GET PENDING TRANSACTION (ownership checked below)
+    // --------------------------------------------------------
+
+    const {
+      data: transaction,
+      error: transactionError
+    } = await supabase
+      .from('transactions')
+      .select(`
+        *,
+        accounts:account_id(
+          id,
+          user_id,
+          account_number,
+          balance,
+          profiles!user_id(
+            full_name,
+            email,
+            status,
+            transfer_pin
+          )
+        )
+      `)
+      .eq(
+        'reference_id',
+        cleanReference
+      )
+      .maybeSingle();
+
+    if (transactionError) {
+      throw transactionError;
+    }
+
+    if (!transaction) {
+      return res.status(404).json({
+        success: false,
+        error:
+          'Transaction record not found.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // OWNERSHIP
+    // --------------------------------------------------------
+
+    if (
+      transaction.accounts?.user_id !==
+      req.user.id
+    ) {
+      return res.status(403).json({
+        success: false,
+        error:
+          'You are not authorized to verify this transaction.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // STATUS
+    // --------------------------------------------------------
+
+    if (
+      transaction.status !==
+      'pending_review'
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'This transaction has already been processed.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // NORMALIZE METADATA
+    // --------------------------------------------------------
+
+    let metadata =
+      transaction.metadata || {};
+
+    if (
+      typeof metadata ===
+      'string'
+    ) {
+      try {
+        metadata = JSON.parse(metadata);
+      } catch {
+        metadata = {};
+      }
+    }
+
+    // --------------------------------------------------------
+    // MUST BE A PIN-AUTHORIZED TRANSACTION
+    // --------------------------------------------------------
+
+    if (!metadata.pinRequired) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'This transaction is not set up for PIN verification.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // REQUIRED METADATA
+    // --------------------------------------------------------
+
+    if (
+      !metadata.fromAccountId ||
+      !metadata.toAccountId ||
+      !transaction.amount
+    ) {
+      return res.status(500).json({
+        success: false,
+        error:
+          'This transfer verification record is incomplete.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // ATTEMPT LIMIT
+    // --------------------------------------------------------
+
+    const attempts =
+      Number(metadata.pinAttempts || 0);
+
+    if (attempts >= MAX_PIN_ATTEMPTS) {
+      return res.status(429).json({
+        success: false,
+        error:
+          'Too many incorrect PIN attempts. Please try again later or contact support.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // COMPARE PIN (PLAINTEXT NUMERIC)
+    // --------------------------------------------------------
+
+    const storedPin =
+      transaction.accounts?.profiles?.transfer_pin;
+
+    if (
+      storedPin === null ||
+      storedPin === undefined ||
+      String(storedPin).trim() === ''
+    ) {
+      return res.status(400).json({
+        success: false,
+        error:
+          'You have not set a transfer PIN. Please set one in your profile settings.'
+      });
+    }
+
+    const pinValid =
+      normalizePin(storedPin) ===
+      normalizePin(cleanPin);
+
+    if (!pinValid) {
+      const nextAttempts =
+        attempts + 1;
+
+      await supabase
+        .from('transactions')
+        .update({
+          metadata: {
+            ...metadata,
+            pinAttempts:
+              nextAttempts,
+            lastPinAttemptAt:
+              new Date().toISOString()
+          }
+        })
+        .eq(
+          'id',
+          transaction.id
+        )
+        .eq(
+          'status',
+          'pending_review'
+        );
+
+      const remaining =
+        Math.max(
+          MAX_PIN_ATTEMPTS - nextAttempts,
+          0
+        );
+
+      return res.status(400).json({
+        success: false,
+        error:
+          remaining > 0
+            ? `Incorrect transfer PIN. ${remaining} attempt${
+                remaining === 1 ? '' : 's'
+              } remaining.`
+            : 'Too many incorrect PIN attempts. Please try again later.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // PIN IS VALID — RE-CHECK CURRENT SOURCE ACCOUNT STATE
+    // --------------------------------------------------------
+
+    const {
+      data: sourceAccount,
+      error: sourceError
+    } = await supabase
+      .from('accounts')
+      .select(`
+        id,
+        user_id,
+        account_number,
+        account_type,
+        balance,
+        currency,
+        status,
+        profiles!user_id(
+          status,
+          email,
+          full_name
+        )
+      `)
+      .eq(
+        'id',
+        metadata.fromAccountId
+      )
+      .eq(
+        'user_id',
+        req.user.id
+      )
+      .single();
+
+    if (sourceError) {
+      if (
+        sourceError.code ===
+        'PGRST116'
+      ) {
+        return res.status(404).json({
+          success: false,
+          error:
+            'Source account not found.'
+        });
+      }
+
+      throw sourceError;
+    }
+
+    const accountStatus =
+      String(
+        sourceAccount.status || ''
+      ).toLowerCase();
+
+    const profileStatus =
+      String(
+        sourceAccount.profiles?.status ||
+        ''
+      ).toLowerCase();
+
+    const senderRestricted =
+      accountStatus === 'frozen' ||
+      profileStatus === 'frozen' ||
+      profileStatus === 'banned';
+
+    // ========================================================
+    // RESTRICTED ACCOUNT
+    // ========================================================
+
+    if (senderRestricted) {
+      const {
+        error: reviewError
+      } = await supabase
+        .from('transactions')
+        .update({
+          status:
+            'pending_review',
+
+          metadata: {
+            ...metadata,
+
+            senderRestricted:
+              true,
+
+            restrictionStatus:
+              profileStatus === 'banned'
+                ? 'banned'
+                : 'frozen',
+
+            pinVerified:
+              true,
+
+            verificationMethod:
+              'pin',
+
+            reviewSubmittedAt:
+              new Date().toISOString()
+          }
+        })
+        .eq(
+          'id',
+          transaction.id
+        )
+        .eq(
+          'status',
+          'pending_review'
+        );
+
+      if (reviewError) {
+        throw reviewError;
+      }
+
+      const io =
+        req.app.get('io');
+
+      await createAndSendNotification(
+        io,
+        req.user.id,
+        'system',
+        'Transfer Pending Review',
+        `Your transfer of ${formatCurrency(
+          transaction.amount
+        )} is pending bank review due to account restrictions.`,
+        cleanReference
+      );
+
+      return res.json({
+        success: true,
+
+        reference:
+          cleanReference,
+
+        status:
+          'pending_review',
+
+        message:
+          'PIN verified. Transfer has been submitted for bank review.'
+      });
+    }
+
+    // ========================================================
+    // ATOMIC TRANSFER VIA RPC
+    // ========================================================
+
+    await delay(250);
+
+    const {
+      data: transferResult,
+      error: transferError
+    } = await supabase.rpc(
+      'complete_same_bank_transfer',
+      {
+        p_reference:
+          cleanReference,
+
+        p_user_id:
+          req.user.id,
+
+        p_transaction_id:
+          transaction.id,
+
+        p_source_account_id:
+          metadata.fromAccountId,
+
+        p_destination_account_id:
+          metadata.toAccountId,
+
+        p_amount:
+          Number(transaction.amount)
+      }
+    );
+
+    if (transferError) {
+      console.error(
+        'Atomic transfer RPC error:',
+        transferError
+      );
+
+      if (
+        transferError.message?.includes(
+          'INSUFFICIENT_FUNDS'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Insufficient funds to complete this transfer.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'SOURCE_ACCOUNT_NOT_ACTIVE'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'Your account is not available for this transfer.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'DESTINATION_ACCOUNT_NOT_ACTIVE'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'The recipient account is no longer available.'
+        });
+      }
+
+      if (
+        transferError.message?.includes(
+          'TRANSACTION_ALREADY_PROCESSED'
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          error:
+            'This transaction has already been processed.'
+        });
+      }
+
+      throw transferError;
+    }
+
+    if (!transferResult) {
+      throw new Error(
+        'Transfer completed without a database result.'
+      );
+    }
+
+    // --------------------------------------------------------
+    // MARK PIN VERIFIED IN METADATA
+    // --------------------------------------------------------
+
+    const {
+      error: verifyError
+    } = await supabase
+      .from('transactions')
+      .update({
+        metadata: {
+          ...metadata,
+          pinVerified:
+            true,
+          verificationMethod:
+            'pin',
+          pinVerifiedAt:
+            new Date().toISOString()
+        }
+      })
+      .eq(
+        'id',
+        transaction.id
+      );
+
+    if (verifyError) {
+      console.error(
+        'PIN verification flag update failed after completed transfer:',
+        verifyError
+      );
+    }
+
+    // --------------------------------------------------------
+    // FINAL TRANSACTION DATA
+    // --------------------------------------------------------
+
+    const {
+      data: completedTransaction,
+      error: completedTransactionError
+    } = await supabase
+      .from('transactions')
+      .select('*')
+      .eq(
+        'id',
+        transaction.id
+      )
+      .single();
+
+    if (completedTransactionError) {
+      throw completedTransactionError;
+    }
+
+    // --------------------------------------------------------
+    // FINAL ACCOUNT DATA
+    // --------------------------------------------------------
+
+    const {
+      data: finalSourceAccount,
+      error: finalSourceError
+    } = await supabase
+      .from('accounts')
+      .select(`
+        id,
+        user_id,
+        account_number,
+        balance,
+        profiles!user_id(
+          full_name,
+          email
+        )
+      `)
+      .eq(
+        'id',
+        metadata.fromAccountId
+      )
+      .single();
+
+    if (finalSourceError) {
+      throw finalSourceError;
+    }
+
+    const {
+      data: finalDestinationAccount,
+      error: finalDestinationError
+    } = await supabase
+      .from('accounts')
+      .select(`
+        id,
+        user_id,
+        account_number,
+        balance,
+        profiles!user_id(
+          full_name,
+          email
+        )
+      `)
+      .eq(
+        'id',
+        metadata.toAccountId
+      )
+      .single();
+
+    if (finalDestinationError) {
+      throw finalDestinationError;
+    }
+
+    // --------------------------------------------------------
+    // DISPLAY DATA
+    // --------------------------------------------------------
+
+    const amount =
+      Number(transaction.amount);
+
+    const senderName =
+      finalSourceAccount.profiles?.full_name ||
+      'User';
+
+    const recipientName =
+      finalDestinationAccount.profiles?.full_name ||
+      metadata.recipientName ||
+      'Recipient';
+
+    const description =
+      metadata.description ||
+      'Same bank transfer';
+
+    const newSourceBalance =
+      Number(
+        finalSourceAccount.balance
+      );
+
+    const newDestinationBalance =
+      Number(
+        finalDestinationAccount.balance
+      );
+
+    // ========================================================
+    // NOTIFICATIONS
+    // ========================================================
+
+    const io =
+      req.app.get('io');
+
+    try {
+      await createAndSendNotification(
+        io,
+
+        finalSourceAccount.user_id,
+
+        'debit',
+
+        `Transfer Debited – ${formatCurrency(
+          amount
+        )}`,
+
+        `You transferred ${formatCurrency(
+          amount
+        )} to ${recipientName}.`,
+
+        cleanReference,
+
+        {
+          userName:
+            senderName,
+
+          userEmail:
+            finalSourceAccount.profiles?.email ||
+            req.user.email,
+
+          accountNumber:
+            finalSourceAccount.account_number,
+
+          amount:
+            formatCurrency(amount),
+
+          newBalance:
+            formatCurrency(
+              newSourceBalance
+            ),
+
+          description,
+
+          reference:
+            cleanReference,
+
+          transferType:
+            'same_bank',
+
+          direction:
+            'sent',
+
+          recipientName,
+
+          recipientAccountNumber:
+            finalDestinationAccount.account_number
+        }
+      );
+    } catch (notificationError) {
+      console.error(
+        'Sender notification failed:',
+        notificationError
+      );
+    }
+
+    try {
+      await createAndSendNotification(
+        io,
+
+        finalDestinationAccount.user_id,
+
+        'credit',
+
+        `Transfer Credited – ${formatCurrency(
+          amount
+        )}`,
+
+        `You received ${formatCurrency(
+          amount
+        )} from ${senderName}.`,
+
+        cleanReference,
+
+        {
+          userName:
+            recipientName,
+
+          userEmail:
+            finalDestinationAccount.profiles?.email,
+
+          accountNumber:
+            finalDestinationAccount.account_number,
+
+          amount:
+            formatCurrency(amount),
+
+          newBalance:
+            formatCurrency(
+              newDestinationBalance
+            ),
+
+          description,
+
+          reference:
+            cleanReference,
+
+          transferType:
+            'same_bank',
+
+          direction:
+            'received',
+
+          senderName,
+
+          senderAccountNumber:
+            finalSourceAccount.account_number
+        }
+      );
+    } catch (notificationError) {
+      console.error(
+        'Recipient notification failed:',
+        notificationError
+      );
+    }
+
+    // ========================================================
+    // SUCCESS
+    // ========================================================
+
+    return res.json({
+      success: true,
+
+      reference:
+        cleanReference,
+
+      status:
+        'completed',
+
+      message:
+        'Transfer completed successfully.',
+
+      from_account: {
+        id:
+          finalSourceAccount.id,
+
+        new_balance:
+          newSourceBalance
+      },
+
+      to_account: {
+        id:
+          finalDestinationAccount.id,
+
+        new_balance:
+          newDestinationBalance
+      },
+
+      transaction:
+        completedTransaction
+    });
+
+  } catch (error) {
+    console.error(
+      'Verify PIN Error:',
+      error
+    );
+
+    next(error);
+  }
+};
+
 
 // ============================================================
 // TRANSACTION HISTORY
@@ -1296,7 +2560,6 @@ const getTransactionHistory = async (
   next
 ) => {
   try {
-
     const {
       accountId
     } = req.params;
@@ -1305,6 +2568,25 @@ const getTransactionHistory = async (
       limit = 50,
       offset = 0
     } = req.query;
+
+    // --------------------------------------------------------
+    // NORMALIZE PAGINATION
+    // --------------------------------------------------------
+
+    const parsedLimit =
+      Math.min(
+        Math.max(
+          parseInt(limit, 10) || 50,
+          1
+        ),
+        100
+      );
+
+    const parsedOffset =
+      Math.max(
+        parseInt(offset, 10) || 0,
+        0
+      );
 
     // --------------------------------------------------------
     // VERIFY ACCOUNT OWNERSHIP
@@ -1316,23 +2598,25 @@ const getTransactionHistory = async (
     } = await supabase
       .from('accounts')
       .select('id')
-      .eq('id', accountId)
-      .eq('user_id', req.user.id)
-      .single();
+      .eq(
+        'id',
+        accountId
+      )
+      .eq(
+        'user_id',
+        req.user.id
+      )
+      .maybeSingle();
 
     if (accountError) {
-
-      if (
-        accountError.code ===
-        'PGRST116'
-      ) {
-        return res.status(404).json({
-          success: false,
-          error: 'Account not found'
-        });
-      }
-
       throw accountError;
+    }
+
+    if (!account) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found.'
+      });
     }
 
     // --------------------------------------------------------
@@ -1345,14 +2629,20 @@ const getTransactionHistory = async (
     } = await supabase
       .from('transactions')
       .select('*')
-      .eq('account_id', accountId)
-      .order('created_at', {
-        ascending: false
-      })
+      .eq(
+        'account_id',
+        accountId
+      )
+      .order(
+        'created_at',
+        {
+          ascending: false
+        }
+      )
       .range(
-        parseInt(offset),
-        parseInt(offset) +
-          parseInt(limit) -
+        parsedOffset,
+        parsedOffset +
+          parsedLimit -
           1
       );
 
@@ -1369,11 +2659,19 @@ const getTransactionHistory = async (
       error: countError
     } = await supabase
       .from('transactions')
-      .select('*', {
-        count: 'exact',
-        head: true
-      })
-      .eq('account_id', accountId);
+      .select(
+        '*',
+        {
+          count:
+            'exact',
+          head:
+            true
+        }
+      )
+      .eq(
+        'account_id',
+        accountId
+      );
 
     if (countError) {
       throw countError;
@@ -1384,19 +2682,25 @@ const getTransactionHistory = async (
     // --------------------------------------------------------
 
     return res.json({
-      success: true,
+      success:
+        true,
 
-      transactions,
+      transactions:
+        transactions || [],
 
       pagination: {
-        total: count,
-        limit: parseInt(limit),
-        offset: parseInt(offset)
+        total:
+          count || 0,
+
+        limit:
+          parsedLimit,
+
+        offset:
+          parsedOffset
       }
     });
 
   } catch (error) {
-
     console.error(
       'Get Transaction History Error:',
       error
@@ -1405,6 +2709,7 @@ const getTransactionHistory = async (
     next(error);
   }
 };
+
 
 // ============================================================
 // GET TRANSACTION BY REFERENCE
@@ -1417,15 +2722,9 @@ const getTransactionByReference = async (
   next
 ) => {
   try {
-
     const {
       referenceId
     } = req.params;
-
-    console.log(
-      'Looking for transaction with reference:',
-      referenceId
-    );
 
     // --------------------------------------------------------
     // VALIDATE REFERENCE
@@ -1437,12 +2736,13 @@ const getTransactionByReference = async (
     ) {
       return res.status(400).json({
         success: false,
-        error: 'Reference ID is required'
+        error:
+          'Reference ID is required.'
       });
     }
 
     // --------------------------------------------------------
-    // QUERY TRANSACTION
+    // GET TRANSACTION
     // --------------------------------------------------------
 
     const {
@@ -1451,69 +2751,39 @@ const getTransactionByReference = async (
     } = await supabase
       .from('transactions')
       .select(`
-        *,
-        accounts:account_id (
+        id,
+        account_id,
+        transaction_type,
+        amount,
+        description,
+        reference_id,
+        counterparty_account,
+        status,
+        created_at,
+        metadata,
+        accounts:account_id(
           id,
           account_number,
-          user_id,
-          profiles:user_id (
-            id,
-            full_name,
-            email,
-            phone
-          )
+          user_id
         )
       `)
       .eq(
         'reference_id',
-        referenceId
+        referenceId.trim()
       )
-      .single();
-
-    // --------------------------------------------------------
-    // DATABASE ERROR
-    // --------------------------------------------------------
+      .maybeSingle();
 
     if (error) {
-
-      console.error(
-        'Supabase error:',
-        error
-      );
-
-      if (
-        error.code ===
-        'PGRST116'
-      ) {
-        return res.status(404).json({
-          success: false,
-          error:
-            'Transaction not found with this reference'
-        });
-      }
-
-      return res.status(500).json({
-        success: false,
-        error:
-          'Database error occurred while fetching transaction'
-      });
+      throw error;
     }
-
-    // --------------------------------------------------------
-    // NOT FOUND
-    // --------------------------------------------------------
 
     if (!transaction) {
       return res.status(404).json({
         success: false,
-        error: 'Transaction not found'
+        error:
+          'Transaction not found with this reference.'
       });
     }
-
-    console.log(
-      'Transaction found:',
-      transaction.id
-    );
 
     // --------------------------------------------------------
     // PARSE METADATA
@@ -1535,39 +2805,58 @@ const getTransactionByReference = async (
     }
 
     // --------------------------------------------------------
-    // RESPONSE
+    // PUBLIC RECEIPT RESPONSE
     // --------------------------------------------------------
 
     return res.json({
-      success: true,
+      success:
+        true,
 
       transaction: {
-        ...transaction,
+        id:
+          transaction.id,
+
+        transaction_type:
+          transaction.transaction_type,
 
         amount:
           parseFloat(
             transaction.amount
           ) || 0,
 
+        description:
+          transaction.description,
+
+        reference_id:
+          transaction.reference_id,
+
+        status:
+          transaction.status,
+
+        created_at:
+          transaction.created_at,
+
         metadata
       }
     });
 
   } catch (error) {
-
     console.error(
       'Get Transaction By Reference Error:',
       error
     );
 
     return res.status(500).json({
-      success: false,
+      success:
+        false,
+
       error:
         error.message ||
-        'Failed to fetch transaction'
+        'Failed to fetch transaction.'
     });
   }
 };
+
 
 // ============================================================
 // EXPORTS
@@ -1576,6 +2865,7 @@ const getTransactionByReference = async (
 module.exports = {
   initiateTransfer,
   verifyOtpAndComplete,
+  verifyPinAndComplete,
   getTransactionHistory,
   getTransactionByReference
 };

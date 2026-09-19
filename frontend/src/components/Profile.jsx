@@ -398,13 +398,17 @@ const Profile = () => {
                 </div>
               </div>
 
-              {/* Security card */}
-              <div className="flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm">
+              {/* Security card (link to /security) */}
+              <Link
+                to="/security"
+                aria-label="View security settings"
+                className="group flex items-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 transition-all hover:-translate-y-0.5 hover:border-emerald-200 hover:bg-emerald-50 hover:shadow-[0_10px_25px_rgba(16,185,129,0.15)]"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm transition-transform group-hover:scale-105">
                   <Fingerprint className="h-5 w-5 text-emerald-500" />
                 </div>
 
-                <div>
+                <div className="flex-1">
                   <p className="text-xs font-semibold text-emerald-600">
                     Security status
                   </p>
@@ -414,7 +418,8 @@ const Profile = () => {
                   </p>
                 </div>
 
-              </div>
+                <ChevronRight className="h-4 w-4 text-emerald-400 transition-transform group-hover:translate-x-0.5" />
+              </Link>
 
             </div>
           </div>
@@ -654,8 +659,7 @@ const Profile = () => {
                   </div>
 
                   <Link
-																		 to="/chat"
-                    type="button"
+                    to="/chat"
                     className="group mt-4 flex w-full items-center justify-between rounded-2xl bg-primary-600 px-4 py-3.5 text-sm font-semibold text-white shadow-lg shadow-primary-200 transition-all hover:-translate-y-0.5 hover:bg-primary-500 hover:shadow-xl hover:shadow-primary-200"
                   >
                     <span className="flex items-center gap-2">
@@ -730,6 +734,7 @@ const Profile = () => {
               description="Review the protection status of your account and contact details."
               action="Security active"
               success
+              to="/security"
             />
 
             <ServiceCard
@@ -930,51 +935,65 @@ const ServiceCard = ({
   action,
   disabled = false,
   success = false,
-}) => (
-  <div className="group relative overflow-hidden rounded-[24px] border border-blue-100 bg-white p-5 shadow-[0_12px_35px_rgba(148,163,184,0.08)] transition-all hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_45px_rgba(148,163,184,0.14)]">
+  to,
+}) => {
+  const cardInner = (
+    <>
+      <div className="flex items-start justify-between">
 
-    <div className="flex items-start justify-between">
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-2xl ${iconClass}`}
+        >
+          <Icon className="h-5 w-5" />
+        </div>
 
-      <div
-        className={`flex h-11 w-11 items-center justify-center rounded-2xl ${iconClass}`}
-      >
-        <Icon className="h-5 w-5" />
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 transition-colors group-hover:bg-blue-100">
+          <ChevronRight className="h-4 w-4 text-blue-300 transition-transform group-hover:translate-x-0.5" />
+        </div>
+
       </div>
 
-      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-50 transition-colors group-hover:bg-blue-100">
-        <ChevronRight className="h-4 w-4 text-blue-300 transition-transform group-hover:translate-x-0.5" />
-      </div>
+      <h3 className="mt-4 text-sm font-bold text-slate-600">
+        {title}
+      </h3>
 
-    </div>
+      <p className="mt-1 text-xs leading-5 text-slate-400">
+        {description}
+      </p>
 
-    <h3 className="mt-4 text-sm font-bold text-slate-600">
-      {title}
-    </h3>
+      {success ? (
+        <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          {action}
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={disabled}
+          className={`mt-4 text-xs font-bold transition-colors ${
+            disabled
+              ? 'cursor-not-allowed text-slate-300'
+              : 'text-primary-500 hover:text-primary-600'
+          }`}
+        >
+          {action}
+        </button>
+      )}
+    </>
+  );
 
-    <p className="mt-1 text-xs leading-5 text-slate-400">
-      {description}
-    </p>
+  const baseClasses =
+    'group relative block overflow-hidden rounded-[24px] border border-blue-100 bg-white p-5 shadow-[0_12px_35px_rgba(148,163,184,0.08)] transition-all hover:-translate-y-1 hover:border-blue-200 hover:shadow-[0_18px_45px_rgba(148,163,184,0.14)]';
 
-    {success ? (
-      <div className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-600">
-        <CheckCircle2 className="h-3.5 w-3.5" />
-        {action}
-      </div>
-    ) : (
-      <button
-        type="button"
-        disabled={disabled}
-        className={`mt-4 text-xs font-bold transition-colors ${
-          disabled
-            ? 'cursor-not-allowed text-slate-300'
-            : 'text-primary-500 hover:text-primary-600'
-        }`}
-      >
-        {action}
-      </button>
-    )}
+  if (to) {
+    return (
+      <Link to={to} className={baseClasses}>
+        {cardInner}
+      </Link>
+    );
+  }
 
-  </div>
-);
+  return <div className={baseClasses}>{cardInner}</div>;
+};
 
 export default Profile;

@@ -1,12 +1,12 @@
 // App.jsx
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
-  useNavigate,
   useLocation,
+  useNavigate,
 } from 'react-router-dom';
 
 import { Toaster } from 'sonner';
@@ -38,6 +38,8 @@ import Transfer from './components/Transfer';
 import Receipt from './components/Receipt';
 import Profile from './components/Profile';
 import CardTracking from './components/CardTracking';
+import Security from './components/Security';
+import SecuritySetupBanner from './components/SecuritySetupBanner';
 
 // Admin Components
 import UsersList from './components/admin/UsersList';
@@ -81,6 +83,8 @@ const ScrollToTop = () => {
 };
 
 
+
+
 // ============================================================
 // TRULY PUBLIC ROUTE - NO AUTH CHECKS
 // ============================================================
@@ -91,11 +95,15 @@ const TrulyPublicRoute = ({ children }) => {
 
 
 // ============================================================
-// AUTHENTICATED ROOT REDIRECT - Only for authenticated users
+// AUTHENTICATED ROOT REDIRECT
 // ============================================================
 
 const AuthenticatedRedirect = () => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const {
+    isAuthenticated,
+    isAdmin,
+    loading,
+  } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -127,7 +135,11 @@ const AdminRootRedirect = () => {
 // ============================================================
 
 const UserRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const {
+    isAuthenticated,
+    isAdmin,
+    loading,
+  } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -150,7 +162,11 @@ const UserRoute = ({ children }) => {
 // ============================================================
 
 const AdminRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const {
+    isAuthenticated,
+    isAdmin,
+    loading,
+  } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -169,18 +185,31 @@ const AdminRoute = ({ children }) => {
 
 
 // ============================================================
-// PUBLIC ROUTE - Redirects authenticated users away
+// PUBLIC ROUTE
 // ============================================================
 
 const PublicRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const {
+    isAuthenticated,
+    isAdmin,
+    loading,
+  } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
   }
 
   if (isAuthenticated) {
-    return <Navigate to={isAdmin ? '/admin/accounts' : '/dashboard'} replace />;
+    return (
+      <Navigate
+        to={
+          isAdmin
+            ? '/admin/accounts'
+            : '/dashboard'
+        }
+        replace
+      />
+    );
   }
 
   return children;
@@ -192,28 +221,62 @@ const PublicRoute = ({ children }) => {
 // ============================================================
 
 const NotFound = () => {
-  const { isAuthenticated, isAdmin } = useAuth();
+  const {
+    isAuthenticated,
+    isAdmin,
+  } = useAuth();
 
   let destination = '/';
 
   if (isAuthenticated) {
-    destination = isAdmin ? '/admin/accounts' : '/dashboard';
+    destination = isAdmin
+      ? '/admin/accounts'
+      : '/dashboard';
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-6">
       <div className="w-full max-w-md text-center">
-        <p className="text-7xl font-bold tracking-tight text-gray-200">404</p>
-        <h1 className="mt-3 text-xl font-semibold text-gray-900">Page not found</h1>
+
+        <p className="text-7xl font-bold tracking-tight text-gray-200">
+          404
+        </p>
+
+        <h1 className="mt-3 text-xl font-semibold text-gray-900">
+          Page not found
+        </h1>
+
         <p className="mt-2 text-sm leading-6 text-gray-500">
           The page you're looking for doesn't exist or may have been moved.
         </p>
+
         <a
           href={destination}
-          className="mt-6 inline-flex items-center rounded-xl bg-primary-600 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-700"
+          className="
+            mt-6
+            inline-flex
+            items-center
+            rounded-xl
+            bg-primary-600
+            px-5
+            py-3
+            text-sm
+            font-semibold
+            text-white
+            shadow-sm
+            transition
+            hover:bg-primary-700
+          "
         >
-          {isAuthenticated ? (isAdmin ? 'Return to Accounts' : 'Return to Dashboard') : 'Return Home'}
+          {isAuthenticated
+            ? (
+              isAdmin
+                ? 'Return to Accounts'
+                : 'Return to Dashboard'
+            )
+            : 'Return Home'}
         </a>
+
       </div>
     </div>
   );
@@ -226,355 +289,388 @@ const NotFound = () => {
 
 function AppRoutes() {
   return (
-    <Routes>
+    <>
       {/* ======================================================
-          PUBLIC HOME PAGE - No authentication required
+          SECURITY SETUP BANNER
           ====================================================== */}
 
-      <Route
-        path="/"
-        element={
-          <TrulyPublicRoute>
-            <Home />
-          </TrulyPublicRoute>
-        }
-      />
+      <SecuritySetupBanner />
 
-      {/* ======================================================
-          PUBLIC ROUTES - No authentication required
-          ====================================================== */}
+      <Routes>
 
-      <Route
-        path="/login"
-        element={
-          <PublicRoute>
-            <Login />
-          </PublicRoute>
-        }
-      />
+        {/* ====================================================
+            PUBLIC HOME PAGE
+            ==================================================== */}
 
-      <Route
-        path="/register"
-        element={
-          <PublicRoute>
-            <Register />
-          </PublicRoute>
-        }
-      />
+        <Route
+          path="/"
+          element={
+            <TrulyPublicRoute>
+              <Home />
+            </TrulyPublicRoute>
+          }
+        />
 
-      <Route
-        path="/secure-register-page"
-        element={
-          <PublicRoute>
-            <SelfRegisterPage />
-          </PublicRoute>
-        }
-      />
+        {/* ====================================================
+            PUBLIC ROUTES
+            ==================================================== */}
 
-      {/* ======================================================
-          RECEIPT ROUTES - TRULY PUBLIC (NO AUTH)
-          ====================================================== */}
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
 
-      <Route
-        path="/receipt"
-        element={
-          <TrulyPublicRoute>
-            <Receipt standalone={true} showSearch={true} />
-          </TrulyPublicRoute>
-        }
-      />
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <Register />
+            </PublicRoute>
+          }
+        />
 
-      <Route
-        path="/receipt/:reference"
-        element={
-          <TrulyPublicRoute>
-            <Receipt standalone={true} showSearch={true} />
-          </TrulyPublicRoute>
-        }
-      />
+        <Route
+          path="/secure-register-page"
+          element={
+            <PublicRoute>
+              <SelfRegisterPage />
+            </PublicRoute>
+          }
+        />
 
-      {/* ======================================================
-          USER APPLICATION (AUTHENTICATED)
-          ====================================================== */}
+        {/* ====================================================
+            RECEIPT ROUTES
+            ==================================================== */}
 
-      <Route
-        path="/dashboard"
-        element={
-          <UserRoute>
-            <Layout>
-              <Dashboard />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/receipt"
+          element={
+            <TrulyPublicRoute>
+              <Receipt
+                standalone={true}
+                showSearch={true}
+              />
+            </TrulyPublicRoute>
+          }
+        />
 
-      <Route
-        path="/accounts"
-        element={
-          <UserRoute>
-            <Layout>
-              <Accounts />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/receipt/:reference"
+          element={
+            <TrulyPublicRoute>
+              <Receipt
+                standalone={true}
+                showSearch={true}
+              />
+            </TrulyPublicRoute>
+          }
+        />
 
-      <Route
-        path="/transactions"
-        element={
-          <UserRoute>
-            <Layout>
-              <Transactions />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        {/* ====================================================
+            USER APPLICATION
+            ==================================================== */}
 
-      <Route
-        path="/deposit"
-        element={
-          <UserRoute>
-            <Layout>
-              <Deposit />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/dashboard"
+          element={
+            <UserRoute>
+              <Layout>
+                <Dashboard />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/withdraw"
-        element={
-          <UserRoute>
-            <Layout>
-              <Withdraw />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/accounts"
+          element={
+            <UserRoute>
+              <Layout>
+                <Accounts />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/transfer"
-        element={
-          <UserRoute>
-            <Layout>
-              <Transfer />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/transactions"
+          element={
+            <UserRoute>
+              <Layout>
+                <Transactions />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/profile"
-        element={
-          <UserRoute>
-            <Layout>
-              <Profile />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/deposit"
+          element={
+            <UserRoute>
+              <Layout>
+                <Deposit />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/chat"
-        element={
-          <UserRoute>
-            <Layout>
-              <ClientChatPage />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/withdraw"
+          element={
+            <UserRoute>
+              <Layout>
+                <Withdraw />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/support"
-        element={
-          <UserRoute>
-            <Layout>
-              <Support />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/transfer"
+          element={
+            <UserRoute>
+              <Layout>
+                <Transfer />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/card-tracking"
-        element={
-          <UserRoute>
-            <Layout>
-              <CardTracking />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/profile"
+          element={
+            <UserRoute>
+              <Layout>
+                <Profile />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/card-tracking/:id"
-        element={
-          <UserRoute>
-            <Layout>
-              <CardTracking />
-            </Layout>
-          </UserRoute>
-        }
-      />
+        <Route
+          path="/chat"
+          element={
+            <UserRoute>
+              <Layout>
+                <ClientChatPage />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      {/* ======================================================
-          ADMIN APPLICATION (AUTHENTICATED)
-          ====================================================== */}
+        <Route
+          path="/support"
+          element={
+            <UserRoute>
+              <Layout>
+                <Support />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/admin"
-        element={
-          <AdminRoute>
-            <AdminRootRedirect />
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/security"
+          element={
+            <UserRoute>
+              <Layout>
+                <Security />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/admin/accounts"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <AccountsList />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/card-tracking"
+          element={
+            <UserRoute>
+              <Layout>
+                <CardTracking />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/admin/accounts/:accountId"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <AccountDetails />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/card-tracking/:id"
+          element={
+            <UserRoute>
+              <Layout>
+                <CardTracking />
+              </Layout>
+            </UserRoute>
+          }
+        />
 
-      <Route
-        path="/admin/users"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <UsersList />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        {/* ====================================================
+            ADMIN APPLICATION
+            ==================================================== */}
 
-      <Route
-        path="/admin/users/:userId"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <UserDetail />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminRootRedirect />
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/transactions"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <TransactionsList />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/accounts"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <AccountsList />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/transactions/:txId"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <TransactionDetail />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/accounts/:accountId"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <AccountDetails />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/pending-transactions"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <PendingTransactions />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/users"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <UsersList />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/chat"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <AdminChatPage />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/users/:userId"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <UserDetail />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/support"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <Support />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/transactions"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <TransactionsList />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/card"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <AdminCardTracking />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/transactions/:txId"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <TransactionDetail />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/card-tracking/:id"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <CardTracking />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/pending-transactions"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <PendingTransactions />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route
-        path="/admin/tokens"
-        element={
-          <AdminRoute>
-            <AdminLayout>
-              <GenerateRegisterToken />
-            </AdminLayout>
-          </AdminRoute>
-        }
-      />
+        <Route
+          path="/admin/chat"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <AdminChatPage />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      {/* ======================================================
-          TEST TOOLS
-          ====================================================== */}
+        <Route
+          path="/admin/support"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <Support />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route path="/test" element={<Test />} />
+        <Route
+          path="/admin/card"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <AdminCardTracking />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      {/* ======================================================
-          404
-          ====================================================== */}
+        <Route
+          path="/admin/card-tracking/:id"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <CardTracking />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
 
-      <Route path="*" element={<NotFound />} />
-    </Routes>
+        <Route
+          path="/admin/tokens"
+          element={
+            <AdminRoute>
+              <AdminLayout>
+                <GenerateRegisterToken />
+              </AdminLayout>
+            </AdminRoute>
+          }
+        />
+
+        {/* ====================================================
+            TEST TOOLS
+            ==================================================== */}
+
+        <Route
+          path="/test"
+          element={<Test />}
+        />
+
+        {/* ====================================================
+            404
+            ==================================================== */}
+
+        <Route
+          path="*"
+          element={<NotFound />}
+        />
+
+      </Routes>
+    </>
   );
 }
 
@@ -586,10 +682,15 @@ function AppRoutes() {
 function App() {
   return (
     <Router>
+
       <ScrollToTop />
+
       <AuthProvider>
+
         <SocketProvider>
+
           <ChatProvider>
+
             <Toaster
               position="top-right"
               richColors
@@ -598,10 +699,15 @@ function App() {
                 duration: 4000,
               }}
             />
+
             <AppRoutes />
+
           </ChatProvider>
+
         </SocketProvider>
+
       </AuthProvider>
+
     </Router>
   );
 }

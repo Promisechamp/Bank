@@ -17,7 +17,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Smartphone,
-  Settings,
+  LockKeyhole,
   HelpCircle,
   MoreHorizontal,
   Menu,
@@ -295,12 +295,12 @@ const Layout = ({ children }) => {
                     <button
                       onClick={() => {
                         setIsProfileOpen(false);
-                        navigate('/profile');
+                        navigate('/security');
                       }}
                       className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                     >
-                      <Settings className="h-4 w-4 text-gray-400" />
-                      Account settings
+                      <LockKeyhole className="h-4 w-4 text-gray-400" />
+                      Security config
                     </button>
                     <button
                       onClick={() => {
@@ -371,10 +371,10 @@ const Layout = ({ children }) => {
                   </div>
                 </div>
                 <button
-                  onClick={() => navigate('/profile')}
+                  onClick={() => navigate('/security')}
                   className="mt-2 flex items-center gap-1 text-[10px] font-semibold text-primary-600 hover:text-primary-700"
                 >
-                  Security settings <ChevronRight className="h-3 w-3" />
+                  Security config <ChevronRight className="h-3 w-3" />
                 </button>
               </div>
             </div>
