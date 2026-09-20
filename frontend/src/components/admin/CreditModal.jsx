@@ -81,6 +81,27 @@ const CreditModal = ({
     [accounts, formData.account_id]
   );
 
+  /* ✅ NEW: derive account metadata for the transaction */
+  const selectedAccountMeta = useMemo(() => {
+    if (!selectedAccount) return null;
+
+    return {
+      accountId: selectedAccount.id,
+      accountNumber: selectedAccount.account_number || null,
+      accountType: selectedAccount.account_type || null,
+      swiftCode:
+        selectedAccount.swift_code ||
+        selectedAccount.swiftCode ||
+        null,
+      routingNumber:
+        selectedAccount.routing_number ||
+        selectedAccount.routingNumber ||
+        null,
+      currency: selectedAccount.currency || null,
+      accountStatus: selectedAccount.status || null,
+    };
+  }, [selectedAccount]);
+
   const amountNumber = Number.parseFloat(formData.amount);
   const hasAmount =
     Number.isFinite(amountNumber) && amountNumber > 0;
@@ -135,117 +156,130 @@ const CreditModal = ({
   };
 
   const handleSubmit = async (event) => {
-  event.preventDefault();
+    event.preventDefault();
 
-  const validationError = validate();
+    const validationError = validate();
 
-  if (validationError) {
-    setError(validationError);
-    return;
-  }
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
-  if (!user?.id) {
-    setError('Unable to identify the selected user.');
-    return;
-  }
+    if (!user?.id) {
+      setError('Unable to identify the selected user.');
+      return;
+    }
 
-  setLoading(true);
-  setError('');
+    // ✅ Safety: ensure we still have the account meta
+    if (!selectedAccountMeta) {
+      setError('Please select a valid destination account.');
+      return;
+    }
 
-  try {
-    // =========================================================
-    // CREATE CREDIT
-    // =========================================================
+    setLoading(true);
+    setError('');
 
-    const response = await transactionsAPI.adminCredit({
-      userId: user.id,
-      accountId: formData.account_id,
-      amount: amountNumber,
-      description: formData.description.trim(),
-      date: formData.date,
-      sendAlert: formData.sendAlert,
+    try {
+      // =========================================================
+      // CREATE CREDIT
+      // =========================================================
 
-      // Compatibility fields
-      senderName: formData.senderName.trim(),
-      senderBank: formData.senderBank.trim(),
-      senderAccountNo: formData.senderAccountNo.trim(),
+      const response = await transactionsAPI.adminCredit({
+        userId: user.id,
+        accountId: formData.account_id,
+        amount: amountNumber,
+        description: formData.description.trim(),
+        date: formData.date,
+        sendAlert: formData.sendAlert,
 
-      // Receipt metadata
-      metadata: {
+        // Compatibility fields
         senderName: formData.senderName.trim(),
         senderBank: formData.senderBank.trim(),
         senderAccountNo: formData.senderAccountNo.trim(),
-        paymentMethod: formData.paymentMethod,
-        channel: formData.channel,
-        description: formData.description.trim()
+
+        // Receipt + account metadata
+        metadata: {
+          // Sender / receipt info
+          senderName: formData.senderName.trim(),
+          senderBank: formData.senderBank.trim(),
+          senderAccountNo: formData.senderAccountNo.trim(),
+          paymentMethod: formData.paymentMethod,
+          channel: formData.channel,
+          description: formData.description.trim(),
+
+          // ✅ Destination account details
+          accountId: selectedAccountMeta.accountId,
+          accountNumber: selectedAccountMeta.accountNumber,
+          accountType: selectedAccountMeta.accountType,
+          swiftCode: selectedAccountMeta.swiftCode,
+          routingNumber: selectedAccountMeta.routingNumber,
+          currency: selectedAccountMeta.currency,
+          accountStatus: selectedAccountMeta.accountStatus,
+        },
+      });
+
+      console.log('Admin credit response:', response);
+
+      // =========================================================
+      // CREDIT SUCCESS
+      // =========================================================
+
+      toast.success(
+        `Credited ${formatCurrency(amountNumber)} to ${
+          user.full_name
+        }`
+      );
+
+      // =========================================================
+      // CLOSE/RESET IMMEDIATELY
+      //
+      // Do NOT wait for onSuccess() before removing the spinner.
+      // =========================================================
+
+      setLoading(false);
+
+      setFormData(
+        getInitialForm(selectedAccountId)
+      );
+
+      onClose();
+
+      // =========================================================
+      // REFRESH DATA AFTER SUCCESS
+      //
+      // This is intentionally not awaited.
+      // A refresh failure must NOT make the successful credit
+      // appear to have failed.
+      // =========================================================
+
+      if (onSuccess) {
+        Promise.resolve()
+          .then(() => onSuccess())
+          .catch((refreshError) => {
+            console.error(
+              'Credit succeeded, but account refresh failed:',
+              refreshError
+            );
+          });
       }
-    });
 
-    console.log('Admin credit response:', response);
+    } catch (err) {
+      console.error(
+        'Credit request failed:',
+        err
+      );
 
-    // =========================================================
-    // CREDIT SUCCESS
-    // =========================================================
+      setError(
+        err?.response?.data?.error ||
+        err?.response?.data?.message ||
+        err?.error ||
+        err?.message ||
+        'Failed to credit account. Please try again.'
+      );
 
-    toast.success(
-      `Credited ${formatCurrency(amountNumber)} to ${
-        user.full_name
-      }`
-    );
-
-    // =========================================================
-    // CLOSE/RESET IMMEDIATELY
-    //
-    // Do NOT wait for onSuccess() before removing the spinner.
-    // =========================================================
-
-    setLoading(false);
-
-    setFormData(
-      getInitialForm(selectedAccountId)
-    );
-
-    onClose();
-
-    // =========================================================
-    // REFRESH DATA AFTER SUCCESS
-    //
-    // This is intentionally not awaited.
-    // A refresh failure must NOT make the successful credit
-    // appear to have failed.
-    // =========================================================
-
-    if (onSuccess) {
-      Promise.resolve()
-        .then(() => onSuccess())
-        .catch((refreshError) => {
-          console.error(
-            'Credit succeeded, but account refresh failed:',
-            refreshError
-          );
-        });
+      setLoading(false);
     }
-
-  } catch (err) {
-    console.error(
-      'Credit request failed:',
-      err
-    );
-
-    setError(
-      err?.response?.data?.error ||
-      err?.response?.data?.message ||
-      err?.error ||
-      err?.message ||
-      'Failed to credit account. Please try again.'
-    );
-
-    setLoading(false);
-  }
-};
-
-
-
+  };
 
   const handleClose = () => {
     if (loading) return;
@@ -391,6 +425,46 @@ const CreditModal = ({
                 <span className="shrink-0 text-sm font-bold text-gray-900">
                   {formatCurrency(selectedAccount.balance)}
                 </span>
+              </div>
+            )}
+
+            {/* ✅ NEW: show captured account metadata */}
+            {(selectedAccount?.account_type ||
+              selectedAccount?.swift_code ||
+              selectedAccount?.routing_number) && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {selectedAccount?.account_type && (
+                  <div className="rounded-xl border border-gray-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      Account type
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold capitalize text-gray-800">
+                      {selectedAccount.account_type}
+                    </p>
+                  </div>
+                )}
+
+                {selectedAccount?.swift_code && (
+                  <div className="rounded-xl border border-gray-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      SWIFT
+                    </p>
+                    <p className="mt-0.5 font-mono text-xs font-semibold text-gray-800">
+                      {selectedAccount.swift_code}
+                    </p>
+                  </div>
+                )}
+
+                {selectedAccount?.routing_number && (
+                  <div className="col-span-2 rounded-xl border border-gray-100 bg-white px-3 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+                      Routing number
+                    </p>
+                    <p className="mt-0.5 font-mono text-xs font-semibold text-gray-800">
+                      {selectedAccount.routing_number}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
           </section>

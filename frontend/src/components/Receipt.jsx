@@ -378,6 +378,32 @@ const ImageReceipt = ({
     null;
 
   /* --------------------------------------------------------------
+     ✅ NEW: ACCOUNT BANKING DETAILS
+     (account type, SWIFT code, routing number)
+     — with backward-compat fallbacks
+  -------------------------------------------------------------- */
+
+  const accountType =
+    transaction.accounts?.account_type ||
+    metadata.accountType ||
+    metadata.account_type ||
+    null;
+
+  const swiftCode =
+    transaction.accounts?.swift_code ||
+    transaction.accounts?.swiftCode ||
+    metadata.swiftCode ||
+    metadata.swift_code ||
+    null;
+
+  const routingNumber =
+    transaction.accounts?.routing_number ||
+    transaction.accounts?.routingNumber ||
+    metadata.routingNumber ||
+    metadata.routing_number ||
+    null;
+
+  /* --------------------------------------------------------------
      DESCRIPTION / TYPE / TITLE
   -------------------------------------------------------------- */
 
@@ -686,6 +712,9 @@ const partyLabel = (
 
   /* --------------------------------------------------------------
      EXTRA DETAILS GRID
+     ✅ NEW: account type, SWIFT, routing injected at high priority
+     (positions 4/5/6) so they render inside the existing 2-column
+     grid without changing its total height (slice still caps at 8).
   -------------------------------------------------------------- */
 
   const extraDetails = [
@@ -700,6 +729,20 @@ const partyLabel = (
     {
       label: 'Payment method',
       value: paymentMethod,
+    },
+    {
+      label: 'Account type',
+      value: accountType,
+    },
+    {
+      label: 'SWIFT code',
+      value: swiftCode,
+      mono: true,
+    },
+    {
+      label: 'Routing number',
+      value: routingNumber,
+      mono: true,
     },
     {
       label: 'Category',
@@ -2186,6 +2229,32 @@ const Receipt = ({
     metadata.adminNote ||
     null;
 
+  /* --------------------------------------------------------------
+     ✅ NEW: ACCOUNT BANKING DETAILS
+     (account type, SWIFT code, routing number)
+     — with backward-compat fallbacks
+  -------------------------------------------------------------- */
+
+  const accountType =
+    transaction.accounts?.account_type ||
+    metadata.accountType ||
+    metadata.account_type ||
+    null;
+
+  const swiftCode =
+    transaction.accounts?.swift_code ||
+    transaction.accounts?.swiftCode ||
+    metadata.swiftCode ||
+    metadata.swift_code ||
+    null;
+
+  const routingNumber =
+    transaction.accounts?.routing_number ||
+    transaction.accounts?.routingNumber ||
+    metadata.routingNumber ||
+    metadata.routing_number ||
+    null;
+
   return (
     <>
       {/* ============================================================
@@ -2689,10 +2758,17 @@ const Receipt = ({
             )}
 
           {/* ======================================================
-              ACCOUNT
+              ACCOUNT DETAILS
+              ✅ NEW: now also shows account type, SWIFT code,
+              and routing number when available. Section renders
+              even if transaction.accounts is missing, as long as
+              any of the new fields exist.
           ====================================================== */}
 
-          {transaction.accounts && (
+          {(transaction.accounts ||
+            accountType ||
+            swiftCode ||
+            routingNumber) && (
             <Section
               eyebrow="Account"
               title="Account details"
@@ -2702,7 +2778,7 @@ const Receipt = ({
                 label="Account number"
                 value={
                   transaction.accounts
-                    .account_number
+                    ?.account_number
                     ? formatAccountNumber(
                         transaction.accounts
                           .account_number
@@ -2717,9 +2793,30 @@ const Receipt = ({
                 label="Account holder"
                 value={
                   transaction.accounts
-                    .profiles?.full_name
+                    ?.profiles?.full_name
                 }
                 icon={User}
+              />
+
+              <DetailRow
+                label="Account type"
+                value={accountType}
+                icon={Building2}
+                valueClass="capitalize"
+              />
+
+              <DetailRow
+                label="SWIFT code"
+                value={swiftCode}
+                icon={CreditCard}
+                mono
+              />
+
+              <DetailRow
+                label="Routing number"
+                value={routingNumber}
+                icon={CreditCard}
+                mono
               />
             </Section>
           )}
