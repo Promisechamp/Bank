@@ -942,6 +942,184 @@ const adminDeleteAccount = async (
 };
 
 
+
+
+
+// ============================================================
+// ADMIN: UPDATE ACCOUNT BALANCE
+// ============================================================
+const adminUpdateAccountBalance = async (req, res, next) => {
+  try {
+    const { accountId } = req.params;
+    const {
+      balance,       // new balance (number) — optional if reset=true
+      reset,         // if true, force balance to 0
+      sendAlert,     // notify the user
+      reason         // optional note for notification / log
+    } = req.body;
+
+    // ----------------------------------------------------------
+    // Determine target balance
+    // ----------------------------------------------------------
+    let newBalance;
+
+    if (reset === true || reset === 'true') {
+      newBalance = 0;
+    } else if (balance !== undefined && balance !== null && balance !== '') {
+      newBalance = parseFloat(balance);
+      if (isNaN(newBalance) || newBalance < 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Balance must be a non-negative number'
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide a numeric "balance" or set "reset": true to zero it out'
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Fetch account (with profile for notification)
+    // ----------------------------------------------------------
+    const { data: account, error: fetchError } = await supabase
+      .from('accounts')
+      .select(`
+        *,
+        profiles:user_id (
+          id,
+          full_name,
+          email
+        )
+      `)
+      .eq('id', accountId)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: 'Account not found'
+        });
+      }
+      throw fetchError;
+    }
+
+    const oldBalance = parseFloat(account.balance) || 0;
+    const delta = newBalance - oldBalance;
+
+    // ----------------------------------------------------------
+    // No-op check
+    // ----------------------------------------------------------
+    if (delta === 0) {
+      return res.json({
+        success: true,
+        message: 'Balance already set to the requested value',
+        account,
+        old_balance: oldBalance,
+        new_balance: newBalance
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Update balance
+    // ----------------------------------------------------------
+    const { data: updated, error: updateError } = await supabase
+      .from('accounts')
+      .update({
+        balance: newBalance,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', accountId)
+      .select(`
+        *,
+        profiles:user_id (
+          id,
+          full_name,
+          email,
+          phone,
+          address,
+          role,
+          status,
+          profile_image
+        )
+      `)
+      .single();
+
+    if (updateError) {
+      console.error('Balance update error:', updateError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to update account balance'
+      });
+    }
+
+    // ----------------------------------------------------------
+    // Optional: record an adjustment transaction for audit trail
+    // (only when there is a real change)
+    // ----------------------------------------------------------
+    const reference =
+      'ADJ-' +
+      Date.now().toString(36).toUpperCase() +
+      '-' +
+      Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const txType = delta > 0 ? 'credit' : 'debit';
+    const absDelta = Math.abs(delta);
+
+    const { error: txError } = await supabase
+      .from('transactions')
+      .insert([{
+        account_id: accountId,
+        transaction_type: txType,
+        amount: absDelta,
+        description:
+          reason ||
+          (newBalance === 0
+            ? 'Administrative balance reset to zero'
+            : `Administrative balance adjustment`),
+        reference_id: reference,
+        status: 'completed',
+        metadata: {
+          adminAdjustment: true,
+          adjustedBy: req.user?.id || null,
+          adjustedAt: new Date().toISOString(),
+          oldBalance,
+          newBalance,
+          delta,
+          reason: reason || null
+        }
+      }]);
+
+    if (txError) {
+      console.warn('⚠️ Adjustment transaction log failed:', txError);
+    }
+
+
+    // ----------------------------------------------------------
+    // Response
+    // ----------------------------------------------------------
+    return res.json({
+      success: true,
+      message:
+        newBalance === 0
+          ? `Balance reset to 0 for account ${account.account_number}`
+          : `Balance updated to ${newBalance.toFixed(2)} for account ${account.account_number}`,
+      account: updated,
+      old_balance: oldBalance,
+      new_balance: newBalance,
+      delta,
+      reference
+    });
+
+  } catch (error) {
+    console.error('Admin Update Account Balance Error:', error);
+    next(error);
+  }
+};
+
+
 // ============================================================
 // EXPORTS
 // ============================================================
@@ -956,5 +1134,6 @@ module.exports = {
   adminGetAccountById,
   adminGetAllAccounts,
   adminUpdateAccountStatus,
-  adminDeleteAccount
+  adminDeleteAccount,
+		adminUpdateAccountBalance,
 };

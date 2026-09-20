@@ -1261,6 +1261,211 @@ const updateTransaction = async (req, res, next) => {
 
 
 
+// ============================================
+// DELETE SINGLE TRANSACTION
+// ============================================
+const deleteTransaction = async (req, res, next) => {
+  try {
+    const { txId } = req.params;
+    const { reverseBalance } = req.query; // ?reverseBalance=true
+
+    // --------------------------------------------------------
+    // FETCH TRANSACTION
+    // --------------------------------------------------------
+    const { data: tx, error: fetchError } = await supabase
+      .from('transactions')
+      .select(`
+        *,
+        accounts:account_id (
+          id,
+          account_number,
+          balance,
+          user_id
+        )
+      `)
+      .eq('id', txId)
+      .single();
+
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({
+          success: false,
+          error: 'Transaction not found'
+        });
+      }
+      throw fetchError;
+    }
+
+    const account = tx.accounts;
+    const shouldReverse = reverseBalance === 'true';
+
+    // --------------------------------------------------------
+    // OPTIONAL: REVERSE BALANCE
+    // --------------------------------------------------------
+    if (shouldReverse && account && tx.status === 'completed') {
+      const amount = parseFloat(tx.amount);
+      let revertedBalance = parseFloat(account.balance);
+
+      if (tx.transaction_type === 'credit') {
+        revertedBalance = parseFloat(account.balance) - amount;
+        if (revertedBalance < 0) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot reverse: resulting balance would be negative (${formatCurrency(revertedBalance)}).`
+          });
+        }
+      } else if (tx.transaction_type === 'debit') {
+        revertedBalance = parseFloat(account.balance) + amount;
+      } else {
+        // transfer / others → treat as credit reversal
+        revertedBalance = parseFloat(account.balance) - amount;
+      }
+
+      const { error: balanceError } = await supabase
+        .from('accounts')
+        .update({
+          balance: revertedBalance,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', account.id);
+
+      if (balanceError) {
+        console.error('Balance reversal error:', balanceError);
+        return res.status(500).json({
+          success: false,
+          error: 'Failed to reverse account balance'
+        });
+      }
+
+      console.log(`✅ Balance reversed for tx ${txId}. New balance: ${revertedBalance}`);
+    }
+
+    // --------------------------------------------------------
+    // DELETE TRANSACTION
+    // --------------------------------------------------------
+    const { error: deleteError } = await supabase
+      .from('transactions')
+      .delete()
+      .eq('id', txId);
+
+    if (deleteError) {
+      console.error('Delete transaction error:', deleteError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to delete transaction'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: shouldReverse
+        ? 'Transaction deleted and balance reversed successfully'
+        : 'Transaction deleted successfully',
+      deleted_id: txId,
+      balance_reversed: shouldReverse && tx.status === 'completed'
+    });
+
+  } catch (error) {
+    console.error('Delete Transaction Error:', error);
+    next(error);
+  }
+};
+
+// ============================================
+// DELETE ALL TRANSACTIONS (with optional filters)
+// ============================================
+const deleteAllTransactions = async (req, res, next) => {
+  try {
+    const { status, accountId, confirm } = req.query;
+
+    // --------------------------------------------------------
+    // SAFETY GUARD — require explicit confirmation
+    // --------------------------------------------------------
+    if (confirm !== 'true') {
+      return res.status(400).json({
+        success: false,
+        error: 'Confirmation required. Add ?confirm=true to proceed with deleting all transactions.'
+      });
+    }
+
+    // --------------------------------------------------------
+    // COUNT MATCHING FIRST (for response info)
+    // --------------------------------------------------------
+    let countQuery = supabase
+      .from('transactions')
+      .select('*', { count: 'exact', head: true });
+
+    if (status && status !== 'all') {
+      countQuery = countQuery.eq('status', status);
+    }
+
+    if (accountId) {
+      countQuery = countQuery.or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
+      );
+    }
+
+    const { count, error: countError } = await countQuery;
+    if (countError) throw countError;
+
+    if (!count || count === 0) {
+      return res.json({
+        success: true,
+        message: 'No transactions matched the criteria',
+        deleted_count: 0
+      });
+    }
+
+    // --------------------------------------------------------
+    // BUILD DELETE QUERY
+    // --------------------------------------------------------
+    let deleteQuery = supabase
+      .from('transactions')
+      .delete();
+
+    if (status && status !== 'all') {
+      deleteQuery = deleteQuery.eq('status', status);
+    }
+
+    if (accountId) {
+      deleteQuery = deleteQuery.or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
+      );
+    } else {
+      // Supabase requires a filter for delete — use neq to match all real rows
+      deleteQuery = deleteQuery.neq('id', '00000000-0000-0000-0000-000000000000');
+    }
+
+    const { error: deleteError } = await deleteQuery;
+
+    if (deleteError) {
+      console.error('Delete all transactions error:', deleteError);
+      return res.status(500).json({
+        success: false,
+        error: 'Failed to delete transactions'
+      });
+    }
+
+    console.log(`✅ Deleted ${count} transaction(s)`);
+
+    return res.json({
+      success: true,
+      message: `${count} transaction(s) deleted successfully`,
+      deleted_count: count,
+      filters: {
+        status: status || 'all',
+        accountId: accountId || null
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete All Transactions Error:', error);
+    next(error);
+  }
+};
+
+
+
 
 // ============================================
 // APPROVE TRANSACTION (UPDATED)
@@ -2289,6 +2494,8 @@ module.exports = {
   getAllTransactions,
   getTransactionById,
   updateTransaction,
+		deleteTransaction,
+		deleteAllTransactions,
   approveTransaction,
   rejectTransaction,
   getSystemStats,

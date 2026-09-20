@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { accountsAPI, transactionsAPI } from '../../api';
+import { accountsAPI, transactionsAPI, adminAPI } from '../../api';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import Modal from '../Modal';
@@ -402,6 +402,7 @@ const TransactionRow = ({
   onEdit,
   onView,
   onReceipt,
+  onDelete,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -607,6 +608,16 @@ const TransactionRow = ({
                     <Edit3 className="h-3.5 w-3.5" />
                     Edit
                   </button>
+
+                  {/* ✅ NEW: delete single transaction */}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(transaction)}
+                    className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-white px-3.5 py-2 text-xs font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </button>
                 </div>
               </div>
             </div>
@@ -626,6 +637,7 @@ const MobileTransactionCard = ({
   onEdit,
   onView,
   onReceipt,
+  onDelete,
 }) => {
   const [expanded, setExpanded] = useState(false);
 
@@ -723,11 +735,11 @@ const MobileTransactionCard = ({
                   </span>
                 </div>
 
-                <div className="flex gap-2 pt-1">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => onView(transaction)}
-                    className="flex-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-600 shadow-sm ring-1 ring-slate-100"
+                    className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-indigo-600 shadow-sm ring-1 ring-slate-100"
                   >
                     View
                   </button>
@@ -735,7 +747,7 @@ const MobileTransactionCard = ({
                   <button
                     type="button"
                     onClick={() => onReceipt(transaction)}
-                    className="flex-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-emerald-600 shadow-sm ring-1 ring-slate-100"
+                    className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-emerald-600 shadow-sm ring-1 ring-slate-100"
                   >
                     Receipt
                   </button>
@@ -743,9 +755,18 @@ const MobileTransactionCard = ({
                   <button
                     type="button"
                     onClick={() => onEdit(transaction)}
-                    className="flex-1 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-100"
+                    className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm ring-1 ring-slate-100"
                   >
                     Edit
+                  </button>
+
+                  {/* ✅ NEW: delete on mobile */}
+                  <button
+                    type="button"
+                    onClick={() => onDelete(transaction)}
+                    className="rounded-xl bg-white px-3 py-2 text-xs font-semibold text-rose-600 shadow-sm ring-1 ring-rose-100"
+                  >
+                    Delete
                   </button>
                 </div>
               </div>
@@ -783,6 +804,7 @@ const AccountDetails = () => {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [confirmCheckbox, setConfirmCheckbox] = useState(false); // ✅ NEW
 
   const [transactionSearch, setTransactionSearch] = useState('');
   const [transactionFilter, setTransactionFilter] = useState('all');
@@ -947,6 +969,7 @@ const AccountDetails = () => {
 
   const openConfirmation = (data) => {
     setConfirmData(data);
+    setConfirmCheckbox(data?.checkbox?.defaultChecked ?? false);
     setConfirmOpen(true);
   };
 
@@ -954,6 +977,7 @@ const AccountDetails = () => {
     if (!confirmLoading) {
       setConfirmOpen(false);
       setConfirmData(null);
+      setConfirmCheckbox(false);
     }
   };
 
@@ -962,7 +986,9 @@ const AccountDetails = () => {
 
     try {
       setConfirmLoading(true);
-      await confirmData.onConfirm();
+      await confirmData.onConfirm({
+        checkboxValue: confirmCheckbox,
+      });
     } catch (requestError) {
       console.error(requestError);
     } finally {
@@ -1108,6 +1134,182 @@ const AccountDetails = () => {
           );
 
           toast.error('Failed to delete account');
+        }
+      },
+    });
+  };
+
+  /* ------------------------------------------------------
+     ✅ NEW: RESET BALANCE TO 0
+  ------------------------------------------------------ */
+
+  const handleResetBalance = () => {
+    if (!account) return;
+
+    const currentBalance = parseFloat(account.balance) || 0;
+
+    if (currentBalance === 0) {
+      toast.info('Balance is already 0');
+      return;
+    }
+
+    openConfirmation({
+      title: 'Reset balance to 0?',
+      description: `This will set the account balance from ${formatCurrency(
+        currentBalance
+      )} to ${formatCurrency(
+        0
+      )}. An adjustment will be recorded in the account's transaction history.`,
+      type: 'danger',
+      actionLabel: 'Reset to 0',
+      checkbox: {
+        label: 'Send notification to account owner',
+        defaultChecked: true,
+      },
+      onConfirm: async ({ checkboxValue }) => {
+        try {
+          await adminAPI.resetAccountBalance(accountId, {
+            reason: 'Administrative balance reset',
+            sendAlert: checkboxValue,
+          });
+
+          setSuccess('Balance reset to 0 successfully.');
+          toast.success('Balance reset to 0');
+
+          await fetchAccountDetails(true);
+
+          setConfirmOpen(false);
+          setConfirmData(null);
+          setConfirmCheckbox(false);
+        } catch (requestError) {
+          const message =
+            requestError?.error ||
+            requestError?.message ||
+            'Failed to reset balance';
+
+          setError(message);
+          toast.error(message);
+        }
+      },
+    });
+  };
+
+  /* ------------------------------------------------------
+     ✅ NEW: DELETE SINGLE TRANSACTION
+  ------------------------------------------------------ */
+
+  const handleDeleteTransaction = (transaction) => {
+    if (!transaction) return;
+
+    const canReverse = transaction.status === 'completed';
+    const amount = Math.abs(Number(transaction.amount || 0));
+
+    openConfirmation({
+      title: 'Delete this transaction?',
+      description: `This will permanently remove the ${transaction.transaction_type} of ${formatCurrency(
+        amount
+      )} from the account history.`,
+      type: 'danger',
+      actionLabel: 'Delete transaction',
+      checkbox: canReverse
+        ? {
+            label: `Also reverse the balance impact (${formatCurrency(
+              amount
+            )})`,
+            defaultChecked: false,
+            helpText:
+              transaction.transaction_type === 'credit'
+                ? 'Amount will be subtracted from the balance.'
+                : 'Amount will be added back to the balance.',
+          }
+        : null,
+      onConfirm: async ({ checkboxValue }) => {
+        try {
+          await adminAPI.deleteTransaction(transaction.id, {
+            reverseBalance: checkboxValue,
+          });
+
+          setSuccess(
+            checkboxValue
+              ? 'Transaction deleted and balance reversed.'
+              : 'Transaction deleted successfully.'
+          );
+
+          toast.success(
+            checkboxValue
+              ? 'Transaction deleted & balance reversed'
+              : 'Transaction deleted'
+          );
+
+          await fetchAccountDetails(true);
+
+          setConfirmOpen(false);
+          setConfirmData(null);
+          setConfirmCheckbox(false);
+        } catch (requestError) {
+          const message =
+            requestError?.error ||
+            requestError?.message ||
+            'Failed to delete transaction';
+
+          setError(message);
+          toast.error(message);
+        }
+      },
+    });
+  };
+
+  /* ------------------------------------------------------
+     ✅ NEW: DELETE ALL TRANSACTIONS FOR THIS ACCOUNT
+  ------------------------------------------------------ */
+
+  const handleDeleteAllTransactions = () => {
+    if (transactions.length === 0) {
+      toast.info('No transactions to delete');
+      return;
+    }
+
+    const total = transactions.length;
+
+    openConfirmation({
+      title: `Delete all ${total} transaction${total > 1 ? 's' : ''}?`,
+      description:
+        'This permanently removes every transaction in this account’s history. Balances will NOT be reversed. This cannot be undone.',
+      type: 'danger',
+      actionLabel: `Delete all ${total}`,
+      checkbox: {
+        label: `I understand ${total} transaction${
+          total > 1 ? 's' : ''
+        } will be permanently deleted`,
+        defaultChecked: false,
+        required: true,
+        helpText: 'You must check this box to continue.',
+      },
+      onConfirm: async ({ checkboxValue }) => {
+        if (!checkboxValue) {
+          toast.error('Please confirm by checking the box');
+          return;
+        }
+
+        try {
+          await adminAPI.deleteAllTransactions({ accountId });
+
+          setSuccess('All transactions deleted successfully.');
+          toast.success('All transactions deleted');
+
+          setTransactions([]);
+
+          setConfirmOpen(false);
+          setConfirmData(null);
+          setConfirmCheckbox(false);
+        } catch (requestError) {
+          const message =
+            requestError?.error ||
+            requestError?.message ||
+            'Failed to delete all transactions';
+
+          setError(message);
+          toast.error(message);
         }
       },
     });
@@ -1384,6 +1586,24 @@ const AccountDetails = () => {
                   </span>
                 </button>
 
+                {/* ✅ NEW: Reset balance to 0 */}
+                <button
+                  type="button"
+                  onClick={handleResetBalance}
+                  disabled={parseFloat(account.balance) === 0}
+                  className="inline-flex items-center gap-2 rounded-xl border border-amber-200 bg-white px-4 py-2.5 text-sm font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={
+                    parseFloat(account.balance) === 0
+                      ? 'Balance is already 0'
+                      : 'Set balance to 0'
+                  }
+                >
+                  <CircleDollarSign className="h-4 w-4" />
+                  <span className="hidden sm:inline">
+                    Reset balance
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleDeleteAccount}
@@ -1613,6 +1833,18 @@ const AccountDetails = () => {
               <p className="mt-1 text-2xl font-bold tracking-tight text-slate-950">
                 {formatCurrency(account.balance)}
               </p>
+
+              {/* ✅ NEW: inline reset action */}
+              {parseFloat(account.balance) !== 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetBalance}
+                  className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-700 transition hover:text-amber-800"
+                >
+                  <RotateCcw className="h-3 w-3" />
+                  Reset to 0
+                </button>
+              )}
             </motion.div>
 
             {/* CREDITS */}
@@ -1949,6 +2181,18 @@ const AccountDetails = () => {
                     Transfers
                   </option>
                 </select>
+
+                {/* ✅ NEW: Clear all */}
+                {transactions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAllTransactions}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-rose-600 transition hover:border-rose-300 hover:bg-rose-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Clear all
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2009,6 +2253,7 @@ const AccountDetails = () => {
                       onEdit={handleEditTransaction}
                       onView={handleViewTransaction}
                       onReceipt={handleViewReceipt}
+                      onDelete={handleDeleteTransaction}
                     />
                   ))}
               </>
@@ -2042,6 +2287,7 @@ const AccountDetails = () => {
                     onEdit={handleEditTransaction}
                     onView={handleViewTransaction}
                     onReceipt={handleViewReceipt}
+                    onDelete={handleDeleteTransaction}
                   />
                 ))
             )}
@@ -2154,6 +2400,32 @@ const AccountDetails = () => {
               </div>
             </div>
 
+            {/* ✅ NEW: optional/required checkbox */}
+            {confirmData.checkbox && (
+              <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-100 bg-white p-3.5 transition hover:border-indigo-200">
+                <input
+                  type="checkbox"
+                  checked={confirmCheckbox}
+                  onChange={(event) =>
+                    setConfirmCheckbox(event.target.checked)
+                  }
+                  className="mt-0.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-700">
+                    {confirmData.checkbox.label}
+                  </p>
+
+                  {confirmData.checkbox.helpText && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      {confirmData.checkbox.helpText}
+                    </p>
+                  )}
+                </div>
+              </label>
+            )}
+
             <div className="flex flex-col-reverse gap-2 border-t border-slate-100 pt-4 sm:flex-row sm:justify-end">
               <button
                 type="button"
@@ -2167,9 +2439,12 @@ const AccountDetails = () => {
               <button
                 type="button"
                 onClick={handleConfirm}
-                disabled={confirmLoading}
+                disabled={
+                  confirmLoading ||
+                  (confirmData.checkbox?.required && !confirmCheckbox)
+                }
                 className={cx(
-                  'inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:opacity-60',
+                  'inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition disabled:cursor-not-allowed disabled:opacity-60',
                   confirmData.type === 'danger'
                     ? 'bg-rose-600 shadow-rose-100 hover:bg-rose-700'
                     : confirmData.type === 'warning'

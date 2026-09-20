@@ -4,6 +4,7 @@ const {
   adminGetAccountById,
   adminUpdateAccountStatus,
   adminDeleteAccount,
+		adminUpdateAccountBalance,
 } = require('../controllers/accountController');
 const {
   getAllUsers,
@@ -16,13 +17,15 @@ const {
   getRegisterTokens,
   generateRegisterToken,
   revokeRegisterToken,
-  adminCredit,      // ← ADD THIS
-  adminDebit        // ← ADD THIS
+  adminCredit,
+  adminDebit,
 } = require('../controllers/adminController');
 const {
   getAllTransactions,
   getTransactionById,
   updateTransaction,
+		deleteTransaction,
+		deleteAllTransactions,
   approveTransaction,
   rejectTransaction,
 } = require('../controllers/adminController');
@@ -47,6 +50,7 @@ router.get('/accounts', adminGetAllAccounts);
 router.get('/accounts/:accountId', adminGetAccountById);
 router.patch('/accounts/:accountId/status', adminUpdateAccountStatus);
 router.delete('/accounts/:accountId', adminDeleteAccount);
+router.patch('/accounts/:accountId/balance', adminUpdateAccountBalance);
 
 // ============================================
 // TRANSACTIONS (admin)
@@ -54,6 +58,8 @@ router.delete('/accounts/:accountId', adminDeleteAccount);
 router.get('/transactions', getAllTransactions);
 router.get('/transactions/:txId', getTransactionById);
 router.patch('/transactions/:txId', updateTransaction);
+router.delete('/transactions/:txId', deleteTransaction);
+router.delete('/transactions', deleteAllTransactions);
 router.patch('/transactions/:txId/approve', approveTransaction);
 router.patch('/transactions/:txId/reject', rejectTransaction);
 

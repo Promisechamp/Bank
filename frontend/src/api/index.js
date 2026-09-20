@@ -118,45 +118,110 @@ export const transactionsAPI = {
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getLayoutStats: () => api.get('/admin/stats/layout'),
+
+  // ------------------------------------------------------------
+  // USERS
+  // ------------------------------------------------------------
   getAllUsers: () => api.get('/admin/users'),
   getUserById: (userId) => api.get(`/admin/users/${userId}`),
   updateUser: (userId, data) => api.put(`/admin/users/${userId}`, data),
-  updateUserStatus: (userId, status) => api.patch(`/admin/users/${userId}/status`, { status }),
+  updateUserStatus: (userId, status) =>
+    api.patch(`/admin/users/${userId}/status`, { status }),
+  deleteUser: (userId) => api.delete(`/admin/users/${userId}`), // ✅ if not already there
+
+  // ------------------------------------------------------------
+  // ACCOUNTS
+  // ------------------------------------------------------------
   getAllAccounts: () => api.get('/admin/accounts'),
   getAccountDetails: (accountId) => api.get(`/admin/accounts/${accountId}`),
-  updateAccountStatus: (accountId, status) => api.patch(`/admin/accounts/${accountId}/status`, { status }),
+  updateAccountStatus: (accountId, status) =>
+    api.patch(`/admin/accounts/${accountId}/status`, { status }),
+
+  // ✅ NEW: set balance to a specific value OR reset to 0
+  //    updateAccountBalance(id, 5000)  → sets balance to 5000
+  //    updateAccountBalance(id, null, { reset: true }) → resets to 0
+  //    Or just use resetAccountBalance(id) shorthand below
+  updateAccountBalance: (accountId, balance, extra = {}) =>
+    api.patch(`/admin/accounts/${accountId}/balance`, {
+      balance,
+      ...extra
+    }),
+
+  resetAccountBalance: (accountId, extra = {}) =>
+    api.patch(`/admin/accounts/${accountId}/balance`, {
+      reset: true,
+      ...extra
+    }),
+
+  // ------------------------------------------------------------
+  // TRANSACTIONS
+  // ------------------------------------------------------------
   getAllTransactions: (params) => api.get('/admin/transactions', { params }),
   getTransactionById: (txId) => api.get(`/admin/transactions/${txId}`),
-  approveTransaction: (txId) => api.patch(`/admin/transactions/${txId}/approve`),
-  rejectTransaction: (txId) => api.patch(`/admin/transactions/${txId}/reject`),
-		
-		generateRegisterToken: (expiresAt) => api.post('/admin/tokens/generate', { expiresAt }),
+  updateTransaction: (txId, data) =>
+    api.put(`/admin/transactions/${txId}`, data), // ✅ if not already there
+  approveTransaction: (txId) =>
+    api.patch(`/admin/transactions/${txId}/approve`),
+  rejectTransaction: (txId) =>
+    api.patch(`/admin/transactions/${txId}/reject`),
+
+  // ✅ NEW: delete a single transaction
+  //    deleteTransaction(txId)                      → delete only
+  //    deleteTransaction(txId, { reverseBalance: true }) → delete + reverse balance
+  deleteTransaction: (txId, { reverseBalance = false } = {}) =>
+    api.delete(`/admin/transactions/${txId}`, {
+      params: reverseBalance ? { reverseBalance: true } : {}
+    }),
+
+  // ✅ NEW: delete all transactions
+  //    deleteAllTransactions()                                  → ALL (requires confirm=true server-side)
+  //    deleteAllTransactions({ status: 'pending_review' })      → filtered by status
+  //    deleteAllTransactions({ accountId: '<uuid>' })           → filtered by account
+  deleteAllTransactions: ({ status, accountId } = {}) => {
+    const params = { confirm: true };
+    if (status && status !== 'all') params.status = status;
+    if (accountId) params.accountId = accountId;
+    return api.delete('/admin/transactions', { params });
+  },
+
+  // ------------------------------------------------------------
+  // REGISTER TOKENS
+  // ------------------------------------------------------------
+  generateRegisterToken: (expiresAt) =>
+    api.post('/admin/tokens/generate', { expiresAt }),
   getRegisterTokens: () => api.get('/admin/tokens'),
-  revokeRegisterToken: (token) => api.delete(`/admin/tokens/${token}`),
-		
+  revokeRegisterToken: (token) =>
+    api.delete(`/admin/tokens/${token}`),
 
-  adminCredit: (data) => api.post(`/admin/users/${data.userId}/credit`, {
-    accountId: data.accountId,
-    amount: data.amount,
-    description: data.description,
-    date: data.date,
-    sendAlert: data.sendAlert,
-    senderName: data.senderName,
-    senderBank: data.senderBank,
-    senderAccountNo: data.senderAccountNo
-  }),
+  // ------------------------------------------------------------
+  // CREDIT / DEBIT
+  // ------------------------------------------------------------
+  adminCredit: (data) =>
+    api.post(`/admin/users/${data.userId}/credit`, {
+      accountId: data.accountId,
+      amount: data.amount,
+      description: data.description,
+      date: data.date,
+      sendAlert: data.sendAlert,
+      senderName: data.senderName,
+      senderBank: data.senderBank,
+      senderAccountNo: data.senderAccountNo,
+      metadata: data.metadata   // ✅ pass through full metadata
+    }),
 
-  adminDebit: (data) => api.post(`/admin/users/${data.userId}/debit`, {
-    accountId: data.accountId,
-    amount: data.amount,
-    description: data.description,
-    note: data.note,
-    date: data.date,
-    sendAlert: data.sendAlert,
-    receiverName: data.receiverName,
-    receiverBank: data.receiverBank,
-    receiverAccountNo: data.receiverAccountNo
-  }),
+  adminDebit: (data) =>
+    api.post(`/admin/users/${data.userId}/debit`, {
+      accountId: data.accountId,
+      amount: data.amount,
+      description: data.description,
+      note: data.note,
+      date: data.date,
+      sendAlert: data.sendAlert,
+      receiverName: data.receiverName,
+      receiverBank: data.receiverBank,
+      receiverAccountNo: data.receiverAccountNo,
+      metadata: data.metadata   // ✅ pass through full metadata
+    }),
 };
 
 export const chatAPI = {
