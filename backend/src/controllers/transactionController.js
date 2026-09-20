@@ -2595,141 +2595,194 @@ const verifyPinAndComplete = async (
 // TRANSACTION HISTORY
 // ============================================================
 
-const getTransactionHistory = async (
-  req,
-  res,
-  next
-) => {
+const getTransactionHistory = async (req, res, next) => {
   try {
-    const {
-      accountId
-    } = req.params;
+    const userId = req.user?.id;
 
-    const {
-      limit = 50,
-      offset = 0
-    } = req.query;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required.'
+      });
+    }
 
-    const parsedLimit =
-      Math.min(
-        Math.max(
-          parseInt(limit, 10) || 50,
-          1
-        ),
-        100
-      );
+    const { accountId } = req.params;
 
-    const parsedOffset =
-      Math.max(
-        parseInt(offset, 10) || 0,
-        0
-      );
+    if (!accountId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Account ID is required.'
+      });
+    }
 
-    const {
-      data: account,
-      error: accountError
-    } = await supabase
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 20, 1),
+      100
+    );
+
+    const offset = Math.max(
+      parseInt(req.query.offset, 10) || 0,
+      0
+    );
+
+    // ============================================================
+    // VERIFY ACCOUNT BELONGS TO CURRENT USER
+    // ============================================================
+
+    const { data: account, error: accountError } = await supabase
       .from('accounts')
-      .select('id')
-      .eq(
-        'id',
-        accountId
-      )
-      .eq(
-        'user_id',
-        req.user.id
-      )
+      .select('id, user_id')
+      .eq('id', accountId)
       .maybeSingle();
 
     if (accountError) {
-      throw accountError;
+      console.error(
+        '[getTransactionHistory] Account lookup error:',
+        accountError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify account.'
+      });
     }
 
     if (!account) {
       return res.status(404).json({
         success: false,
-        error: 'Account not found.'
+        message: 'Account not found.'
       });
     }
 
-    const {
-      data: transactions,
-      error: txError
-    } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq(
-        'account_id',
-        accountId
-      )
-      .order(
-        'created_at',
-        {
-          ascending: false
-        }
-      )
-      .range(
-        parsedOffset,
-        parsedOffset +
-          parsedLimit -
-          1
-      );
-
-    if (txError) {
-      throw txError;
+    if (String(account.user_id) !== String(userId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'You do not have access to this account.'
+      });
     }
 
-    const {
-      count,
-      error: countError
-    } = await supabase
+    // ============================================================
+    // FETCH TRANSACTIONS
+    //
+    // A transfer is stored as ONE transaction:
+    //
+    // account_id             = sender
+    // counterparty_account   = receiver
+    //
+    // We determine debit/credit from the account viewing history.
+    // ============================================================
+
+    const { data: transactions, error: transactionError } = await supabase
       .from('transactions')
-      .select(
-        '*',
-        {
-          count:
-            'exact',
-          head:
-            true
-        }
+      .select('*')
+      .or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
       )
-      .eq(
-        'account_id',
-        accountId
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (transactionError) {
+      console.error(
+        '[getTransactionHistory] Transaction lookup error:',
+        transactionError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch transaction history.'
+      });
+    }
+
+    // ============================================================
+    // GET TOTAL COUNT
+    // ============================================================
+
+    const { count, error: countError } = await supabase
+      .from('transactions')
+      .select('id', {
+        count: 'exact',
+        head: true
+      })
+      .or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
       );
 
     if (countError) {
-      throw countError;
+      console.error(
+        '[getTransactionHistory] Count error:',
+        countError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to count transactions.'
+      });
     }
 
-    return res.json({
-      success:
-        true,
+    // ============================================================
+    // FORMAT TRANSACTIONS FOR THIS ACCOUNT
+    // ============================================================
 
-      transactions:
-        transactions || [],
+    const formattedTransactions = (transactions || []).map(
+      (transaction) => {
+        const isSender =
+          String(transaction.account_id) === String(accountId);
 
+        const isReceiver =
+          String(transaction.counterparty_account) === String(accountId);
+
+        let direction = 'unknown';
+        let transactionType = transaction.transaction_type;
+
+        if (isSender) {
+          direction = 'sent';
+          transactionType = 'debit';
+        } else if (isReceiver) {
+          direction = 'received';
+          transactionType = 'credit';
+        }
+
+        return {
+          ...transaction,
+
+          // Viewer-specific values
+          direction,
+          transaction_type: transactionType,
+
+          // Keep the original account relationships available
+          account_id: transaction.account_id,
+          counterparty_account: transaction.counterparty_account
+        };
+      }
+    );
+
+    // ============================================================
+    // RESPONSE
+    // ============================================================
+
+    return res.status(200).json({
+      success: true,
+      transactions: formattedTransactions,
       pagination: {
-        total:
-          count || 0,
-
-        limit:
-          parsedLimit,
-
-        offset:
-          parsedOffset
+        total: count || 0,
+        limit,
+        offset,
+        hasMore: offset + formattedTransactions.length < (count || 0)
       }
     });
-
   } catch (error) {
     console.error(
-      'Get Transaction History Error:',
+      '[getTransactionHistory] Unexpected error:',
       error
     );
 
-    next(error);
+    return next(error);
   }
 };
+
+
+
+
 
 // ============================================================
 // GET TRANSACTION BY REFERENCE

@@ -246,69 +246,106 @@ const AddUserContent = ({ onClose, onSuccess }) => {
   };
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
+  event.preventDefault();
 
-    setError('');
+  setError('');
 
-    if (
-      !formData.full_name ||
-      !formData.email ||
-      !formData.password
-    ) {
-      setError('Please complete all required fields.');
-      return;
+  if (
+    !formData.full_name?.trim() ||
+    !formData.email?.trim() ||
+    !formData.password
+  ) {
+    setError('Please complete all required fields.');
+    return;
+  }
+
+  if (formData.password !== formData.confirmPassword) {
+    setError('Passwords do not match.');
+    return;
+  }
+
+  if (formData.password.length < 6) {
+    setError('Password must be at least 6 characters.');
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const payload = {
+      email: formData.email.trim(),
+      password: formData.password,
+      full_name: formData.full_name.trim(),
+      phone: formData.phone?.trim() || '',
+      create_account: formData.createAccount,
+      account_type: formData.createAccount
+        ? formData.account_type
+        : undefined,
+    };
+
+    const response = await authAPI.register(payload);
+
+    if (!response?.success) {
+      throw new Error(
+        response?.error ||
+        response?.message ||
+        'Failed to create user'
+      );
     }
 
-    if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
+    // ---------------------------------------------
+    // USER CREATION SUCCEEDED
+    // ---------------------------------------------
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
+    toast.success(
+      formData.createAccount
+        ? `${formData.full_name} was created with a ${formData.account_type} account.`
+        : `${formData.full_name} was created successfully.`
+    );
 
-    setLoading(true);
+    // Close immediately after successful creation.
+    onClose();
 
-    try {
-      const payload = {
-        email: formData.email,
-        password: formData.password,
-        full_name: formData.full_name,
-        phone: formData.phone,
-        create_account: formData.createAccount,
-        account_type: formData.createAccount
-          ? formData.account_type
-          : undefined,
-      };
+    // Reset the form if needed.
+    setFormData(getInitialForm());
 
-      const response = await authAPI.register(payload);
+    // ---------------------------------------------
+    // REFRESH PARENT DATA
+    // Do NOT allow refresh failure to make the
+    // successful creation look like a failure.
+    // ---------------------------------------------
 
-      if (!response.success) {
-        throw new Error(
-          response.error || 'Failed to create user'
+    if (onSuccess) {
+      try {
+        await onSuccess();
+      } catch (refreshError) {
+        console.error(
+          'User created successfully, but list refresh failed:',
+          refreshError
         );
       }
-
-      toast.success(
-        formData.createAccount
-          ? `${formData.full_name} was created with a ${formData.account_type} account.`
-          : `${formData.full_name} was created successfully.`
-      );
-
-      await onSuccess?.();
-      onClose();
-    } catch (error) {
-      setError(
-        error?.error ||
-          error?.message ||
-          'Failed to create user'
-      );
-    } finally {
-      setLoading(false);
     }
-  };
+
+  } catch (error) {
+    console.error(
+      'Create User Error:',
+      error
+    );
+
+    setError(
+      error?.error ||
+      error?.message ||
+      'Failed to create user'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
+		
+		
+		
+		
+		
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">

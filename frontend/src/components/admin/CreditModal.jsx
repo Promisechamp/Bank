@@ -135,81 +135,117 @@ const CreditModal = ({
   };
 
   const handleSubmit = async (event) => {
-    event.preventDefault();
+  event.preventDefault();
 
-    const validationError = validate();
+  const validationError = validate();
 
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+  if (validationError) {
+    setError(validationError);
+    return;
+  }
 
-    if (!user?.id) {
-      setError('Unable to identify the selected user.');
-      return;
-    }
+  if (!user?.id) {
+    setError('Unable to identify the selected user.');
+    return;
+  }
 
-    setLoading(true);
-    setError('');
+  setLoading(true);
+  setError('');
 
-    try {
-      await transactionsAPI.adminCredit({
-        userId: user.id,
-        accountId: formData.account_id,
-        amount: amountNumber,
-        description: formData.description.trim(),
-        date: formData.date,
-        sendAlert: formData.sendAlert,
+  try {
+    // =========================================================
+    // CREATE CREDIT
+    // =========================================================
 
-        /*
-         * Keep these top-level fields for compatibility
-         * with your existing backend/controller.
-         */
+    const response = await transactionsAPI.adminCredit({
+      userId: user.id,
+      accountId: formData.account_id,
+      amount: amountNumber,
+      description: formData.description.trim(),
+      date: formData.date,
+      sendAlert: formData.sendAlert,
+
+      // Compatibility fields
+      senderName: formData.senderName.trim(),
+      senderBank: formData.senderBank.trim(),
+      senderAccountNo: formData.senderAccountNo.trim(),
+
+      // Receipt metadata
+      metadata: {
         senderName: formData.senderName.trim(),
         senderBank: formData.senderBank.trim(),
         senderAccountNo: formData.senderAccountNo.trim(),
-
-        /*
-         * Receipt metadata.
-         *
-         * These are the fields your Receipt.jsx can later read as:
-         *
-         * metadata.paymentMethod
-         * metadata.channel
-         */
-        metadata: {
-          senderName: formData.senderName.trim(),
-          senderBank: formData.senderBank.trim(),
-          senderAccountNo: formData.senderAccountNo.trim(),
-          paymentMethod: formData.paymentMethod,
-          channel: formData.channel,
-          description: formData.description.trim()
-        }
-      });
-
-      toast.success(
-        `Credited ${formatCurrency(amountNumber)} to ${
-          user.full_name
-        }`
-      );
-
-      if (onSuccess) {
-        await onSuccess();
+        paymentMethod: formData.paymentMethod,
+        channel: formData.channel,
+        description: formData.description.trim()
       }
+    });
 
-      onClose();
+    console.log('Admin credit response:', response);
 
-      setFormData(getInitialForm(selectedAccountId));
-    } catch (err) {
-      setError(
-        err?.error ||
-          err?.message ||
-          'Failed to credit account. Please try again.'
-      );
-    } finally {
-      setLoading(false);
+    // =========================================================
+    // CREDIT SUCCESS
+    // =========================================================
+
+    toast.success(
+      `Credited ${formatCurrency(amountNumber)} to ${
+        user.full_name
+      }`
+    );
+
+    // =========================================================
+    // CLOSE/RESET IMMEDIATELY
+    //
+    // Do NOT wait for onSuccess() before removing the spinner.
+    // =========================================================
+
+    setLoading(false);
+
+    setFormData(
+      getInitialForm(selectedAccountId)
+    );
+
+    onClose();
+
+    // =========================================================
+    // REFRESH DATA AFTER SUCCESS
+    //
+    // This is intentionally not awaited.
+    // A refresh failure must NOT make the successful credit
+    // appear to have failed.
+    // =========================================================
+
+    if (onSuccess) {
+      Promise.resolve()
+        .then(() => onSuccess())
+        .catch((refreshError) => {
+          console.error(
+            'Credit succeeded, but account refresh failed:',
+            refreshError
+          );
+        });
     }
-  };
+
+  } catch (err) {
+    console.error(
+      'Credit request failed:',
+      err
+    );
+
+    setError(
+      err?.response?.data?.error ||
+      err?.response?.data?.message ||
+      err?.error ||
+      err?.message ||
+      'Failed to credit account. Please try again.'
+    );
+
+    setLoading(false);
+  }
+};
+
+
+
 
   const handleClose = () => {
     if (loading) return;

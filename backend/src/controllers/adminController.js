@@ -657,13 +657,48 @@ const updateAccountStatus = async (req, res, next) => {
 
 const getAllTransactions = async (req, res, next) => {
   try {
-    const { limit = 100, offset = 0, status, accountId } = req.query;
+    const {
+      limit = 100,
+      offset = 0,
+      status,
+      accountId
+    } = req.query;
+
+    const parsedLimit =
+      Math.min(
+        Math.max(
+          parseInt(limit, 10) || 100,
+          1
+        ),
+        100
+      );
+
+    const parsedOffset =
+      Math.max(
+        parseInt(offset, 10) || 0,
+        0
+      );
+
+    // ========================================================
+    // TRANSACTIONS
+    // ========================================================
 
     let query = supabase
       .from('transactions')
       .select(`
         *,
-        accounts:account_id (
+        sender_account:account_id (
+          id,
+          account_number,
+          user_id,
+          profiles:user_id (
+            full_name,
+            email
+          )
+        ),
+        receiver_account:counterparty_account (
+          id,
+          account_number,
           user_id,
           profiles:user_id (
             full_name,
@@ -671,58 +706,213 @@ const getAllTransactions = async (req, res, next) => {
           )
         )
       `)
-      .order('created_at', { ascending: false })
-      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+      .order(
+        'created_at',
+        {
+          ascending: false
+        }
+      )
+      .range(
+        parsedOffset,
+        parsedOffset + parsedLimit - 1
+      );
 
-    if (status && status !== 'all') {
-      query = query.eq('status', status);
+    // ========================================================
+    // STATUS FILTER
+    // ========================================================
+
+    if (
+      status &&
+      status !== 'all'
+    ) {
+      query = query.eq(
+        'status',
+        status
+      );
     }
+
+    // ========================================================
+    // ACCOUNT FILTER
+    //
+    // Match both:
+    // account_id            = sender
+    // counterparty_account  = receiver
+    // ========================================================
+
     if (accountId) {
-      query = query.eq('account_id', accountId);
+      query = query.or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
+      );
     }
 
-    const { data: transactions, error } = await query;
-    if (error) throw error;
+    const {
+      data: transactions,
+      error
+    } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    // ========================================================
+    // ADD DIRECTION
+    // ========================================================
+
+    const formattedTransactions =
+      (transactions || []).map(
+        (transaction) => {
+
+          let direction = 'unknown';
+
+          if (accountId) {
+            if (
+              String(transaction.account_id) ===
+              String(accountId)
+            ) {
+              direction = 'sent';
+            } else if (
+              String(transaction.counterparty_account) ===
+              String(accountId)
+            ) {
+              direction = 'received';
+            }
+          }
+
+          return {
+            ...transaction,
+            direction
+          };
+        }
+      );
+
+    // ========================================================
+    // COUNT
+    // ========================================================
 
     let countQuery = supabase
       .from('transactions')
-      .select('*', { count: 'exact', head: true });
+      .select(
+        '*',
+        {
+          count: 'exact',
+          head: true
+        }
+      );
 
-    if (status && status !== 'all') {
-      countQuery = countQuery.eq('status', status);
+    if (
+      status &&
+      status !== 'all'
+    ) {
+      countQuery = countQuery.eq(
+        'status',
+        status
+      );
     }
+
     if (accountId) {
-      countQuery = countQuery.eq('account_id', accountId);
+      countQuery = countQuery.or(
+        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
+      );
     }
 
-    const { count, error: countError } = await countQuery;
-    if (countError) throw countError;
+    const {
+      count,
+      error: countError
+    } = await countQuery;
 
-    res.json({
+    if (countError) {
+      throw countError;
+    }
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
+    return res.json({
       success: true,
-      transactions,
+
+      transactions:
+        formattedTransactions,
+
       pagination: {
-        total: count,
-        limit: parseInt(limit),
-        offset: parseInt(offset),
-      },
+        total:
+          count || 0,
+
+        limit:
+          parsedLimit,
+
+        offset:
+          parsedOffset
+      }
     });
+
   } catch (error) {
-    console.error('Get All Transactions Error:', error);
+    console.error(
+      'Get All Transactions Error:',
+      error
+    );
+
     next(error);
   }
 };
 
-const getTransactionById = async (req, res, next) => {
-  try {
-    const { txId } = req.params;
 
-    const { data: transaction, error } = await supabase
+
+
+
+const getTransactionById = async (
+  req,
+  res,
+  next
+) => {
+  try {
+    const {
+      txId
+    } = req.params;
+
+    // ========================================================
+    // AUTHENTICATION
+    // ========================================================
+
+    if (!req.user?.id) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required.'
+      });
+    }
+
+    // ========================================================
+    // GET TRANSACTION
+    // ========================================================
+
+    const {
+      data: transaction,
+      error
+    } = await supabase
       .from('transactions')
       .select(`
         *,
-        accounts:account_id (
+        sender_account:account_id (
+          id,
           account_number,
+          account_type,
+          balance,
+          currency,
+          status,
+          user_id,
+          profiles:user_id (
+            full_name,
+            email,
+            phone
+          )
+        ),
+        receiver_account:counterparty_account (
+          id,
+          account_number,
+          account_type,
+          balance,
+          currency,
+          status,
           user_id,
           profiles:user_id (
             full_name,
@@ -731,32 +921,139 @@ const getTransactionById = async (req, res, next) => {
           )
         )
       `)
-      .eq('id', txId)
+      .eq(
+        'id',
+        txId
+      )
       .single();
 
+    // ========================================================
+    // NOT FOUND
+    // ========================================================
+
     if (error) {
-      if (error.code === 'PGRST116') {
+      if (
+        error.code === 'PGRST116'
+      ) {
         return res.status(404).json({
           success: false,
-          error: 'Transaction not found'
+          error: 'Transaction not found.'
         });
       }
+
       throw error;
     }
 
-    res.json({
+    // ========================================================
+    // VERIFY USER OWNS ONE SIDE OF THE TRANSACTION
+    // ========================================================
+
+    const senderUserId =
+      transaction.sender_account?.user_id;
+
+    const receiverUserId =
+      transaction.receiver_account?.user_id;
+
+    if (
+      senderUserId !== req.user.id &&
+      receiverUserId !== req.user.id
+    ) {
+      return res.status(403).json({
+        success: false,
+        error:
+          'You are not authorized to view this transaction.'
+      });
+    }
+
+    // ========================================================
+    // DETERMINE DIRECTION
+    // ========================================================
+
+    let direction = 'unknown';
+
+    if (
+      senderUserId === req.user.id
+    ) {
+      direction = 'sent';
+    } else if (
+      receiverUserId === req.user.id
+    ) {
+      direction = 'received';
+    }
+
+    // ========================================================
+    // RESPONSE
+    // ========================================================
+
+    return res.json({
       success: true,
-      transaction
+
+      transaction: {
+        ...transaction,
+
+        direction,
+
+        sender: {
+          accountId:
+            transaction.sender_account?.id || null,
+
+          accountNumber:
+            transaction.sender_account?.account_number || null,
+
+          name:
+            transaction.sender_account?.profiles?.full_name ||
+            null,
+
+          email:
+            transaction.sender_account?.profiles?.email ||
+            null,
+
+          phone:
+            transaction.sender_account?.profiles?.phone ||
+            null
+        },
+
+        receiver: {
+          accountId:
+            transaction.receiver_account?.id || null,
+
+          accountNumber:
+            transaction.receiver_account?.account_number || null,
+
+          name:
+            transaction.receiver_account?.profiles?.full_name ||
+            null,
+
+          email:
+            transaction.receiver_account?.profiles?.email ||
+            null,
+
+          phone:
+            transaction.receiver_account?.profiles?.phone ||
+            null
+        }
+      }
     });
+
   } catch (error) {
-    console.error('Get Transaction By ID Error:', error);
+    console.error(
+      'Get Transaction By ID Error:',
+      error
+    );
+
     next(error);
   }
 };
 
-// ============================================
-// UPDATE TRANSACTION (with balance adjustment)
-// ============================================
+
+
+
+
+
+
+
+
+
 // ============================================
 // UPDATE TRANSACTION (full — no type restrictions)
 // ============================================
@@ -1685,29 +1982,34 @@ const adminCredit = async (req, res, next) => {
     if (txError) throw txError;
 
     if (sendAlert) {
-      try {
-        const io = req.app.get('io');
-        await createAndSendNotification(
-          io,
-          userId,
-          'credit',
-          'Account Credited',
-          `Your account ${account.account_number} has been credited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.`,
-          reference,
-          {
-            userName,
-            accountNumber: account.account_number,
-            amount: formatCurrency(amountNum),
-            newBalance: formatCurrency(newBalance),
-            description: description || 'Credit transaction',
-            reference,
-          }
-        );
-      } catch (notifError) {
-        console.error('Notification/Email error (non-critical):', notifError);
-      }
-    }
+  const io = req.app.get('io');
 
+  Promise.resolve()
+    .then(() =>
+      createAndSendNotification(
+        io,
+        userId,
+        'credit',
+        'Account Credited',
+        `Your account ${account.account_number} has been credited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.`,
+        reference,
+        {
+          userName,
+          accountNumber: account.account_number,
+          amount: formatCurrency(amountNum),
+          newBalance: formatCurrency(newBalance),
+          description: description || 'Credit transaction',
+          reference,
+        }
+      )
+    )
+    .catch((notifError) => {
+      console.error(
+        'Background notification/email failed:',
+        notifError
+      );
+    });
+}
     res.json({
       success: true,
       message: `Credited ${formatCurrency(amountNum)} to account ${account.account_number}`,
@@ -1863,29 +2165,37 @@ const adminDebit = async (req, res, next) => {
     if (txError) throw txError;
 
     if (sendAlert) {
-      try {
-        const io = req.app.get('io');
-        await createAndSendNotification(
-          io,
-          userId,
-          'debit',
-          'Account Debited',
-          `Your account ${account.account_number} has been debited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.${note ? ` Note: ${note}` : ''}`,
+  const io = req.app.get('io');
+
+  Promise.resolve()
+    .then(() =>
+      createAndSendNotification(
+        io,
+        userId,
+        'debit',
+        'Account Debited',
+        `Your account ${account.account_number} has been debited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.${note ? ` Note: ${note}` : ''}`,
+        reference,
+        {
+          userName,
+          accountNumber: account.account_number,
+          amount: formatCurrency(amountNum),
+          newBalance: formatCurrency(newBalance),
+          description: description || 'Debit transaction',
+          note: note || '',
           reference,
-          {
-            userName,
-            accountNumber: account.account_number,
-            amount: formatCurrency(amountNum),
-            newBalance: formatCurrency(newBalance),
-            description: description || 'Debit transaction',
-            note: note || '',
-            reference,
-          }
-        );
-      } catch (notifError) {
-        console.error('Notification/Email error (non-critical):', notifError);
-      }
-    }
+        }
+      )
+    )
+    .catch((notifError) => {
+      console.error(
+        'Background notification/email failed:',
+        notifError
+      );
+    });
+}
+
+
 
     res.json({
       success: true,

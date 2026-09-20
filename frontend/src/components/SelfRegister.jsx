@@ -655,84 +655,148 @@ const SecureRegisterPage = () => {
   ============================================================ */
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    const errs = validateStep(2);
+  const errs = validateStep(2);
 
-    if (Object.keys(errs).length) {
-      setErrors(errs);
-      return;
+  if (Object.keys(errs).length) {
+    setErrors(errs);
+    return;
+  }
+
+  setGlobalError('');
+  setLoading(true);
+
+  try {
+    let profileImageUrl = '';
+
+    // =========================================================
+    // AVATAR UPLOAD
+    // =========================================================
+
+    if (avatarFile) {
+      try {
+        const tempId =
+          typeof crypto !== 'undefined' &&
+          typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : Date.now().toString(36);
+
+        const filePath = `avatars/${tempId}/profile.jpg`;
+
+        const {
+          error: uploadError
+        } = await supabase.storage
+          .from('avatars')
+          .upload(
+            filePath,
+            avatarFile,
+            {
+              upsert: true
+            }
+          );
+
+        if (uploadError) {
+          console.warn(
+            'Avatar upload failed:',
+            uploadError
+          );
+
+          toast.warning(
+            'Avatar upload failed, but registration will continue.'
+          );
+        } else {
+          const {
+            data: publicUrlData
+          } = supabase.storage
+            .from('avatars')
+            .getPublicUrl(filePath);
+
+          profileImageUrl =
+            publicUrlData?.publicUrl || '';
+        }
+
+      } catch (uploadError) {
+        console.warn(
+          'Avatar upload error:',
+          uploadError
+        );
+
+        toast.warning(
+          'Avatar upload failed, but registration will continue.'
+        );
+      }
     }
 
-    setGlobalError('');
-    setLoading(true);
+    // =========================================================
+    // REGISTER
+    // =========================================================
 
-    try {
-      let profileImageUrl = '';
-
-      // ✅ Upload avatar to Supabase Storage if selected
-      if (avatarFile) {
-        try {
-          // Generate a temporary user ID for the upload path
-          const tempId = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36);
-          const filePath = `avatars/${tempId}/profile.jpg`;
-
-          const { error: uploadError } = await supabase.storage
-            .from('avatars')
-            .upload(filePath, avatarFile, { upsert: true });
-
-          if (uploadError) {
-            console.warn('Avatar upload failed:', uploadError);
-            toast.warning('Avatar upload failed, but registration will continue');
-          } else {
-            const { data: { publicUrl } } = supabase.storage
-              .from('avatars')
-              .getPublicUrl(filePath);
-            profileImageUrl = publicUrl;
-          }
-        } catch (uploadErr) {
-          console.warn('Avatar upload error:', uploadErr);
-          toast.warning('Avatar upload failed, but registration will continue');
-        }
-      }
-
-      const response = await authAPI.selfRegister({
-        email: formData.email,
+    const response =
+      await authAPI.selfRegister({
+        email: formData.email.trim(),
         password: formData.password,
-        full_name: formData.full_name,
-        phone: formData.phone || undefined,
-        address: formData.address || undefined,
-        country: formData.country || undefined,
-        account_type: formData.account_type,
-        register_token: token,
-        profile_image: profileImageUrl, // ✅ Pass the uploaded URL
+        full_name: formData.full_name.trim(),
+        phone:
+          formData.phone?.trim() || undefined,
+        address:
+          formData.address?.trim() || undefined,
+        country:
+          formData.country?.trim() || undefined,
+        account_type:
+          formData.account_type,
+        register_token:
+          token,
+        profile_image:
+          profileImageUrl
       });
 
-      if (response.success) {
-        setSuccess(true);
-
-        toast.success(
-          avatarFile ? 'Account created with avatar! Redirecting to sign in…' : 'Account created! Redirecting to sign in…'
-        );
-
-        setTimeout(() => {
-          navigate('/login');
-        }, 2500);
-      } else {
-        setGlobalError(
-          response.error ||
-            'Registration failed. Please try again.'
-        );
-      }
-    } catch (err) {
-      setGlobalError(
-        err.message || 'Something went wrong'
+    if (!response?.success) {
+      throw new Error(
+        response?.error ||
+        response?.message ||
+        'Registration failed. Please try again.'
       );
-    } finally {
-      setLoading(false);
     }
-  };
 
+    // =========================================================
+    // REGISTRATION SUCCEEDED
+    // =========================================================
+
+    setSuccess(true);
+
+    toast.success(
+      avatarFile
+        ? 'Account created with avatar! Redirecting to sign in…'
+        : 'Account created! Redirecting to sign in…'
+    );
+
+    setTimeout(() => {
+      navigate('/login');
+    }, 2500);
+
+  } catch (err) {
+    console.error(
+      'Self registration error:',
+      err
+    );
+
+    setGlobalError(
+      err?.error ||
+      err?.message ||
+      'Something went wrong. Please try again.'
+    );
+
+  } finally {
+    setLoading(false);
+  }
+};
+
+		
+		
+		
+		
+		
   /* ============================================================
      LOADING
   ============================================================ */

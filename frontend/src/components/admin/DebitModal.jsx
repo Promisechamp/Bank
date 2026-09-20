@@ -165,33 +165,51 @@ const DebitModal = ({
 
     try {
       await transactionsAPI.adminDebit({
-        userId: user.id,
-        accountId: formData.account_id,
-        amount: amountNumber,
+  userId: user.id,
+  accountId: formData.account_id,
+  amount: amountNumber,
 
-        description: formData.description.trim(),
-        note: formData.note.trim(),
+  description: formData.description.trim(),
+  note: formData.note.trim(),
 
-        date: formData.date,
-        sendAlert: formData.sendAlert,
+  date: formData.date,
+  sendAlert: formData.sendAlert,
 
-        // Receiver information
-        receiverName: formData.receiverName.trim(),
-        receiverBank: formData.receiverBank.trim(),
-        receiverAccountNo: formData.receiverAccountNo.trim(),
+  receiverName: formData.receiverName.trim(),
+  receiverBank: formData.receiverBank.trim(),
+  receiverAccountNo: formData.receiverAccountNo.trim(),
 
-        // Transaction metadata
-        paymentMethod: formData.paymentMethod,
-        channel: formData.channel
-      });
+  metadata: {
+    receiverName: formData.receiverName.trim(),
+    receiverBank: formData.receiverBank.trim(),
+    receiverAccountNo: formData.receiverAccountNo.trim(),
+    paymentMethod: formData.paymentMethod,
+    channel: formData.channel,
+    description: formData.description.trim(),
+    admin_note: formData.note.trim()
+  }
+});
+
+
 
       toast.success(
         `Debited ${formatCurrency(amountNumber)} from ${user.full_name}`
       );
 
       if (onSuccess) {
-        await onSuccess();
-      }
+  try {
+    await onSuccess();
+  } catch (refreshError) {
+    console.error(
+      'Transaction succeeded, but refresh failed:',
+      refreshError
+    );
+  }
+}
+
+onClose();
+
+setFormData(getInitialForm(selectedAccountId));
 
       onClose();
 
