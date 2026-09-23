@@ -378,29 +378,41 @@ const ImageReceipt = ({
     null;
 
   /* --------------------------------------------------------------
-     ✅ NEW: ACCOUNT BANKING DETAILS
+     ✅ RECIPIENT BANKING DETAILS ONLY
      (account type, SWIFT code, routing number)
-     — with backward-compat fallbacks
+
+     Priority:
+       1. Explicit recipient keys in metadata
+       2. transaction.accounts — but ONLY when isCredit,
+          because in that direction transaction.accounts IS
+          the recipient's own account
+       3. Nothing — never fall back to sender keys
   -------------------------------------------------------------- */
 
   const accountType =
-    transaction.accounts?.account_type ||
-    metadata.accountType ||
-    metadata.account_type ||
+    metadata.recipientAccountType ||
+    metadata.recipient_account_type ||
+    (isCredit
+      ? transaction.accounts?.account_type
+      : null) ||
     null;
 
   const swiftCode =
-    transaction.accounts?.swift_code ||
-    transaction.accounts?.swiftCode ||
-    metadata.swiftCode ||
-    metadata.swift_code ||
+    metadata.recipientSwiftCode ||
+    metadata.recipient_swift_code ||
+    (isCredit
+      ? transaction.accounts?.swift_code ||
+        transaction.accounts?.swiftCode
+      : null) ||
     null;
 
   const routingNumber =
-    transaction.accounts?.routing_number ||
-    transaction.accounts?.routingNumber ||
-    metadata.routingNumber ||
-    metadata.routing_number ||
+    metadata.recipientRoutingNumber ||
+    metadata.recipient_routing_number ||
+    (isCredit
+      ? transaction.accounts?.routing_number ||
+        transaction.accounts?.routingNumber
+      : null) ||
     null;
 
   /* --------------------------------------------------------------
@@ -477,12 +489,6 @@ const ImageReceipt = ({
     metadata.adminNote ||
     null;
 
-  const transactionId =
-    transaction.id ||
-    metadata.transactionId ||
-    metadata.transaction_id ||
-    null;
-
   const category =
     transaction.category ||
     metadata.category ||
@@ -532,28 +538,29 @@ const ImageReceipt = ({
       : null;
 
   const partyName = (
-  isCredit
-    ? senderName
-    : isDebit
-      ? receiverName
-      : null
-)?.toUpperCase() || null;
+    isCredit
+      ? senderName
+      : isDebit
+        ? receiverName
+        : null
+  )?.toUpperCase() || null;
 
-const partyBank = (
-  isCredit
-    ? senderBank
-    : isDebit
-      ? receiverBank
-      : null
-)?.toUpperCase() || null;
+  const partyBank = (
+    isCredit
+      ? senderBank
+      : isDebit
+        ? receiverBank
+        : null
+  )?.toUpperCase() || null;
 
-const partyLabel = (
-  isCredit
-    ? 'Received from'
-    : isDebit
-      ? 'Paid to'
-      : 'Transaction party'
-).toUpperCase();
+  const partyLabel = (
+    isCredit
+      ? 'Received from'
+      : isDebit
+        ? 'Paid to'
+        : 'Transaction party'
+  ).toUpperCase();
+
   /* --------------------------------------------------------------
      STATUS COLORS
   -------------------------------------------------------------- */
@@ -595,6 +602,34 @@ const partyLabel = (
     statusColors[
       normalizedStatus
     ] || statusColors.completed;
+
+  /* --------------------------------------------------------------
+     TRANSACTION TYPE BADGE COLORS
+     (green for credit, red for debit)
+  -------------------------------------------------------------- */
+
+  const typeBadge = isCredit
+    ? {
+        bg: '#ecfdf5',
+        border: '#a7f3d0',
+        text: '#047857',
+        icon: ArrowDownLeft,
+      }
+    : isDebit
+      ? {
+          bg: '#fef2f2',
+          border: '#fecaca',
+          text: '#b91c1c',
+          icon: ArrowUpRight,
+        }
+      : {
+          bg: '#f8fafc',
+          border: '#e5e7eb',
+          text: '#687386',
+          icon: null,
+        };
+
+  const TypeBadgeIcon = typeBadge.icon;
 
   /* --------------------------------------------------------------
      SUB COMPONENTS
@@ -712,9 +747,7 @@ const partyLabel = (
 
   /* --------------------------------------------------------------
      EXTRA DETAILS GRID
-     ✅ NEW: account type, SWIFT, routing injected at high priority
-     (positions 4/5/6) so they render inside the existing 2-column
-     grid without changing its total height (slice still caps at 8).
+     ✅ Only recipient banking codes are included.
   -------------------------------------------------------------- */
 
   const extraDetails = [
@@ -749,11 +782,6 @@ const partyLabel = (
       value: category,
     },
     {
-      label: 'Transaction ID',
-      value: transactionId,
-      mono: true,
-    },
-    {
       label: 'Fee',
       value: formattedFee,
     },
@@ -761,14 +789,7 @@ const partyLabel = (
       label: 'Balance after',
       value: formattedBalance,
     },
-    {
-      label: 'Account holder',
-      value: accountHolder,
-    },
-    {
-      label: 'Bank',
-      value: accountBank,
-    },
+    
   ].filter(
     (item) =>
       item.value !== undefined &&
@@ -884,21 +905,44 @@ const partyLabel = (
             </div>
           </div>
 
+          {/* TRANSACTION TYPE BADGE (replaces "Official") */}
+
           <div
             style={{
-              padding: '10px 17px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              padding: '12px 20px',
               borderRadius: '999px',
-              background: '#f8fafc',
-              border: '1px solid #e5e7eb',
-              fontSize: '13px',
+              background: typeBadge.bg,
+              border: `1px solid ${typeBadge.border}`,
+              color: typeBadge.text,
+              fontSize: '15px',
+              lineHeight: 1,
               fontWeight: 900,
               letterSpacing: '0.14em',
               textTransform: 'uppercase',
-              color: '#687386',
               whiteSpace: 'nowrap',
             }}
           >
-            Official
+            {TypeBadgeIcon && (
+              <TypeBadgeIcon
+                style={{
+                  width: '22px',
+                  height: '22px',
+                  flexShrink: 0,
+                }}
+                strokeWidth={2.2}
+              />
+            )}
+
+            <span
+              style={{
+                letterSpacing: '0.14em',
+              }}
+            >
+              {transactionType}
+            </span>
           </div>
         </div>
 
@@ -952,7 +996,9 @@ const partyLabel = (
                   color:
                     isCredit
                       ? '#047857'
-                      : '#111827',
+                      : isDebit
+                        ? '#b91c1c'
+                        : '#111827',
                 }}
               >
                 {amountPrefix}
@@ -1106,7 +1152,7 @@ const partyLabel = (
                     color: '#111827',
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
-																				textTransform: 'uppercase',
+                    textTransform: 'uppercase',
                     textOverflow: 'ellipsis',
                   }}
                 >
@@ -1208,10 +1254,10 @@ const partyLabel = (
               background: '#ffffff',
             }}
           >
-            <Row
+          <Row
               label="Transaction type"
               value={transactionType}
-            />
+            /> 
 
             <Row
               label="Description"
@@ -1950,99 +1996,97 @@ const Receipt = ({
      DERIVED DATA
   ================================================================ */
 
-  const receiptData = useMemo(() => {
-    if (!transaction) return null;
+  /* ================================================================
+   DERIVED DATA
+================================================================ */
 
-    const status = String(
-      transaction.status || 'completed'
-    ).toLowerCase();
+const receiptData = useMemo(() => {
+  if (!transaction) return null;
 
-    const statusData =
-      getStatusConfig(status);
+  const status = String(
+    transaction.status || 'completed'
+  ).toLowerCase();
 
-    const amount = Math.abs(
-      Number(transaction.amount || 0)
-    );
+  const statusData = getStatusConfig(status);
 
-    let metadata = {};
+  const amount = Math.abs(Number(transaction.amount || 0));
 
-    try {
-      metadata =
-        typeof transaction.metadata === 'string'
-          ? JSON.parse(
-              transaction.metadata
-            )
-          : transaction.metadata || {};
-    } catch {
-      metadata = {};
-    }
+  let metadata = {};
 
-    const dateObj = new Date(
-      transaction.created_at ||
-        Date.now()
-    );
+  try {
+    metadata =
+      typeof transaction.metadata === 'string'
+        ? JSON.parse(transaction.metadata)
+        : transaction.metadata || {};
+  } catch {
+    metadata = {};
+  }
 
-    const formattedDate =
-      dateObj.toLocaleDateString(
-        'en-US',
-        {
-          month: 'long',
-          day: 'numeric',
-          year: 'numeric',
-        }
-      );
+  const dateObj = new Date(
+    transaction.created_at || Date.now()
+  );
 
-    const formattedTime =
-      dateObj.toLocaleTimeString(
-        'en-US',
-        {
-          hour: 'numeric',
-          minute: '2-digit',
-          hour12: true,
-        }
-      );
+  const formattedDate = dateObj.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
 
-    /* ----------------------------------------------------------
-       ✅ FIX: handle transaction_type: 'transfer' by looking at
-       metadata.direction to decide credit vs debit.
-    ---------------------------------------------------------- */
+  const formattedTime = dateObj.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
 
-    const rawType = String(
-      transaction.transaction_type || ''
-    ).toLowerCase();
+  /* ----------------------------------------------------------
+     Direction resolution — first match wins:
+       1. transaction.viewer_direction
+       2. transaction.direction        ('sent'/'received')
+       3. metadata.direction
+       4. transaction_type
+  ---------------------------------------------------------- */
 
-    const direction = String(
-      metadata.direction || ''
-    ).toLowerCase();
+  const rawType = String(
+    transaction.transaction_type || ''
+  ).toLowerCase();
 
-    const isTransfer = rawType === 'transfer';
+  const hint = String(
+    transaction.viewer_direction ||
+      transaction.direction ||
+      metadata.direction ||
+      ''
+  ).toLowerCase();
 
-    const isCredit =
-      rawType === 'credit' ||
-      (isTransfer &&
-        (direction === 'credit' ||
-          direction === 'received'));
+  const isTransfer = rawType === 'transfer';
 
-    const isDebit =
-      rawType === 'debit' ||
-      (isTransfer &&
-        (direction === 'debit' ||
-          direction === 'sent'));
+  const isCredit =
+    rawType === 'credit' ||
+    hint === 'credit' ||
+    hint === 'received' ||
+    (isTransfer &&
+      (hint === 'credit' || hint === 'received'));
 
-    return {
-      status,
-      statusData,
-      amount,
-      formattedAmount:
-        `${formatCurrency(amount)} USD`,
-      dateObj,
-      formattedDate,
-      formattedTime,
-      isCredit,
-      isDebit,
-      metadata,
-    };
-  }, [transaction]);
+  const isDebit =
+    rawType === 'debit' ||
+    hint === 'debit' ||
+    hint === 'sent' ||
+    (isTransfer && (hint === 'debit' || hint === 'sent'));
+
+  return {
+    status,
+    statusData,
+    amount,
+    formattedAmount: `${formatCurrency(amount)} USD`,
+    dateObj,
+    formattedDate,
+    formattedTime,
+    isCredit,
+    isDebit,
+    metadata,
+  };
+}, [transaction]);
+
+
 
   /* ================================================================
      LOADING
@@ -2230,29 +2274,34 @@ const Receipt = ({
     null;
 
   /* --------------------------------------------------------------
-     ✅ NEW: ACCOUNT BANKING DETAILS
-     (account type, SWIFT code, routing number)
-     — with backward-compat fallbacks
+     ✅ RECIPIENT BANKING DETAILS ONLY
+     — Sender's swift/routing are intentionally never read here.
   -------------------------------------------------------------- */
 
   const accountType =
-    transaction.accounts?.account_type ||
-    metadata.accountType ||
-    metadata.account_type ||
+    metadata.recipientAccountType ||
+    metadata.recipient_account_type ||
+    (isCredit
+      ? transaction.accounts?.account_type
+      : null) ||
     null;
 
   const swiftCode =
-    transaction.accounts?.swift_code ||
-    transaction.accounts?.swiftCode ||
-    metadata.swiftCode ||
-    metadata.swift_code ||
+    metadata.recipientSwiftCode ||
+    metadata.recipient_swift_code ||
+    (isCredit
+      ? transaction.accounts?.swift_code ||
+        transaction.accounts?.swiftCode
+      : null) ||
     null;
 
   const routingNumber =
-    transaction.accounts?.routing_number ||
-    transaction.accounts?.routingNumber ||
-    metadata.routingNumber ||
-    metadata.routing_number ||
+    metadata.recipientRoutingNumber ||
+    metadata.recipient_routing_number ||
+    (isCredit
+      ? transaction.accounts?.routing_number ||
+        transaction.accounts?.routingNumber
+      : null) ||
     null;
 
   return (
@@ -2281,8 +2330,6 @@ const Receipt = ({
 
       {/* ============================================================
           DEDICATED EXPORT RECEIPT
-
-          UNCHANGED
       ============================================================ */}
 
       <div
@@ -2309,7 +2356,6 @@ const Receipt = ({
 
       {/* ============================================================
           VISIBLE RECEIPT
-          LAYOUT ONLY
       ============================================================ */}
 
       <div
@@ -2326,9 +2372,7 @@ const Receipt = ({
           }
         `}
       >
-        {/* ========================================================
-            HEADER
-        ======================================================== */}
+        {/* HEADER */}
 
         <div
           className="
@@ -2342,8 +2386,6 @@ const Receipt = ({
             sm:pt-7
           "
         >
-          {/* LOGO */}
-
           <div
             className="
               flex
@@ -2365,8 +2407,6 @@ const Receipt = ({
               "
             />
           </div>
-
-          {/* CLOSE BUTTON */}
 
           {!standalone && onClose && (
             <button
@@ -2396,10 +2436,6 @@ const Receipt = ({
           )}
         </div>
 
-        {/* ========================================================
-            OPTIONAL SEARCH
-        ======================================================== */}
-
         {standalone && showSearch && (
           <div className="px-5 pt-5 sm:px-7">
             <SearchReceipt
@@ -2414,9 +2450,7 @@ const Receipt = ({
           </div>
         )}
 
-        {/* ========================================================
-            HERO
-        ======================================================== */}
+        {/* HERO */}
 
         <div
           className="
@@ -2507,9 +2541,7 @@ const Receipt = ({
           </p>
         </div>
 
-        {/* ========================================================
-            REFERENCE
-        ======================================================== */}
+        {/* REFERENCE */}
 
         <div
           className="
@@ -2598,9 +2630,7 @@ const Receipt = ({
           </div>
         </div>
 
-        {/* ========================================================
-            DETAILS
-        ======================================================== */}
+        {/* DETAILS */}
 
         <div className="mt-6 space-y-5 px-5 sm:px-7">
 
@@ -2677,9 +2707,7 @@ const Receipt = ({
             />
           </Section>
 
-          {/* ======================================================
-              SENDER
-          ====================================================== */}
+          {/* SENDER */}
 
           {isCredit &&
             (senderName ||
@@ -2717,9 +2745,7 @@ const Receipt = ({
               </Section>
             )}
 
-          {/* ======================================================
-              RECEIVER
-          ====================================================== */}
+          {/* RECEIVER */}
 
           {isDebit &&
             (receiverName ||
@@ -2757,47 +2783,16 @@ const Receipt = ({
               </Section>
             )}
 
-          {/* ======================================================
-              ACCOUNT DETAILS
-              ✅ NEW: now also shows account type, SWIFT code,
-              and routing number when available. Section renders
-              even if transaction.accounts is missing, as long as
-              any of the new fields exist.
-          ====================================================== */}
+          {/* ACCOUNT DETAILS (RECIPIENT ONLY) */}
 
-          {(transaction.accounts ||
-            accountType ||
+          {(accountType ||
             swiftCode ||
             routingNumber) && (
             <Section
-              eyebrow="Account"
-              title="Account details"
+              eyebrow="Recipient account"
+              title="Recipient banking details"
               icon={Building2}
             >
-              <DetailRow
-                label="Account number"
-                value={
-                  transaction.accounts
-                    ?.account_number
-                    ? formatAccountNumber(
-                        transaction.accounts
-                          .account_number
-                      )
-                    : null
-                }
-                icon={CreditCard}
-                mono
-              />
-
-              <DetailRow
-                label="Account holder"
-                value={
-                  transaction.accounts
-                    ?.profiles?.full_name
-                }
-                icon={User}
-              />
-
               <DetailRow
                 label="Account type"
                 value={accountType}
@@ -2821,9 +2816,7 @@ const Receipt = ({
             </Section>
           )}
 
-          {/* ======================================================
-              ADMIN NOTE
-          ====================================================== */}
+          {/* ADMIN NOTE */}
 
           {adminNote && (
             <Section
@@ -2839,9 +2832,7 @@ const Receipt = ({
             </Section>
           )}
 
-          {/* ======================================================
-              SECURITY
-          ====================================================== */}
+          {/* SECURITY */}
 
           <div
             className="
@@ -2891,9 +2882,7 @@ const Receipt = ({
           </div>
         </div>
 
-        {/* ========================================================
-            FOOTER
-        ======================================================== */}
+        {/* FOOTER */}
 
         <div
           className="
@@ -2942,9 +2931,7 @@ const Receipt = ({
           </div>
         </div>
 
-        {/* ========================================================
-            ACTIONS
-        ======================================================== */}
+        {/* ACTIONS */}
 
         <div
           className="
@@ -2964,8 +2951,6 @@ const Receipt = ({
               sm:grid-cols-3
             "
           >
-            {/* SHARE */}
-
             <button
               type="button"
               onClick={handleShare}
@@ -2995,8 +2980,6 @@ const Receipt = ({
                 ? 'Link copied'
                 : 'Share receipt'}
             </button>
-
-            {/* PNG */}
 
             <button
               type="button"
@@ -3035,8 +3018,6 @@ const Receipt = ({
                 ? 'Creating…'
                 : 'Download PNG'}
             </button>
-
-            {/* PDF */}
 
             <button
               type="button"

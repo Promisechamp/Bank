@@ -9,6 +9,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CreditCard,
+  Hash,
   Landmark,
   Loader2,
   User,
@@ -24,6 +25,11 @@ const getInitialForm = (selectedAccountId = '') => ({
   description: '',
   date: new Date().toISOString().split('T')[0],
   sendAlert: true,
+
+  // Destination account metadata (auto-filled but editable)
+  accountType: '',
+  swiftCode: '',
+  routingNumber: '',
 
   // Sender metadata
   senderName: '',
@@ -81,26 +87,43 @@ const CreditModal = ({
     [accounts, formData.account_id]
   );
 
-  /* ✅ NEW: derive account metadata for the transaction */
+  /* ✅ Auto-populate account metadata fields when account changes.
+     This runs whenever the selected account changes, and copies the
+     account's values into the editable form fields. The user can then
+     override any of them. */
+  useEffect(() => {
+    if (!selectedAccount) {
+      return;
+    }
+
+    setFormData((prev) => ({
+      ...prev,
+      accountType: selectedAccount.account_type || '',
+      swiftCode:
+        selectedAccount.swift_code ||
+        selectedAccount.swiftCode ||
+        '',
+      routingNumber:
+        selectedAccount.routing_number ||
+        selectedAccount.routingNumber ||
+        ''
+    }));
+  }, [selectedAccount]);
+
+  /* ✅ Build metadata from the CURRENT editable form values */
   const selectedAccountMeta = useMemo(() => {
     if (!selectedAccount) return null;
 
     return {
       accountId: selectedAccount.id,
       accountNumber: selectedAccount.account_number || null,
-      accountType: selectedAccount.account_type || null,
-      swiftCode:
-        selectedAccount.swift_code ||
-        selectedAccount.swiftCode ||
-        null,
-      routingNumber:
-        selectedAccount.routing_number ||
-        selectedAccount.routingNumber ||
-        null,
+      accountType: formData.accountType || null,
+      swiftCode: formData.swiftCode || null,
+      routingNumber: formData.routingNumber || null,
       currency: selectedAccount.currency || null,
-      accountStatus: selectedAccount.status || null,
+      accountStatus: selectedAccount.status || null
     };
-  }, [selectedAccount]);
+  }, [selectedAccount, formData.accountType, formData.swiftCode, formData.routingNumber]);
 
   const amountNumber = Number.parseFloat(formData.amount);
   const hasAmount =
@@ -207,15 +230,15 @@ const CreditModal = ({
           channel: formData.channel,
           description: formData.description.trim(),
 
-          // ✅ Destination account details
+          // ✅ Destination account details (editable values)
           accountId: selectedAccountMeta.accountId,
           accountNumber: selectedAccountMeta.accountNumber,
           accountType: selectedAccountMeta.accountType,
           swiftCode: selectedAccountMeta.swiftCode,
           routingNumber: selectedAccountMeta.routingNumber,
           currency: selectedAccountMeta.currency,
-          accountStatus: selectedAccountMeta.accountStatus,
-        },
+          accountStatus: selectedAccountMeta.accountStatus
+        }
       });
 
       console.log('Admin credit response:', response);
@@ -427,47 +450,126 @@ const CreditModal = ({
                 </span>
               </div>
             )}
-
-            {/* ✅ NEW: show captured account metadata */}
-            {(selectedAccount?.account_type ||
-              selectedAccount?.swift_code ||
-              selectedAccount?.routing_number) && (
-              <div className="mt-2 grid grid-cols-2 gap-2">
-                {selectedAccount?.account_type && (
-                  <div className="rounded-xl border border-gray-100 bg-white px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      Account type
-                    </p>
-                    <p className="mt-0.5 text-xs font-semibold capitalize text-gray-800">
-                      {selectedAccount.account_type}
-                    </p>
-                  </div>
-                )}
-
-                {selectedAccount?.swift_code && (
-                  <div className="rounded-xl border border-gray-100 bg-white px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      SWIFT
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs font-semibold text-gray-800">
-                      {selectedAccount.swift_code}
-                    </p>
-                  </div>
-                )}
-
-                {selectedAccount?.routing_number && (
-                  <div className="col-span-2 rounded-xl border border-gray-100 bg-white px-3 py-2">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">
-                      Routing number
-                    </p>
-                    <p className="mt-0.5 font-mono text-xs font-semibold text-gray-800">
-                      {selectedAccount.routing_number}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
           </section>
+
+          {/* =======================================================
+              ACCOUNT DETAILS (EDITABLE)
+              - Auto-populated from the selected account
+              - User can override before submitting
+          ======================================================= */}
+
+          {selectedAccount && (
+            <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
+
+              <div className="flex items-center gap-3 border-b border-gray-100 bg-gray-50/70 px-4 py-3.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50">
+                  <Landmark className="h-4 w-4 text-indigo-600" />
+                </div>
+
+                <div className="min-w-0">
+                  <h3 className="text-sm font-semibold text-gray-900">
+                    Account Details
+                  </h3>
+
+                  <p className="text-[11px] text-gray-500">
+                    Pre-filled from the account — you can edit if needed
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-4 p-4 sm:grid-cols-2">
+
+                {/* Account Type */}
+                <div>
+                  <FieldLabel>
+                    Account Type
+                  </FieldLabel>
+
+                  <div className="relative">
+                    <Wallet className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+                    <select
+                      name="accountType"
+                      value={formData.accountType}
+                      onChange={handleChange}
+                      disabled={loading}
+                      className={`${iconInputClass} appearance-none`}
+                    >
+                      <option value="">
+                        Select type...
+                      </option>
+
+                      <option value="checking">Checking</option>
+                      <option value="savings">Savings</option>
+                      <option value="current">Current</option>
+                      <option value="business">Business</option>
+                      <option value="fixed_deposit">Fixed Deposit</option>
+                      <option value="investment">Investment</option>
+                      <option value="credit">Credit</option>
+                      <option value="loan">Loan</option>
+                      <option value="other">Other</option>
+                    </select>
+
+                    <div className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
+                      <svg
+                        viewBox="0 0 20 20"
+                        fill="currentColor"
+                        className="h-4 w-4"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01.02-1.06z"
+                          clipRule="evenodd"
+                        />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SWIFT Code */}
+                <div>
+                  <FieldLabel>
+                    SWIFT / BIC Code
+                  </FieldLabel>
+
+                  <div className="relative">
+                    <Hash className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+                    <input
+                      type="text"
+                      name="swiftCode"
+                      value={formData.swiftCode}
+                      onChange={handleChange}
+                      placeholder="e.g. BOFAUS3N"
+                      disabled={loading}
+                      className={`${iconInputClass} font-mono uppercase`}
+                    />
+                  </div>
+                </div>
+
+                {/* Routing Number */}
+                <div className="sm:col-span-2">
+                  <FieldLabel>
+                    Routing Number
+                  </FieldLabel>
+
+                  <div className="relative">
+                    <Landmark className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+                    <input
+                      type="text"
+                      name="routingNumber"
+                      value={formData.routingNumber}
+                      onChange={handleChange}
+                      placeholder="e.g. 026009593"
+                      disabled={loading}
+                      className={`${iconInputClass} font-mono`}
+                    />
+                  </div>
+                </div>
+              </div>
+            </section>
+          )}
 
           {/* =======================================================
               AMOUNT
@@ -614,7 +716,7 @@ const CreditModal = ({
                     >
                       <path
                         fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01-1.06-.02z"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01-1.06-.02z"
                         clipRule="evenodd"
                       />
                     </svg>
@@ -684,7 +786,7 @@ const CreditModal = ({
                     >
                       <path
                         fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 111.08 1.04l-4.25-4.51a.75.75 0 01-1.06-.02z"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.51a.75.75 0 01-1.08 0l-4.25-4.51a.75.75 0 01-1.06-.02z"
                         clipRule="evenodd"
                       />
                     </svg>

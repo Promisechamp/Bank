@@ -19,6 +19,65 @@ const isAdmin = (req) => {
 
 
 // ============================================================
+// ROUTING NUMBER GENERATOR
+//
+// Generates a valid 9-digit ABA routing number using the
+// standard ABA checksum:
+//
+//   3(d1 + d4 + d7) + 7(d2 + d5 + d8) + 1(d3 + d6 + d9) ≡ 0 (mod 10)
+//
+// The first 8 digits are random, and the 9th is the
+// checksum digit computed from the first 8.
+// ============================================================
+
+const generateRoutingNumber = () => {
+  const digits = [];
+
+  for (let i = 0; i < 8; i++) {
+    digits.push(Math.floor(Math.random() * 10));
+  }
+
+  const sum =
+    3 * (digits[0] + digits[3] + digits[6]) +
+    7 * (digits[1] + digits[4] + digits[7]) +
+    1 * (digits[2] + digits[5]);
+
+  const checkDigit = (10 - (sum % 10)) % 10;
+
+  digits.push(checkDigit);
+
+  return digits.join('');
+};
+
+
+// ============================================================
+// SWIFT / BIC CODE GENERATOR
+//
+// Format: BBBBCCLL (8 characters)
+//
+//   BBBB  → 4-letter bank code
+//   CC    → 2-letter country code
+//   LL    → 2-letter location code
+//
+// Uses the processing bank identifier so the code is
+// consistent with what the receipts display.
+// ============================================================
+
+const PROCESSING_BANK_SWIFT_PREFIX = 'TRCU'; // Trusty Credit Union
+const PROCESSING_BANK_COUNTRY = 'US';
+
+const generateSwiftCode = () => {
+  const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+  const location =
+    letters[Math.floor(Math.random() * 26)] +
+    letters[Math.floor(Math.random() * 26)];
+
+  return `${PROCESSING_BANK_SWIFT_PREFIX}${PROCESSING_BANK_COUNTRY}${location}`;
+};
+
+
+// ============================================================
 // CREATE NEW ACCOUNT
 // ============================================================
 
@@ -116,10 +175,20 @@ const createAccount = async (req, res, next) => {
 
 
     // ----------------------------------------------------------
-    // Generate unique account number
+    // Generate unique account identifiers
+    //
+    //   account_number  → random, unique per account
+    //   routing_number  → valid 9-digit ABA routing number
+    //   swift_code      → 8-character BIC-style code
+    //
+    // Both routing_number and swift_code follow the exact
+    // column names used across the receipt and admin UI
+    // (snake_case: swift_code, routing_number).
     // ----------------------------------------------------------
 
     const account_number = generateAccountNumber();
+    const routing_number = generateRoutingNumber();
+    const swift_code = generateSwiftCode();
 
 
     // ----------------------------------------------------------
@@ -136,6 +205,8 @@ const createAccount = async (req, res, next) => {
           user_id: userId,
           account_number,
           account_type,
+          routing_number,
+          swift_code,
           currency: currency || constants.CURRENCY,
           balance: 0,
           status: 'active'
@@ -184,6 +255,12 @@ const createAccount = async (req, res, next) => {
 
         accountType:
           account.account_type,
+
+        routingNumber:
+          account.routing_number,
+
+        swiftCode:
+          account.swift_code,
 
         balance:
           account.balance

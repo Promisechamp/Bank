@@ -56,6 +56,206 @@ const normalizePin = (value) => {
 };
 
 // ============================================================
+// METADATA ENRICHMENT HELPERS
+//
+// When a transaction was created BEFORE swift_code/routing_number
+// started being persisted into metadata, we fall back to looking
+// up the actual account records at read time so the receipt and
+// history still render the correct banking codes.
+// ============================================================
+
+const parseMetadata = (raw) => {
+  if (!raw) return {};
+
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  return raw;
+};
+
+/**
+ * Given the two accounts associated with a transaction (the row's
+ * own account + the counterparty), fill in any missing banking
+ * codes in the metadata object.
+ *
+ * Sender vs recipient is decided by `fromAccountId` / `toAccountId`
+ * stored in metadata — those are IDENTICAL on both the sender's
+ * row and the recipient's row, unlike account_id / counterparty,
+ * which swap sides between the two copies.
+ *
+ * For direct credit/debit (admin credit / admin debit) with no
+ * explicit from/to, we infer:
+ *   - credit → the row's own account IS the recipient
+ *   - debit  → the row's own account IS the sender
+ */
+const enrichMetadataFromAccounts = (
+  metadata,
+  sourceAccount,
+  counterpartyAccount,
+  fromAccountId = null,
+  toAccountId = null
+) => {
+  const base = parseMetadata(metadata);
+
+  // Fall back to metadata's own from/to if caller didn't pass any
+  const resolvedFrom =
+    fromAccountId || base.fromAccountId || null;
+
+  const resolvedTo =
+    toAccountId || base.toAccountId || null;
+
+  let senderAccount = null;
+  let recipientAccount = null;
+
+  if (resolvedFrom) {
+    if (
+      sourceAccount &&
+      String(sourceAccount.id) === String(resolvedFrom)
+    ) {
+      senderAccount = sourceAccount;
+    } else if (
+      counterpartyAccount &&
+      String(counterpartyAccount.id) === String(resolvedFrom)
+    ) {
+      senderAccount = counterpartyAccount;
+    }
+  }
+
+  if (resolvedTo) {
+    if (
+      sourceAccount &&
+      String(sourceAccount.id) === String(resolvedTo)
+    ) {
+      recipientAccount = sourceAccount;
+    } else if (
+      counterpartyAccount &&
+      String(counterpartyAccount.id) === String(resolvedTo)
+    ) {
+      recipientAccount = counterpartyAccount;
+    }
+  }
+
+  // If we still don't know who's who (direct credit/debit without
+  // explicit from/to), infer from the transaction's own account.
+  if (!senderAccount && !recipientAccount) {
+    const rawType = String(
+      base.transaction_type || ''
+    ).toLowerCase();
+
+    if (rawType === 'credit') {
+      recipientAccount = sourceAccount || null;
+    } else if (rawType === 'debit') {
+      senderAccount = sourceAccount || null;
+    }
+  }
+
+  return {
+    ...base,
+
+    /* Sender banking codes */
+    senderSwiftCode:
+      base.senderSwiftCode ||
+      senderAccount?.swift_code ||
+      null,
+
+    senderRoutingNumber:
+      base.senderRoutingNumber ||
+      senderAccount?.routing_number ||
+      null,
+
+    senderAccountType:
+      base.senderAccountType ||
+      senderAccount?.account_type ||
+      null,
+
+    /* Recipient banking codes */
+    recipientSwiftCode:
+      base.recipientSwiftCode ||
+      recipientAccount?.swift_code ||
+      null,
+
+    recipientRoutingNumber:
+      base.recipientRoutingNumber ||
+      recipientAccount?.routing_number ||
+      null,
+
+    recipientAccountType:
+      base.recipientAccountType ||
+      recipientAccount?.account_type ||
+      null,
+
+    /*
+     * Generic fallbacks — the receipt's "Recipient banking
+     * details" section reads these. They must ALWAYS point at
+     * the RECIPIENT, never the sender.
+     */
+    swiftCode:
+      base.swiftCode ||
+      base.swift_code ||
+      recipientAccount?.swift_code ||
+      null,
+
+    routingNumber:
+      base.routingNumber ||
+      base.routing_number ||
+      recipientAccount?.routing_number ||
+      null,
+
+    accountType:
+      base.accountType ||
+      base.account_type ||
+      recipientAccount?.account_type ||
+      null,
+
+    accountNumber:
+      base.accountNumber ||
+      base.account_number ||
+      recipientAccount?.account_number ||
+      null,
+
+    accountHolder:
+      base.accountHolder ||
+      base.account_holder ||
+      recipientAccount?.profiles?.full_name ||
+      null
+  };
+};
+
+/**
+ * Determine credit / debit from a transaction row + its metadata.
+ */
+const resolveDirection = (transaction, metadata) => {
+  const rawType = String(
+    transaction.transaction_type || ''
+  ).toLowerCase();
+
+  const direction = String(
+    metadata?.direction || ''
+  ).toLowerCase();
+
+  const isTransfer = rawType === 'transfer';
+
+  const isCredit =
+    rawType === 'credit' ||
+    (isTransfer &&
+      (direction === 'credit' ||
+        direction === 'received'));
+
+  const isDebit =
+    rawType === 'debit' ||
+    (isTransfer &&
+      (direction === 'debit' ||
+        direction === 'sent'));
+
+  return { isCredit, isDebit };
+};
+
+// ============================================================
 // OTP EMAIL
 // ============================================================
 
@@ -444,6 +644,8 @@ const initiateTransfer = async (req, res, next) => {
         user_id,
         account_number,
         account_type,
+        swift_code,
+        routing_number,
         balance,
         currency,
         status,
@@ -521,6 +723,8 @@ const initiateTransfer = async (req, res, next) => {
         user_id,
         account_number,
         account_type,
+        swift_code,
+        routing_number,
         balance,
         currency,
         status,
@@ -672,12 +876,48 @@ const initiateTransfer = async (req, res, next) => {
       recipientAccountId:
         recipient.id,
 
+      recipientAccountType:
+        recipient.account_type || null,
+
+      recipientSwiftCode:
+        recipient.swift_code || null,
+
+      recipientRoutingNumber:
+        recipient.routing_number || null,
+
       senderName,
 
       senderAccountNumber:
         sourceAccount.account_number,
 
+      senderAccountId:
+        sourceAccount.id,
+
       senderBank,
+
+      senderAccountType:
+        sourceAccount.account_type || null,
+
+      senderSwiftCode:
+        sourceAccount.swift_code || null,
+
+      senderRoutingNumber:
+        sourceAccount.routing_number || null,
+
+      accountType:
+        recipient.account_type || null,
+
+      swiftCode:
+        recipient.swift_code || null,
+
+      routingNumber:
+        recipient.routing_number || null,
+
+      accountNumber:
+        recipient.account_number || null,
+
+      accountHolder:
+        confirmedRecipientName || null,
 
       paymentMethod:
         'Bank Transfer',
@@ -755,11 +995,6 @@ const initiateTransfer = async (req, res, next) => {
     // ========================================================
     // PIN FLOW
     // ========================================================
-    //
-    // We do NOT generate an OTP and we do NOT send an email.
-    // The frontend will open the PIN modal and call
-    // verifyPinAndComplete with { reference, pin }.
-    // ========================================================
 
     if (verificationMethod === 'pin') {
       return res.json({
@@ -789,19 +1024,11 @@ const initiateTransfer = async (req, res, next) => {
     // OTP FLOW
     // ========================================================
 
-    // --------------------------------------------------------
-    // GENERATE OTP
-    // --------------------------------------------------------
-
     const otp =
       Math.floor(
         100000 +
         Math.random() * 900000
       ).toString();
-
-    // --------------------------------------------------------
-    // STORE OTP
-    // --------------------------------------------------------
 
     const {
       error: otpError
@@ -849,7 +1076,6 @@ const initiateTransfer = async (req, res, next) => {
       });
 
     if (otpError) {
-      // Roll back the pending transaction; the user can try again.
       await supabase
         .from('transactions')
         .delete()
@@ -860,10 +1086,6 @@ const initiateTransfer = async (req, res, next) => {
 
       throw otpError;
     }
-
-    // --------------------------------------------------------
-    // SEND OTP EMAIL
-    // --------------------------------------------------------
 
     const senderEmail =
       req.user?.email ||
@@ -878,7 +1100,6 @@ const initiateTransfer = async (req, res, next) => {
           reference
         );
 
-      // Keep the transaction pending but enable PIN fallback.
       await supabase
         .from('transactions')
         .update({
@@ -921,21 +1142,17 @@ const initiateTransfer = async (req, res, next) => {
           transferAmount,
           confirmedRecipientName
         ),
-        12000, // hard cap so we never hang the request
+        12000,
         'OTP email delivery timed out'
       );
     } catch (emailError) {
       console.error('OTP email failed:', emailError);
 
-      // The OTP never reached the user — remove the invalid OTP record.
       await supabase
         .from('otp_verifications')
         .delete()
         .eq('reference', reference);
 
-      // CRITICAL: keep the pending transaction alive and allow PIN
-      // fallback with the SAME reference so the user does not have to
-      // start over.
       await supabase
         .from('transactions')
         .update({
@@ -966,10 +1183,6 @@ const initiateTransfer = async (req, res, next) => {
           'We could not send the verification code. You can verify this transfer with your PIN instead.'
       });
     }
-
-    // --------------------------------------------------------
-    // RESPONSE
-    // --------------------------------------------------------
 
     return res.json({
       success: true,
@@ -1019,20 +1232,12 @@ const verifyOtpAndComplete = async (
       otp
     } = req.body;
 
-    // --------------------------------------------------------
-    // AUTH
-    // --------------------------------------------------------
-
     if (!req.user?.id) {
       return res.status(401).json({
         success: false,
         error: 'Authentication required.'
       });
     }
-
-    // --------------------------------------------------------
-    // VALIDATE INPUT
-    // --------------------------------------------------------
 
     if (
       !reference ||
@@ -1059,10 +1264,6 @@ const verifyOtpAndComplete = async (
 
     const cleanOtp =
       String(otp).trim();
-
-    // --------------------------------------------------------
-    // GET OTP
-    // --------------------------------------------------------
 
     const {
       data: otpRecord,
@@ -1092,10 +1293,6 @@ const verifyOtpAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // OTP ALREADY USED
-    // --------------------------------------------------------
-
     if (otpRecord.verified) {
       return res.status(400).json({
         success: false,
@@ -1103,10 +1300,6 @@ const verifyOtpAndComplete = async (
           'This verification code has already been used.'
       });
     }
-
-    // --------------------------------------------------------
-    // OTP EXPIRATION
-    // --------------------------------------------------------
 
     if (
       !otpRecord.expires_at ||
@@ -1120,10 +1313,6 @@ const verifyOtpAndComplete = async (
           'This verification code has expired.'
       });
     }
-
-    // --------------------------------------------------------
-    // OTP MATCH
-    // --------------------------------------------------------
 
     if (
       String(otpRecord.otp) !==
@@ -1139,10 +1328,6 @@ const verifyOtpAndComplete = async (
     const transferData =
       otpRecord.data || {};
 
-    // --------------------------------------------------------
-    // REQUIRED OTP DATA
-    // --------------------------------------------------------
-
     if (
       !transferData.fromAccountId ||
       !transferData.toAccountId ||
@@ -1154,10 +1339,6 @@ const verifyOtpAndComplete = async (
           'This transfer verification record is incomplete.'
       });
     }
-
-    // --------------------------------------------------------
-    // GET PENDING TRANSACTION
-    // --------------------------------------------------------
 
     const {
       data: transaction,
@@ -1187,10 +1368,6 @@ const verifyOtpAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // TRANSACTION ALREADY PROCESSED
-    // --------------------------------------------------------
-
     if (
       transaction.status !==
       'pending_review'
@@ -1201,10 +1378,6 @@ const verifyOtpAndComplete = async (
           'This transaction has already been processed.'
       });
     }
-
-    // --------------------------------------------------------
-    // GET CURRENT SOURCE ACCOUNT
-    // --------------------------------------------------------
 
     const {
       data: sourceAccount,
@@ -1250,10 +1423,6 @@ const verifyOtpAndComplete = async (
       throw sourceError;
     }
 
-    // --------------------------------------------------------
-    // CURRENT ACCOUNT STATUS
-    // --------------------------------------------------------
-
     const accountStatus =
       String(
         sourceAccount.status || ''
@@ -1269,10 +1438,6 @@ const verifyOtpAndComplete = async (
       accountStatus === 'frozen' ||
       profileStatus === 'frozen' ||
       profileStatus === 'banned';
-
-    // ========================================================
-    // RESTRICTED ACCOUNT
-    // ========================================================
 
     if (senderRestricted) {
       const {
@@ -1351,7 +1516,6 @@ const verifyOtpAndComplete = async (
           'OTP verified. Transfer has been submitted for bank review.'
       });
 
-      // Fire notification in the background.
       setImmediate(async () => {
         try {
           const io =
@@ -1377,10 +1541,6 @@ const verifyOtpAndComplete = async (
 
       return;
     }
-
-    // ========================================================
-    // NORMAL TRANSFER — ATOMIC RPC
-    // ========================================================
 
     const {
       data: transferResult,
@@ -1471,10 +1631,6 @@ const verifyOtpAndComplete = async (
       );
     }
 
-    // --------------------------------------------------------
-    // MARK OTP VERIFIED
-    // --------------------------------------------------------
-
     const {
       error: verifyError
     } = await supabase
@@ -1503,10 +1659,6 @@ const verifyOtpAndComplete = async (
       );
     }
 
-    // --------------------------------------------------------
-    // GET FINAL TRANSACTION DATA
-    // --------------------------------------------------------
-
     const {
       data: completedTransaction,
       error: completedTransactionError
@@ -1522,10 +1674,6 @@ const verifyOtpAndComplete = async (
     if (completedTransactionError) {
       throw completedTransactionError;
     }
-
-    // --------------------------------------------------------
-    // FINAL ACCOUNT DATA
-    // --------------------------------------------------------
 
     const {
       data: finalSourceAccount,
@@ -1577,10 +1725,6 @@ const verifyOtpAndComplete = async (
       throw finalDestinationError;
     }
 
-    // --------------------------------------------------------
-    // DISPLAY DATA
-    // --------------------------------------------------------
-
     const amount =
       Number(transferData.amount);
 
@@ -1606,10 +1750,6 @@ const verifyOtpAndComplete = async (
       Number(
         finalDestinationAccount.balance
       );
-
-    // ========================================================
-    // SEND RESPONSE FIRST
-    // ========================================================
 
     res.json({
       success:
@@ -1643,10 +1783,6 @@ const verifyOtpAndComplete = async (
       transaction:
         completedTransaction
     });
-
-    // ========================================================
-    // NOTIFICATIONS (BACKGROUND)
-    // ========================================================
 
     setImmediate(async () => {
       const io =
@@ -1801,20 +1937,12 @@ const verifyPinAndComplete = async (
       pin
     } = req.body;
 
-    // --------------------------------------------------------
-    // AUTH
-    // --------------------------------------------------------
-
     if (!req.user?.id) {
       return res.status(401).json({
         success: false,
         error: 'Authentication required.'
       });
     }
-
-    // --------------------------------------------------------
-    // VALIDATE INPUT
-    // --------------------------------------------------------
 
     if (
       !reference ||
@@ -1849,10 +1977,6 @@ const verifyPinAndComplete = async (
           'Transfer PIN must contain only digits.'
       });
     }
-
-    // --------------------------------------------------------
-    // GET PENDING TRANSACTION (ownership checked below)
-    // --------------------------------------------------------
 
     const {
       data: transaction,
@@ -1892,10 +2016,6 @@ const verifyPinAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // OWNERSHIP
-    // --------------------------------------------------------
-
     if (
       transaction.accounts?.user_id !==
       req.user.id
@@ -1907,10 +2027,6 @@ const verifyPinAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // STATUS
-    // --------------------------------------------------------
-
     if (
       transaction.status !==
       'pending_review'
@@ -1921,10 +2037,6 @@ const verifyPinAndComplete = async (
           'This transaction has already been processed.'
       });
     }
-
-    // --------------------------------------------------------
-    // NORMALIZE METADATA
-    // --------------------------------------------------------
 
     let metadata =
       transaction.metadata || {};
@@ -1940,10 +2052,6 @@ const verifyPinAndComplete = async (
       }
     }
 
-    // --------------------------------------------------------
-    // REQUIRED METADATA
-    // --------------------------------------------------------
-
     if (
       !metadata.fromAccountId ||
       !metadata.toAccountId ||
@@ -1956,10 +2064,6 @@ const verifyPinAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // ATTEMPT LIMIT
-    // --------------------------------------------------------
-
     const attempts =
       Number(metadata.pinAttempts || 0);
 
@@ -1970,10 +2074,6 @@ const verifyPinAndComplete = async (
           'Too many incorrect PIN attempts. Please try again later or contact support.'
       });
     }
-
-    // --------------------------------------------------------
-    // COMPARE PIN (PLAINTEXT NUMERIC)
-    // --------------------------------------------------------
 
     const storedPin =
       transaction.accounts?.profiles?.transfer_pin;
@@ -2035,10 +2135,6 @@ const verifyPinAndComplete = async (
       });
     }
 
-    // --------------------------------------------------------
-    // PIN IS VALID — RE-CHECK CURRENT SOURCE ACCOUNT STATE
-    // --------------------------------------------------------
-
     const {
       data: sourceAccount,
       error: sourceError
@@ -2098,10 +2194,6 @@ const verifyPinAndComplete = async (
       accountStatus === 'frozen' ||
       profileStatus === 'frozen' ||
       profileStatus === 'banned';
-
-    // ========================================================
-    // RESTRICTED ACCOUNT
-    // ========================================================
 
     if (senderRestricted) {
       const {
@@ -2184,10 +2276,6 @@ const verifyPinAndComplete = async (
 
       return;
     }
-
-    // ========================================================
-    // ATOMIC TRANSFER VIA RPC
-    // ========================================================
 
     const {
       data: transferResult,
@@ -2278,10 +2366,6 @@ const verifyPinAndComplete = async (
       );
     }
 
-    // --------------------------------------------------------
-    // MARK PIN VERIFIED IN METADATA
-    // --------------------------------------------------------
-
     const {
       error: verifyError
     } = await supabase
@@ -2309,10 +2393,6 @@ const verifyPinAndComplete = async (
       );
     }
 
-    // --------------------------------------------------------
-    // FINAL TRANSACTION DATA
-    // --------------------------------------------------------
-
     const {
       data: completedTransaction,
       error: completedTransactionError
@@ -2328,10 +2408,6 @@ const verifyPinAndComplete = async (
     if (completedTransactionError) {
       throw completedTransactionError;
     }
-
-    // --------------------------------------------------------
-    // FINAL ACCOUNT DATA
-    // --------------------------------------------------------
 
     const {
       data: finalSourceAccount,
@@ -2383,10 +2459,6 @@ const verifyPinAndComplete = async (
       throw finalDestinationError;
     }
 
-    // --------------------------------------------------------
-    // DISPLAY DATA
-    // --------------------------------------------------------
-
     const amount =
       Number(transaction.amount);
 
@@ -2412,10 +2484,6 @@ const verifyPinAndComplete = async (
       Number(
         finalDestinationAccount.balance
       );
-
-    // ========================================================
-    // SEND RESPONSE FIRST
-    // ========================================================
 
     res.json({
       success: true,
@@ -2448,10 +2516,6 @@ const verifyPinAndComplete = async (
       transaction:
         completedTransaction
     });
-
-    // ========================================================
-    // NOTIFICATIONS (BACKGROUND)
-    // ========================================================
 
     setImmediate(async () => {
       const io =
@@ -2595,6 +2659,14 @@ const verifyPinAndComplete = async (
 // TRANSACTION HISTORY
 // ============================================================
 
+// ============================================================
+// TRANSACTION HISTORY
+// ============================================================
+
+// ============================================================
+// TRANSACTION HISTORY
+// ============================================================
+
 const getTransactionHistory = async (req, res, next) => {
   try {
     const userId = req.user?.id;
@@ -2662,15 +2734,21 @@ const getTransactionHistory = async (req, res, next) => {
     }
 
     // ============================================================
-    // FETCH TRANSACTIONS
+    // FETCH ALL ROWS THE VIEWER COULD SEE
     //
-    // A transfer is stored as ONE transaction:
+    // We fetch BOTH sides (own rows + counterparty rows). Then we
+    // deduplicate in memory: prefer the viewer's own row when it
+    // exists, and fall back to the counterparty's row for legacy
+    // transfers that never got a -CR copy.
     //
-    // account_id             = sender
-    // counterparty_account   = receiver
-    //
-    // We determine debit/credit from the account viewing history.
+    // Pagination is applied AFTER dedup, so we need to pull a bit
+    // more than the caller asked for.
     // ============================================================
+
+    const fetchLimit = Math.min(
+      (offset + limit) * 2 + 50,
+      5000
+    );
 
     const { data: transactions, error: transactionError } = await supabase
       .from('transactions')
@@ -2679,7 +2757,7 @@ const getTransactionHistory = async (req, res, next) => {
         `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
       )
       .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+      .range(0, fetchLimit - 1);
 
     if (transactionError) {
       console.error(
@@ -2693,68 +2771,263 @@ const getTransactionHistory = async (req, res, next) => {
       });
     }
 
+    const allRows = transactions || [];
+
     // ============================================================
-    // GET TOTAL COUNT
+    // BUILD SET OF -CR REFERENCES OWNED BY VIEWER
     // ============================================================
 
-    const { count, error: countError } = await supabase
-      .from('transactions')
-      .select('id', {
-        count: 'exact',
-        head: true
-      })
-      .or(
-        `account_id.eq.${accountId},counterparty_account.eq.${accountId}`
-      );
+    const viewerOwnedCRRefs = new Set();
 
-    if (countError) {
-      console.error(
-        '[getTransactionHistory] Count error:',
-        countError
-      );
+    allRows.forEach((tx) => {
+      const ref = String(tx.reference_id || '');
 
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to count transactions.'
-      });
+      if (
+        String(tx.account_id) === String(accountId) &&
+        ref.endsWith('-CR')
+      ) {
+        viewerOwnedCRRefs.add(ref.slice(0, -3));
+      }
+    });
+
+    // ============================================================
+    // FILTER: PICK THE VIEWER'S COPY OF EACH TRANSACTION
+    //
+    //   - Own rows (account_id = viewer) → always keep
+    //   - Counterparty -CR rows          → drop (their copy)
+    //   - Counterparty regular rows      → keep ONLY when the
+    //                                      viewer has no -CR copy
+    //                                      (legacy transfers)
+    // ============================================================
+
+    const visibleRows = allRows.filter((tx) => {
+      const isOwn =
+        String(tx.account_id) === String(accountId);
+
+      if (isOwn) return true;
+
+      const ref = String(tx.reference_id || '');
+
+      if (ref.endsWith('-CR')) {
+        // Another party's own copy — never show it to the viewer
+        return false;
+      }
+
+      // Legacy: sender's row, viewer is the counterparty.
+      // If viewer has their own -CR for the same transfer,
+      // skip this row (their copy will be shown).
+      if (viewerOwnedCRRefs.has(ref)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // ============================================================
+    // PAGINATE AFTER DEDUP
+    // ============================================================
+
+    const total = visibleRows.length;
+
+    const paginatedRows = visibleRows.slice(
+      offset,
+      offset + limit
+    );
+
+    // ============================================================
+    // BULK-FETCH RELATED ACCOUNTS
+    // ============================================================
+
+    const relatedAccountIds = new Set();
+
+    paginatedRows.forEach((tx) => {
+      if (tx.account_id) relatedAccountIds.add(String(tx.account_id));
+      if (tx.counterparty_account)
+        relatedAccountIds.add(String(tx.counterparty_account));
+    });
+
+    let accountsMap = new Map();
+
+    if (relatedAccountIds.size > 0) {
+      const { data: relatedAccounts, error: relatedError } =
+        await supabase
+          .from('accounts')
+          .select(`
+            id,
+            account_number,
+            account_type,
+            swift_code,
+            routing_number,
+            user_id,
+            profiles!user_id(
+              full_name,
+              email
+            )
+          `)
+          .in('id', Array.from(relatedAccountIds));
+
+      if (relatedError) {
+        console.error(
+          '[getTransactionHistory] Related accounts lookup error:',
+          relatedError
+        );
+      }
+
+      accountsMap = new Map(
+        (relatedAccounts || []).map((a) => [String(a.id), a])
+      );
     }
 
     // ============================================================
-    // FORMAT TRANSACTIONS FOR THIS ACCOUNT
+    // RESOLVE VIEWER DIRECTION
+    //
+    // Priority:
+    //   1. transaction_type 'credit' / 'debit' → if it's the
+    //      viewer's own row, use the type; if it's the
+    //      counterparty's row, flip it.
+    //   2. metadata.fromAccountId / toAccountId
+    //   3. metadata.direction
+    //   4. Fallback → debit
     // ============================================================
 
-    const formattedTransactions = (transactions || []).map(
-      (transaction) => {
-        const isSender =
-          String(transaction.account_id) === String(accountId);
+    const resolveViewerDirection = (tx) => {
+      const meta = parseMetadata(tx.metadata);
 
-        const isReceiver =
-          String(transaction.counterparty_account) === String(accountId);
+      const isOwn =
+        String(tx.account_id) === String(accountId);
 
-        let direction = 'unknown';
-        let transactionType = transaction.transaction_type;
+      const rawType = String(
+        tx.transaction_type || ''
+      ).toLowerCase();
 
-        if (isSender) {
-          direction = 'sent';
-          transactionType = 'debit';
-        } else if (isReceiver) {
-          direction = 'received';
-          transactionType = 'credit';
+      const fromId =
+        meta.fromAccountId ||
+        meta.from_account_id ||
+        meta.senderAccountId ||
+        meta.sender_account_id ||
+        null;
+
+      const toId =
+        meta.toAccountId ||
+        meta.to_account_id ||
+        meta.recipientAccountId ||
+        meta.recipient_account_id ||
+        null;
+
+      // ---- Direct credit / debit ----
+      if (rawType === 'credit' || rawType === 'debit') {
+        if (isOwn) {
+          return rawType;
         }
 
-        return {
-          ...transaction,
-
-          // Viewer-specific values
-          direction,
-          transaction_type: transactionType,
-
-          // Keep the original account relationships available
-          account_id: transaction.account_id,
-          counterparty_account: transaction.counterparty_account
-        };
+        // Counterparty's row → flip
+        return rawType === 'credit' ? 'debit' : 'credit';
       }
-    );
+
+      // ---- Transfer ----
+      if (rawType === 'transfer') {
+        if (
+          fromId &&
+          String(fromId) === String(accountId)
+        ) {
+          return 'debit';
+        }
+
+        if (
+          toId &&
+          String(toId) === String(accountId)
+        ) {
+          return 'credit';
+        }
+
+        // No explicit from/to — fall back to metadata.direction.
+        // metadata.direction is the SENDER's perspective, so if
+        // the viewer is not the sender, flip it.
+        const dir = String(meta.direction || '').toLowerCase();
+
+        const senderFacingDebit =
+          dir === 'debit' || dir === 'sent';
+
+        if (isOwn) {
+          return senderFacingDebit ? 'debit' : 'credit';
+        }
+
+        // Counterparty's row → flip
+        return senderFacingDebit ? 'credit' : 'debit';
+      }
+
+      // Unknown type — default to debit
+      return 'debit';
+    };
+
+    // ============================================================
+    // FORMAT
+    // ============================================================
+
+    const formattedTransactions = paginatedRows.map((transaction) => {
+      const viewerDirection = resolveViewerDirection(transaction);
+
+      const parsedMeta = parseMetadata(transaction.metadata);
+
+      const fromId =
+        parsedMeta.fromAccountId ||
+        parsedMeta.from_account_id ||
+        null;
+
+      const toId =
+        parsedMeta.toAccountId ||
+        parsedMeta.to_account_id ||
+        null;
+
+      const enrichFrom =
+        fromId ||
+        (viewerDirection === 'debit'
+          ? transaction.account_id
+          : transaction.counterparty_account) ||
+        null;
+
+      const enrichTo =
+        toId ||
+        (viewerDirection === 'credit'
+          ? transaction.account_id
+          : transaction.counterparty_account) ||
+        null;
+
+      const sourceAccount = accountsMap.get(
+        String(transaction.account_id)
+      );
+
+      const counterpartyAccount = accountsMap.get(
+        String(transaction.counterparty_account)
+      );
+
+      const enrichedMetadata = enrichMetadataFromAccounts(
+        parsedMeta,
+        sourceAccount,
+        counterpartyAccount,
+        enrichFrom,
+        enrichTo
+      );
+
+      return {
+        ...transaction,
+
+        // Legacy UI hints
+        direction:
+          viewerDirection === 'credit' ? 'received' : 'sent',
+
+        // Canonical 'credit' / 'debit' — the list uses this
+        transaction_type: viewerDirection,
+
+        // Matches what the receipt endpoint returns
+        viewer_direction: viewerDirection,
+
+        metadata: enrichedMetadata,
+
+        account: sourceAccount || null,
+        counterparty: counterpartyAccount || null
+      };
+    });
 
     // ============================================================
     // RESPONSE
@@ -2764,10 +3037,10 @@ const getTransactionHistory = async (req, res, next) => {
       success: true,
       transactions: formattedTransactions,
       pagination: {
-        total: count || 0,
+        total,
         limit,
         offset,
-        hasMore: offset + formattedTransactions.length < (count || 0)
+        hasMore: offset + formattedTransactions.length < total
       }
     });
   } catch (error) {
@@ -2783,7 +3056,6 @@ const getTransactionHistory = async (req, res, next) => {
 
 
 
-
 // ============================================================
 // GET TRANSACTION BY REFERENCE
 // PUBLIC RECEIPT ENDPOINT
@@ -2795,18 +3067,12 @@ const getTransactionByReference = async (
   next
 ) => {
   try {
-    const {
-      referenceId
-    } = req.params;
+    const { referenceId } = req.params;
 
-    if (
-      !referenceId ||
-      referenceId.trim() === ''
-    ) {
+    if (!referenceId || referenceId.trim() === '') {
       return res.status(400).json({
         success: false,
-        error:
-          'Reference ID is required.'
+        error: 'Reference ID is required.'
       });
     }
 
@@ -2829,7 +3095,14 @@ const getTransactionByReference = async (
         accounts:account_id(
           id,
           account_number,
-          user_id
+          account_type,
+          swift_code,
+          routing_number,
+          user_id,
+          profiles!user_id(
+            full_name,
+            email
+          )
         )
       `)
       .eq(
@@ -2850,36 +3123,149 @@ const getTransactionByReference = async (
       });
     }
 
-    let metadata =
-      transaction.metadata || {};
+    let counterpartyAccount = null;
 
-    if (
-      typeof metadata ===
-      'string'
-    ) {
-      try {
-        metadata =
-          JSON.parse(metadata);
-      } catch {
-        metadata = {};
+    if (transaction.counterparty_account) {
+      const { data: cp, error: cpError } = await supabase
+        .from('accounts')
+        .select(`
+          id,
+          account_number,
+          account_type,
+          swift_code,
+          routing_number,
+          user_id,
+          profiles!user_id(
+            full_name,
+            email
+          )
+        `)
+        .eq('id', transaction.counterparty_account)
+        .maybeSingle();
+
+      if (cpError) {
+        console.error(
+          '[getTransactionByReference] Counterparty lookup error:',
+          cpError
+        );
+      }
+
+      counterpartyAccount = cp || null;
+    }
+
+    const parsedMetadata = parseMetadata(transaction.metadata);
+
+    const rawType = String(
+      transaction.transaction_type || ''
+    ).toLowerCase();
+
+    // --------------------------------------------------------
+    // ✅ RESOLVE EFFECTIVE FROM / TO ACCOUNT IDS
+    //
+    // metadata.fromAccountId / toAccountId are consistent across
+    // BOTH the sender's row and the recipient's row.
+    //
+    // For direct credit / debit there is no explicit from/to,
+    // so we infer:
+    //   credit → the credited account IS the recipient
+    //   debit  → the debited account IS the sender
+    // --------------------------------------------------------
+
+    let effectiveFromAccountId =
+      parsedMetadata.fromAccountId || null;
+
+    let effectiveToAccountId =
+      parsedMetadata.toAccountId || null;
+
+    if (!effectiveFromAccountId && !effectiveToAccountId) {
+      if (rawType === 'credit') {
+        effectiveToAccountId = transaction.account_id;
+      } else if (rawType === 'debit') {
+        effectiveFromAccountId = transaction.account_id;
       }
     }
 
+    // --------------------------------------------------------
+    // ✅ DETERMINE VIEWER DIRECTION
+    //
+    // Compare the viewer against the from/to account owners —
+    // NOT against account_id / counterparty_account, because
+    // those swap sides between the two copies of a transfer.
+    // --------------------------------------------------------
+
+    let viewerDirection = null;
+
+    const viewerUserId = req.user?.id;
+
+    if (viewerUserId) {
+      const sourceUserId = transaction.accounts?.user_id;
+      const counterpartyUserId = counterpartyAccount?.user_id;
+
+      let viewerIsSender = false;
+      let viewerIsReceiver = false;
+
+      if (effectiveFromAccountId) {
+        if (
+          String(transaction.accounts?.id) ===
+            String(effectiveFromAccountId) &&
+          String(sourceUserId) === String(viewerUserId)
+        ) {
+          viewerIsSender = true;
+        } else if (
+          String(counterpartyAccount?.id) ===
+            String(effectiveFromAccountId) &&
+          String(counterpartyUserId) === String(viewerUserId)
+        ) {
+          viewerIsSender = true;
+        }
+      }
+
+      if (effectiveToAccountId) {
+        if (
+          String(transaction.accounts?.id) ===
+            String(effectiveToAccountId) &&
+          String(sourceUserId) === String(viewerUserId)
+        ) {
+          viewerIsReceiver = true;
+        } else if (
+          String(counterpartyAccount?.id) ===
+            String(effectiveToAccountId) &&
+          String(counterpartyUserId) === String(viewerUserId)
+        ) {
+          viewerIsReceiver = true;
+        }
+      }
+
+      if (viewerIsSender) {
+        viewerDirection = 'debit';
+      } else if (viewerIsReceiver) {
+        viewerDirection = 'credit';
+      }
+    }
+
+    // --------------------------------------------------------
+    // ENRICH METADATA
+    // --------------------------------------------------------
+
+    const enrichedMetadata = enrichMetadataFromAccounts(
+      parsedMetadata,
+      transaction.accounts || null,
+      counterpartyAccount,
+      effectiveFromAccountId,
+      effectiveToAccountId
+    );
+
     return res.json({
-      success:
-        true,
+      success: true,
 
       transaction: {
-        id:
-          transaction.id,
+        id: transaction.id,
 
         transaction_type:
           transaction.transaction_type,
 
         amount:
-          parseFloat(
-            transaction.amount
-          ) || 0,
+          parseFloat(transaction.amount) || 0,
 
         description:
           transaction.description,
@@ -2893,7 +3279,13 @@ const getTransactionByReference = async (
         created_at:
           transaction.created_at,
 
-        metadata
+        viewer_direction: viewerDirection,
+
+        metadata: enrichedMetadata,
+
+        accounts: transaction.accounts || null,
+
+        counterparty_account_details: counterpartyAccount
       }
     });
 
@@ -2904,8 +3296,7 @@ const getTransactionByReference = async (
     );
 
     return res.status(500).json({
-      success:
-        false,
+      success: false,
 
       error:
         error.message ||

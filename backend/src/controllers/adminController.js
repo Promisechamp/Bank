@@ -2067,6 +2067,9 @@ const generateReference = () => {
 // ============================================
 // ADMIN CREDIT
 // ============================================
+// ============================================
+// ADMIN CREDIT
+// ============================================
 const adminCredit = async (req, res, next) => {
   try {
     const { userId } = req.params;
@@ -2089,7 +2092,8 @@ const adminCredit = async (req, res, next) => {
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: accountId, amount (positive), description'
+        error:
+          'Missing required fields: accountId, amount (positive), description',
       });
     }
 
@@ -2109,7 +2113,8 @@ const adminCredit = async (req, res, next) => {
     if (accountError || !account) {
       return res.status(404).json({
         success: false,
-        error: 'Account not found or does not belong to this user'
+        error:
+          'Account not found or does not belong to this user',
       });
     }
 
@@ -2118,7 +2123,7 @@ const adminCredit = async (req, res, next) => {
     if (account.status !== 'active') {
       return res.status(400).json({
         success: false,
-        error: `Account is ${account.status}. Cannot credit.`
+        error: `Account is ${account.status}. Cannot credit.`,
       });
     }
 
@@ -2127,7 +2132,10 @@ const adminCredit = async (req, res, next) => {
 
     const { data: updatedAccount, error: updateError } = await supabase
       .from('accounts')
-      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .update({
+        balance: newBalance,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', accountId)
       .select()
       .single();
@@ -2136,18 +2144,52 @@ const adminCredit = async (req, res, next) => {
 
     // ---------------------------------------------------------
     // BUILD FULL METADATA
-    // Merge anything the frontend sent under `metadata` with the
-    // top-level sender fields so nothing is ever dropped.
+    //
+    // For a CREDIT, the credited account IS the recipient.
+    // We persist BOTH generic keys (accountType / swiftCode /
+    // routingNumber) and recipient-prefixed keys so the receipt
+    // and history endpoints find them regardless of which key
+    // style they read.
+    //
+    // Fallback chain for each value:
+    //   frontend metadata  →  top-level body  →  account row
     // ---------------------------------------------------------
     const safeIncomingMetadata =
       incomingMetadata && typeof incomingMetadata === 'object'
         ? incomingMetadata
         : {};
 
+    const resolvedAccountType =
+      safeIncomingMetadata.accountType ??
+      safeIncomingMetadata.account_type ??
+      safeIncomingMetadata.recipientAccountType ??
+      account.account_type ??
+      null;
+
+    const resolvedSwiftCode =
+      safeIncomingMetadata.swiftCode ??
+      safeIncomingMetadata.swift_code ??
+      safeIncomingMetadata.recipientSwiftCode ??
+      account.swift_code ??
+      null;
+
+    const resolvedRoutingNumber =
+      safeIncomingMetadata.routingNumber ??
+      safeIncomingMetadata.routing_number ??
+      safeIncomingMetadata.recipientRoutingNumber ??
+      account.routing_number ??
+      null;
+
+    const resolvedAccountNumber =
+      safeIncomingMetadata.accountNumber ??
+      safeIncomingMetadata.account_number ??
+      account.account_number ??
+      null;
+
     const finalMetadata = {
       ...safeIncomingMetadata,
 
-      // Ensure canonical keys always exist (fall back to top-level)
+      // Sender side
       senderName:
         safeIncomingMetadata.senderName ?? senderName ?? null,
       senderBank:
@@ -2155,11 +2197,40 @@ const adminCredit = async (req, res, next) => {
       senderAccountNo:
         safeIncomingMetadata.senderAccountNo ?? senderAccountNo ?? null,
 
-      // Explicitly carry these through so Receipt.jsx finds them
+      // ✅ Generic destination account keys (existing behavior)
+      accountId: account.id,
+      accountNumber: resolvedAccountNumber,
+      accountType: resolvedAccountType,
+      swiftCode: resolvedSwiftCode,
+      routingNumber: resolvedRoutingNumber,
+      currency: safeIncomingMetadata.currency ?? account.currency ?? null,
+      accountStatus:
+        safeIncomingMetadata.accountStatus ?? account.status ?? null,
+
+      // ✅ Recipient-prefixed keys (what the receipt reads)
+      recipientAccountId: account.id,
+      recipientAccountNumber: resolvedAccountNumber,
+      recipientAccountType: resolvedAccountType,
+      recipientSwiftCode: resolvedSwiftCode,
+      recipientRoutingNumber: resolvedRoutingNumber,
+
+      // Recipient display fields (helpful for the receipt's party card)
+      recipientName:
+        safeIncomingMetadata.recipientName ?? userName ?? null,
+      receiverName:
+        safeIncomingMetadata.receiverName ?? userName ?? null,
+      recipientBank:
+        safeIncomingMetadata.recipientBank ??
+        'Trusty credit union bank',
+
+      // Receipt metadata
       paymentMethod:
         safeIncomingMetadata.paymentMethod ?? null,
       channel:
         safeIncomingMetadata.channel ?? null,
+
+      // Direction — this is a credit
+      direction: 'credit',
 
       description:
         safeIncomingMetadata.description ?? description ?? null,
@@ -2175,7 +2246,7 @@ const adminCredit = async (req, res, next) => {
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
-      metadata: finalMetadata, // ✅ Full metadata saved
+      metadata: finalMetadata,
     };
 
     const { data: transaction, error: txError } = await supabase
@@ -2187,37 +2258,42 @@ const adminCredit = async (req, res, next) => {
     if (txError) throw txError;
 
     if (sendAlert) {
-  const io = req.app.get('io');
+      const io = req.app.get('io');
 
-  Promise.resolve()
-    .then(() =>
-      createAndSendNotification(
-        io,
-        userId,
-        'credit',
-        'Account Credited',
-        `Your account ${account.account_number} has been credited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.`,
-        reference,
-        {
-          userName,
-          accountNumber: account.account_number,
-          amount: formatCurrency(amountNum),
-          newBalance: formatCurrency(newBalance),
-          description: description || 'Credit transaction',
-          reference,
-        }
-      )
-    )
-    .catch((notifError) => {
-      console.error(
-        'Background notification/email failed:',
-        notifError
-      );
-    });
-}
+      Promise.resolve()
+        .then(() =>
+          createAndSendNotification(
+            io,
+            userId,
+            'credit',
+            'Account Credited',
+            `Your account ${account.account_number} has been credited with ${formatCurrency(
+              amountNum
+            )}. New balance: ${formatCurrency(newBalance)}.`,
+            reference,
+            {
+              userName,
+              accountNumber: account.account_number,
+              amount: formatCurrency(amountNum),
+              newBalance: formatCurrency(newBalance),
+              description: description || 'Credit transaction',
+              reference,
+            }
+          )
+        )
+        .catch((notifError) => {
+          console.error(
+            'Background notification/email failed:',
+            notifError
+          );
+        });
+    }
+
     res.json({
       success: true,
-      message: `Credited ${formatCurrency(amountNum)} to account ${account.account_number}`,
+      message: `Credited ${formatCurrency(amountNum)} to account ${
+        account.account_number
+      }`,
       transaction,
       new_balance: newBalance,
     });
@@ -2226,9 +2302,6 @@ const adminCredit = async (req, res, next) => {
     next(error);
   }
 };
-
-
-
 
 
 // ============================================
@@ -2257,14 +2330,16 @@ const adminDebit = async (req, res, next) => {
     if (!accountId || !amount || amount <= 0 || !description) {
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: accountId, amount (positive), description'
+        error:
+          'Missing required fields: accountId, amount (positive), description',
       });
     }
 
     if (!receiverName || !receiverAccountNo || !receiverBank) {
       return res.status(400).json({
         success: false,
-        error: 'Missing receiver information: receiverName, receiverAccountNo, and receiverBank are required'
+        error:
+          'Missing receiver information: receiverName, receiverAccountNo, and receiverBank are required',
       });
     }
 
@@ -2284,7 +2359,8 @@ const adminDebit = async (req, res, next) => {
     if (accountError || !account) {
       return res.status(404).json({
         success: false,
-        error: 'Account not found or does not belong to this user'
+        error:
+          'Account not found or does not belong to this user',
       });
     }
 
@@ -2293,7 +2369,7 @@ const adminDebit = async (req, res, next) => {
     if (account.status !== 'active') {
       return res.status(400).json({
         success: false,
-        error: `Account is ${account.status}. Cannot debit.`
+        error: `Account is ${account.status}. Cannot debit.`,
       });
     }
 
@@ -2301,7 +2377,9 @@ const adminDebit = async (req, res, next) => {
     if (parseFloat(account.balance) < amountNum) {
       return res.status(400).json({
         success: false,
-        error: `Insufficient balance. Available: ${formatCurrency(account.balance)}, requested: ${formatCurrency(amountNum)}`
+        error: `Insufficient balance. Available: ${formatCurrency(
+          account.balance
+        )}, requested: ${formatCurrency(amountNum)}`,
       });
     }
 
@@ -2309,7 +2387,10 @@ const adminDebit = async (req, res, next) => {
 
     const { data: updatedAccount, error: updateError } = await supabase
       .from('accounts')
-      .update({ balance: newBalance, updated_at: new Date().toISOString() })
+      .update({
+        balance: newBalance,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', accountId)
       .select()
       .single();
@@ -2318,24 +2399,80 @@ const adminDebit = async (req, res, next) => {
 
     // ---------------------------------------------------------
     // BUILD FULL METADATA
+    //
+    // For a DEBIT, the debited account is the SENDER. The
+    // recipient info comes from the frontend.
     // ---------------------------------------------------------
     const safeIncomingMetadata =
       incomingMetadata && typeof incomingMetadata === 'object'
         ? incomingMetadata
         : {};
 
+    const resolvedRecipientAccountType =
+      safeIncomingMetadata.recipientAccountType ??
+      safeIncomingMetadata.recipient_account_type ??
+      safeIncomingMetadata.accountType ??
+      safeIncomingMetadata.account_type ??
+      null;
+
+    const resolvedRecipientSwiftCode =
+      safeIncomingMetadata.recipientSwiftCode ??
+      safeIncomingMetadata.recipient_swift_code ??
+      safeIncomingMetadata.swiftCode ??
+      safeIncomingMetadata.swift_code ??
+      null;
+
+    const resolvedRecipientRoutingNumber =
+      safeIncomingMetadata.recipientRoutingNumber ??
+      safeIncomingMetadata.recipient_routing_number ??
+      safeIncomingMetadata.routingNumber ??
+      safeIncomingMetadata.routing_number ??
+      null;
+
     const finalMetadata = {
       ...safeIncomingMetadata,
 
-      // Ensure canonical keys always exist (fall back to top-level)
+      // Receiver side (top-level)
       receiverAccountNo:
-        safeIncomingMetadata.receiverAccountNo ?? receiverAccountNo ?? null,
+        safeIncomingMetadata.receiverAccountNo ??
+        receiverAccountNo ??
+        null,
       receiverName:
         safeIncomingMetadata.receiverName ?? receiverName ?? null,
       receiverBank:
         safeIncomingMetadata.receiverBank ?? receiverBank ?? null,
 
-      // Explicitly carry these through so Receipt.jsx finds them
+      // ✅ Recipient-prefixed keys (what the receipt reads)
+      recipientName:
+        safeIncomingMetadata.recipientName ??
+        receiverName ??
+        null,
+      recipientAccountNumber:
+        safeIncomingMetadata.recipientAccountNumber ??
+        safeIncomingMetadata.recipientAccountNo ??
+        receiverAccountNo ??
+        null,
+      recipientAccountType: resolvedRecipientAccountType,
+      recipientSwiftCode: resolvedRecipientSwiftCode,
+      recipientRoutingNumber: resolvedRecipientRoutingNumber,
+
+      // ✅ Generic keys (existing behavior)
+      accountType: resolvedRecipientAccountType,
+      swiftCode: resolvedRecipientSwiftCode,
+      routingNumber: resolvedRecipientRoutingNumber,
+
+      // Sender side = the debited account
+      senderName:
+        safeIncomingMetadata.senderName ?? userName ?? null,
+      senderAccountNumber:
+        safeIncomingMetadata.senderAccountNumber ??
+        account.account_number ??
+        null,
+      senderBank:
+        safeIncomingMetadata.senderBank ??
+        'Trusty credit union bank',
+
+      // Receipt metadata
       paymentMethod:
         safeIncomingMetadata.paymentMethod ?? null,
       channel:
@@ -2343,6 +2480,9 @@ const adminDebit = async (req, res, next) => {
 
       admin_note:
         safeIncomingMetadata.admin_note ?? note ?? '',
+
+      // Direction — this is a debit
+      direction: 'debit',
 
       description:
         safeIncomingMetadata.description ?? description ?? null,
@@ -2358,7 +2498,7 @@ const adminDebit = async (req, res, next) => {
       reference_id: reference,
       status: 'completed',
       created_at: date || new Date().toISOString(),
-      metadata: finalMetadata, // ✅ Full metadata saved
+      metadata: finalMetadata,
     };
 
     const { data: transaction, error: txError } = await supabase
@@ -2370,41 +2510,47 @@ const adminDebit = async (req, res, next) => {
     if (txError) throw txError;
 
     if (sendAlert) {
-  const io = req.app.get('io');
+      const io = req.app.get('io');
 
-  Promise.resolve()
-    .then(() =>
-      createAndSendNotification(
-        io,
-        userId,
-        'debit',
-        'Account Debited',
-        `Your account ${account.account_number} has been debited with ${formatCurrency(amountNum)}. New balance: ${formatCurrency(newBalance)}.${note ? ` Note: ${note}` : ''}`,
-        reference,
-        {
-          userName,
-          accountNumber: account.account_number,
-          amount: formatCurrency(amountNum),
-          newBalance: formatCurrency(newBalance),
-          description: description || 'Debit transaction',
-          note: note || '',
-          reference,
-        }
-      )
-    )
-    .catch((notifError) => {
-      console.error(
-        'Background notification/email failed:',
-        notifError
-      );
-    });
-}
-
-
+      Promise.resolve()
+        .then(() =>
+          createAndSendNotification(
+            io,
+            userId,
+            'debit',
+            'Account Debited',
+            `Your account ${
+              account.account_number
+            } has been debited with ${formatCurrency(
+              amountNum
+            )}. New balance: ${formatCurrency(newBalance)}.${
+              note ? ` Note: ${note}` : ''
+            }`,
+            reference,
+            {
+              userName,
+              accountNumber: account.account_number,
+              amount: formatCurrency(amountNum),
+              newBalance: formatCurrency(newBalance),
+              description: description || 'Debit transaction',
+              note: note || '',
+              reference,
+            }
+          )
+        )
+        .catch((notifError) => {
+          console.error(
+            'Background notification/email failed:',
+            notifError
+          );
+        });
+    }
 
     res.json({
       success: true,
-      message: `Debited ${formatCurrency(amountNum)} from account ${account.account_number}`,
+      message: `Debited ${formatCurrency(amountNum)} from account ${
+        account.account_number
+      }`,
       transaction,
       new_balance: newBalance,
     });
@@ -2413,6 +2559,8 @@ const adminDebit = async (req, res, next) => {
     next(error);
   }
 };
+
+
 
 
 
