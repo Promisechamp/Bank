@@ -533,6 +533,16 @@ const Transfer = () => {
     useState('idle');
 
   /* ---------------------------------------------------------------------- */
+  /* Account restriction (banned / suspended / frozen)                       */
+  /* ---------------------------------------------------------------------- */
+
+  const [accountRestrictionOpen, setAccountRestrictionOpen] =
+    useState(false);
+
+  const [restrictionStatus, setRestrictionStatus] =
+    useState('');
+
+  /* ---------------------------------------------------------------------- */
   /* Verification                                                           */
   /* ---------------------------------------------------------------------- */
 
@@ -932,6 +942,31 @@ const Transfer = () => {
      * this transfer with PIN or OTP.
      */
     setVerificationChoiceOpen(true);
+  };
+
+  /* ---------------------------------------------------------------------- */
+  /* Pre-verification account restriction check                             */
+  /* ---------------------------------------------------------------------- */
+
+  const handleContinueToVerification = (e) => {
+    e.preventDefault();
+
+    const status = String(
+      selectedAccount?.status || 'active'
+    ).toLowerCase();
+
+    if (
+      ['banned', 'suspended', 'frozen'].includes(
+        status
+      )
+    ) {
+      setRestrictionStatus(status);
+      setAccountRestrictionOpen(true);
+      return;
+    }
+
+    // Not restricted — run the normal transfer flow
+    handleTransferSubmit(e);
   };
 
   /* ---------------------------------------------------------------------- */
@@ -1826,7 +1861,7 @@ const Transfer = () => {
 
       {transferType === 'external' && (
         <form
-          onSubmit={handleTransferSubmit}
+          onSubmit={handleContinueToVerification}
           className="mt-7 overflow-hidden rounded-2xl border border-gray-200 bg-white"
         >
           <div className="grid lg:grid-cols-[1fr_430px]">
@@ -2805,6 +2840,84 @@ const Transfer = () => {
       </Modal>
 
       {/* ================================================================== */}
+      {/* ACCOUNT RESTRICTION MODAL                                          */}
+      {/* ================================================================== */}
+
+      <Modal
+        isOpen={accountRestrictionOpen}
+        onClose={() =>
+          setAccountRestrictionOpen(false)
+        }
+        title="Transfer not allowed"
+        size="sm"
+        position="center"
+        showCloseButton
+        closeOnOutsideClick
+      >
+        <div className="py-4 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100">
+            <ShieldAlert className="h-8 w-8 text-amber-600" />
+          </div>
+
+          <h3 className="mt-5 text-xl font-semibold text-gray-900">
+            You can't continue this transaction
+          </h3>
+
+          <p className="mt-2 text-sm leading-5 text-gray-500">
+            Your account has been{' '}
+            <span className="font-semibold text-amber-700">
+              {restrictionStatus}
+            </span>
+            . For security reasons, you cannot continue
+            with this transfer. Please contact your
+            account manager to resolve this.
+          </p>
+
+          <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-left">
+            <div className="flex gap-3">
+              <ShieldAlert className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+
+              <div>
+                <p className="text-sm font-semibold text-amber-900">
+                  Account restricted
+                </p>
+
+                <p className="mt-1 text-xs leading-5 text-amber-800">
+                  Your account manager can review the
+                  restriction and restore your transfer
+                  privileges.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            <button
+              type="button"
+              onClick={() => {
+                setAccountRestrictionOpen(false);
+                navigate('/chat');
+              }}
+              className="btn-primary inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl"
+            >
+              <User className="h-5 w-5" />
+              Contact account manager
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setAccountRestrictionOpen(false)
+              }
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white text-sm font-semibold text-gray-700 transition hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ================================================================== */}
       {/* RECEIPT MODAL                                                      */}
       {/* ================================================================== */}
 
@@ -2863,3 +2976,4 @@ const AlertCircleIcon = (props) => (
 );
 
 export default Transfer;
+
